@@ -1,9 +1,9 @@
-# Setup Guide: Working on WIYS from Anywhere
+# Jamie's Setup Guide: Working on WIYS from Anywhere
 
-This guide gets you from zero to a working cloud development environment.
+Hey Jamie — this guide gets you from zero to a working cloud development environment.
 You only need to do this once. After that, you just open a browser tab.
 
-**New to the terminal / command line?** Read [terminal-basics.md](terminal-basics.md) first. It explains what a terminal is, what all the symbols mean, and how commands work.
+**New to the terminal / command line?** Read [Jamie - Terminal and Command Line Basics.md](<Jamie - Terminal and Command Line Basics.md>) first. It explains what a terminal is, what all the symbols mean, and how commands work.
 
 ---
 

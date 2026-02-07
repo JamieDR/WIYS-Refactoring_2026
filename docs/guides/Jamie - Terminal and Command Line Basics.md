@@ -1,6 +1,6 @@
-# Terminal & Command Line: The Absolute Basics
+# Jamie's Guide: Terminal & Command Line Basics
 
-If you've never used a terminal before, start here. This explains everything from scratch.
+Hey Jamie — if you've never used a terminal before, start here. This explains everything from scratch.
 
 ---
 
