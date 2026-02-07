@@ -3,6 +3,8 @@
 This guide gets you from zero to a working cloud development environment.
 You only need to do this once. After that, you just open a browser tab.
 
+**New to the terminal / command line?** Read [terminal-basics.md](terminal-basics.md) first. It explains what a terminal is, what all the symbols mean, and how commands work.
+
 ---
 
 ## Step 1: Open a GitHub Codespace
@@ -85,7 +87,13 @@ This uploads the code from `src/` back to Google. If it says "Pushed", you're go
 ## Troubleshooting
 
 ### "clasp: command not found"
-Run: `npm install -g @google/clasp`
+This means clasp didn't get installed automatically. Install it manually by typing this and pressing Enter:
+```
+npm install -g @google/clasp
+```
+What this means: "Hey npm (the package installer), install the package called @google/clasp, and make it available globally (-g means everywhere on this computer)."
+
+Wait for it to finish (you'll see text scrolling, then the cursor comes back). Then try `clasp login --no-localhost` again.
 
 ### "Not logged in"
 Run: `clasp login --no-localhost` and follow the steps again.
