@@ -3,7 +3,7 @@
 Hey Jamie — this guide gets you from zero to a working cloud development environment.
 You only need to do this once. After that, you just open a browser tab.
 
-**New to the terminal / command line?** Read [Jamie - Terminal and Command Line Basics.md](<Jamie - Terminal and Command Line Basics.md>) first. It explains what a terminal is, what all the symbols mean, and how commands work.
+**New to the terminal / command line?** Read [Jamie - What is a Terminal and How to Type Commands.md](<Jamie - What is a Terminal and How to Type Commands.md>) first. It explains what a terminal is, what all the symbols mean, and how commands work.
 
 ---
 
