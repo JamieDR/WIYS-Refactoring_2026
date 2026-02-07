@@ -48,14 +48,11 @@ In the terminal, type:
 clasp pull
 ```
 
-This downloads the current code from your Apps Script project into the `src/` folder. If it works, you'll see files appear.
+This downloads the current code from your Apps Script project into the `src/` folder. If it works, you'll see files appear (like `main.gs` and `appsscript.json`).
 
-Then try:
-```
-clasp push
-```
+**That's it for verification.** If `clasp pull` worked, your connection is good.
 
-This uploads the code from `src/` back to Google. If it says "Pushed", you're good.
+**DO NOT run `clasp push` yet.** Only push when you've made a deliberate change and are ready to deploy it to production. Pushing uploads code to your live Apps Script project — the one your team uses every day. We'll do our first push together when we're ready.
 
 ---
 
