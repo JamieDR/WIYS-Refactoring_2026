@@ -1,0 +1,19 @@
+# Everything that should NOT be uploaded to Google Apps Script
+# clasp only uploads what's in src/ (set by rootDir in .clasp.json)
+# but this file is a safety net
+
+docs/**
+python/**
+.git/**
+.github/**
+.devcontainer/**
+.gitignore
+.clasp.json
+README.md
+CLAUDE.md
+LICENSE
+node_modules/**
+*.md
+*.py
+*.txt
+Original Codebase_Feb7 Version
