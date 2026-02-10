@@ -212,6 +212,62 @@ const CONFIG = {
 
 /**
  * ============================================================================
+ * WORDPRESS API CIRCUIT BREAKER
+ * ============================================================================
+ * Prevents hammering the WP database when it's under stress.
+ * If a WP API call fails or times out, all further WP calls are paused
+ * for a cooldown period to let the server recover.
+ */
+
+var WP_CIRCUIT_BREAKER_COOLDOWN_MS = 10 * 60 * 1000; // 10 minutes
+
+function isWordPressHealthy() {
+  var props = PropertiesService.getScriptProperties();
+  var cooldownUntil = props.getProperty('WP_CIRCUIT_BREAKER_UNTIL');
+  if (cooldownUntil) {
+    if (new Date().getTime() < parseInt(cooldownUntil, 10)) {
+      Logger.log('Circuit breaker OPEN - WP API calls paused until ' + new Date(parseInt(cooldownUntil, 10)).toISOString());
+      return false;
+    }
+    props.deleteProperty('WP_CIRCUIT_BREAKER_UNTIL');
+  }
+  return true;
+}
+
+function tripWordPressCircuitBreaker() {
+  var cooldownUntil = new Date().getTime() + WP_CIRCUIT_BREAKER_COOLDOWN_MS;
+  PropertiesService.getScriptProperties().setProperty('WP_CIRCUIT_BREAKER_UNTIL', cooldownUntil.toString());
+  Logger.log('Circuit breaker TRIPPED - WP API calls paused for 10 minutes');
+}
+
+function resetWordPressCircuitBreaker() {
+  PropertiesService.getScriptProperties().deleteProperty('WP_CIRCUIT_BREAKER_UNTIL');
+  Logger.log('Circuit breaker RESET');
+}
+
+/**
+ * Wrapper for UrlFetchApp.fetch that respects the circuit breaker
+ * and trips it on server errors or timeouts.
+ */
+function fetchWordPress(url, options) {
+  if (!isWordPressHealthy()) {
+    throw new Error('WordPress circuit breaker is open - API calls paused');
+  }
+
+  var response = UrlFetchApp.fetch(url, options);
+  var code = response.getResponseCode();
+
+  // Trip breaker on server errors (5xx) or if WP returns HTML instead of JSON
+  if (code >= 500) {
+    Logger.log('WordPress returned ' + code + ' - tripping circuit breaker');
+    tripWordPressCircuitBreaker();
+  }
+
+  return response;
+}
+
+/**
+ * ============================================================================
  * MAIN FUNCTIONS
  * ============================================================================
  */
@@ -3180,9 +3236,15 @@ function updateQueuePositions() {
 
 /**
  * Process the upload queue - called by time-based trigger
- * Processes up to 2 articles per execution to stay within time limits
+ * Processes 1 article per execution to reduce WP load
  */
 function processUploadQueue() {
+  // Circuit breaker check
+  if (!isWordPressHealthy()) {
+    Logger.log('Skipping upload queue - WordPress circuit breaker is open');
+    return;
+  }
+
   Logger.log('=== Processing Upload Queue ===');
 
   var queue = getUploadQueue();
@@ -3194,8 +3256,8 @@ function processUploadQueue() {
 
   Logger.log('Queue has ' + queue.length + ' items');
 
-  // Process up to 2 articles per run (to stay within 6-minute limit)
-  var itemsToProcess = Math.min(2, queue.length);
+  // Process 1 article per run to reduce load on WordPress
+  var itemsToProcess = Math.min(1, queue.length);
 
   for (var i = 0; i < itemsToProcess; i++) {
     var item = queue[0]; // Always process first item
@@ -3733,9 +3795,10 @@ function createSlideshowContent(slides, relatedArticles) {
 
 function queryRelatedArticles(endpoint, categoryId, tagIds, username, applicationPassword, sameStateOnly) {
   var queryParams = [
-    'per_page=50', // Get more to have better selection
+    'per_page=10',
     'status=publish',
-    'after=2025-01-01T00:00:00' // UPDATED: Only 2025 articles
+    'after=2025-01-01T00:00:00',
+    '_fields=id,title,link,tags,date,slug'
   ];
   
   if (sameStateOnly && categoryId) {
@@ -3758,7 +3821,7 @@ function queryRelatedArticles(endpoint, categoryId, tagIds, username, applicatio
   
   try {
     Logger.log('Querying 2025 related articles: ' + queryUrl);
-    var response = UrlFetchApp.fetch(queryUrl, options);
+    var response = fetchWordPress(queryUrl, options);
     
     if (response.getResponseCode() === CONFIG.HTTP_STATUS.OK) {
       var articles = JSON.parse(response.getContentText());
@@ -3839,9 +3902,10 @@ function findRelatedArticles(currentTags, currentCategoryId, username, applicati
 
 function getRandomArticles2025(endpoint, username, applicationPassword, count) {
   var queryParams = [
-    'per_page=50', // Get a good selection for randomness
+    'per_page=10',
     'status=publish',
-    'after=2025-01-01T00:00:00' // Only 2025 articles
+    'after=2025-01-01T00:00:00',
+    '_fields=id,title,link,tags,date,slug'
   ];
   
   var queryUrl = endpoint + '?' + queryParams.join('&');
@@ -3856,7 +3920,7 @@ function getRandomArticles2025(endpoint, username, applicationPassword, count) {
   
   try {
     Logger.log('Getting random 2025 articles: ' + queryUrl);
-    var response = UrlFetchApp.fetch(queryUrl, options);
+    var response = fetchWordPress(queryUrl, options);
     
     if (response.getResponseCode() === CONFIG.HTTP_STATUS.OK) {
       var articles = JSON.parse(response.getContentText());
@@ -3884,9 +3948,10 @@ function getRandomArticles2025(endpoint, username, applicationPassword, count) {
 
 function queryRelatedArticles(endpoint, categoryId, tagIds, username, applicationPassword, sameStateOnly) {
   var queryParams = [
-    'per_page=50', // Get more to have better selection
+    'per_page=10',
     'status=publish',
-    'after=2025-01-01T00:00:00' // Only 2025 articles
+    'after=2025-01-01T00:00:00',
+    '_fields=id,title,link,tags,date,slug'
   ];
   
   if (sameStateOnly && categoryId) {
@@ -3909,7 +3974,7 @@ function queryRelatedArticles(endpoint, categoryId, tagIds, username, applicatio
   
   try {
     Logger.log('Querying 2025 related articles: ' + queryUrl);
-    var response = UrlFetchApp.fetch(queryUrl, options);
+    var response = fetchWordPress(queryUrl, options);
     
     if (response.getResponseCode() === CONFIG.HTTP_STATUS.OK) {
       var articles = JSON.parse(response.getContentText());
@@ -4550,7 +4615,7 @@ function getWordPressPostStatus(postId, username, password) {
   
   try {
     Logger.log(`Making API request to: ${wpApiUrl}`);
-    var response = UrlFetchApp.fetch(wpApiUrl, options);
+    var response = fetchWordPress(wpApiUrl, options);
     var responseCode = response.getResponseCode();
     var responseText = response.getContentText();
     
@@ -5262,9 +5327,9 @@ function cleanHtmlEntities(text) {
 function getWordPressPost(postId) {
   var username = CONFIG.WORDPRESS.USERNAME;
   var applicationPassword = CONFIG.WORDPRESS.APP_PASSWORD;
-  
-  var wpApiUrl = CONFIG.ENDPOINTS.WP_POSTS + '/' + postId;
-  
+
+  var wpApiUrl = CONFIG.ENDPOINTS.WP_POSTS + '/' + postId + '?_fields=id,status,title,link,date,date_gmt,slug';
+
   var options = {
     method: "get",
     headers: {
@@ -5272,9 +5337,9 @@ function getWordPressPost(postId) {
     },
     muteHttpExceptions: true
   };
-  
+
   try {
-    var response = UrlFetchApp.fetch(wpApiUrl, options);
+    var response = fetchWordPress(wpApiUrl, options);
     if (response.getResponseCode() === CONFIG.HTTP_STATUS.OK) {
       return JSON.parse(response.getContentText());
     }
@@ -5339,6 +5404,12 @@ function extractPostIdFromUrl(url) {
 
 // Keep your existing monitor functions
 function checkScheduledPostsStatus() {
+  // Circuit breaker check
+  if (!isWordPressHealthy()) {
+    Logger.log('Skipping scheduled posts check - WordPress circuit breaker is open');
+    return;
+  }
+
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var sheet = ss.getSheetByName(CONFIG.SHEETS.WP_EDITING_TRACKER);
   
@@ -5363,10 +5434,18 @@ function checkScheduledPostsStatus() {
     }
   }
   
-  // Process rows
+  // Process rows - cap API calls to prevent overloading WP
+  var apiCallCount = 0;
+  var MAX_API_CALLS = 10;
+
   for (var i = 1; i < maxRowToProcess; i++) {
+    if (apiCallCount >= MAX_API_CALLS) {
+      Logger.log('Reached max API calls (' + MAX_API_CALLS + '), stopping');
+      break;
+    }
+
     var currentRowNumber = i + 1;
-    
+
     // Check if row is hidden
     try {
       if (sheet.isRowHiddenByUser(currentRowNumber)) {
@@ -5375,40 +5454,43 @@ function checkScheduledPostsStatus() {
     } catch (error) {
       // Continue processing
     }
-    
+
     var wpUrl = values[i][4]; // Column E - WP URL
     var statusI = values[i][8]; // Column I - Status
     var statusJ = values[i][9]; // Column J - WordPress Status
-    
+
     // Only check rows that have "Scheduled" status in Column I or J
     if (wpUrl && (statusI === CONFIG.STATUS.SCHEDULED || statusJ === CONFIG.STATUS.SCHEDULED)) {
       var postId = extractPostIdFromUrl(wpUrl);
       if (!postId) continue;
-      
+
       try {
         var postData = getWordPressPost(postId);
-        
+        apiCallCount++;
+
         if (postData && postData.status === CONFIG.WP_POST_STATUS.PUBLISH) {
           Logger.log('Found published post that was scheduled: ' + postId);
-          
+
           // Update statuses
           sheet.getRange(currentRowNumber, 9).setValue('Website Published'); // Column I
           sheet.getRange(currentRowNumber, 10).setValue('WordPress Published'); // Column J
-          
+
           // Extract and set final title
           if (postData.title && postData.title.rendered) {
             var cleanTitle = cleanHtmlEntities(postData.title.rendered);
             sheet.getRange(currentRowNumber, 11).setValue(cleanTitle); // Column K
           }
-          
+
           // Set published URL
           if (postData.link) {
             sheet.getRange(currentRowNumber, 12).setValue(postData.link); // Column L
           }
-          
+
           Logger.log('Updated row ' + currentRowNumber + ' to published status');
         }
-        
+
+        // Throttle: 2 seconds between API calls
+        Utilities.sleep(2000);
       } catch (error) {
         Logger.log('Error checking post ' + postId + ': ' + error.message);
       }
@@ -5466,81 +5548,92 @@ function onProductionTrackerEdit(e) {
 
 // Main monitor function (runs automatically every 5 minutes)
 function monitorProductionTracker() {
+  // Circuit breaker check - don't hit WP if it's struggling
+  if (!isWordPressHealthy()) {
+    Logger.log('Skipping monitor - WordPress circuit breaker is open');
+    return;
+  }
+
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var sheet = ss.getSheetByName(CONFIG.SHEETS.WIYS_PRODUCTION_TRACKER);
-  
+
   if (!sheet) {
     Logger.log('WIYS Production Tracker sheet not found');
     return;
   }
-  
+
   var username = CONFIG.WORDPRESS.USERNAME;
   var applicationPassword = CONFIG.WORDPRESS.APP_PASSWORD;
-  
+
   // Check if current time is within Phoenix AZ business hours (9 AM - 8 PM)
   var now = new Date();
   var phoenixTime = new Date(now.toLocaleString("en-US", {timeZone: "America/Phoenix"}));
   var hour = phoenixTime.getHours();
-  
+
   if (hour < CONFIG.TIME.WORK_START_HOUR || hour >= CONFIG.TIME.WORK_END_HOUR) {
     Logger.log('Outside monitoring hours (9 AM - 8 PM Phoenix time). Current hour: ' + hour);
     return;
   }
-  
+
   var lastRow = sheet.getLastRow();
-  if (lastRow < 2) return; // No data rows to process
-  
-  // Process all rows starting from row 2
-  for (var row = 2; row <= lastRow; row++) {
-    var draftUrl = sheet.getRange(row, 4).getValue(); // Column D
-    var status = sheet.getRange(row, 7).getValue(); // Column G
-    
+  if (lastRow < 2) return;
+
+  // BATCH READ: Get all data at once instead of cell-by-cell
+  var allData = sheet.getRange(2, 1, lastRow - 1, 7).getValues();
+  var apiCallCount = 0;
+  var MAX_API_CALLS_PER_RUN = 10; // Cap to prevent overloading WP
+
+  for (var i = 0; i < allData.length; i++) {
+    if (apiCallCount >= MAX_API_CALLS_PER_RUN) {
+      Logger.log('Reached max API calls per run (' + MAX_API_CALLS_PER_RUN + '), stopping');
+      break;
+    }
+
+    var row = i + 2; // Sheet row number (1-indexed, skip header)
+    var draftUrl = allData[i][3]; // Column D (0-indexed: 3)
+    var status = allData[i][6];   // Column G (0-indexed: 6)
+
     // Only check rows with "Scheduled" status and a draft URL
     if (status === CONFIG.STATUS.SCHEDULED && draftUrl) {
-      // Extract post ID from draft URL
       var postId = extractPostIdFromUrl(draftUrl);
-      if (!postId) {
-        Logger.log('Could not extract post ID from URL in row ' + row + ': ' + draftUrl);
-        continue;
-      }
-      
+      if (!postId) continue;
+
       try {
-        // Get WordPress post status
         var wpStatus = getWordPressPostStatus(postId, username, applicationPassword);
-        
+        apiCallCount++;
+
         if (wpStatus && wpStatus.status === CONFIG.WP_POST_STATUS.PUBLISH) {
-          Logger.log('Post ' + postId + ' is published! Updating row ' + row);
-          
-          // Extract clean title
           var cleanTitle = wpStatus.title;
           if (typeof cleanTitle !== 'string') {
             cleanTitle = 'Title not found';
           }
-          
-          // Format publish date/time for Phoenix timezone
+
           var publishDate = formatWordPressDateTime(wpStatus.publishDate);
-          
-          // Update the row with published information
+
           var titleRange = sheet.getRange(row, 4);
-          titleRange.setValue(cleanTitle); // Column D - Replace URL with title
-          titleRange.clearFormat(); // Remove any link formatting
-          
-          sheet.getRange(row, 3).setValue(publishDate); // Column C - Publish date/time
-          sheet.getRange(row, 5).setValue(wpStatus.link); // Column E - Published URL
-          sheet.getRange(row, 7).setValue("MSN Pending"); // Column G - Update status
-          
-          Logger.log('Updated row ' + row + ' with published article: ' + cleanTitle);
-          
-          // Force save
+          titleRange.setValue(cleanTitle);
+          titleRange.clearFormat();
+
+          sheet.getRange(row, 3).setValue(publishDate);
+          sheet.getRange(row, 5).setValue(wpStatus.link);
+          sheet.getRange(row, 7).setValue("MSN Pending");
+
           SpreadsheetApp.flush();
         }
+
+        // Throttle: 2 seconds between API calls instead of hammering
+        Utilities.sleep(2000);
       } catch (error) {
         Logger.log('Error checking post ' + postId + ' in row ' + row + ': ' + error.message);
+        // If WP is erroring, trip the breaker and stop
+        if (error.message && error.message.indexOf('circuit breaker') !== -1) {
+          break;
+        }
       }
     }
   }
-  
-  Logger.log('Production Tracker monitoring completed');
+
+  Logger.log('Production Tracker monitoring completed. API calls made: ' + apiCallCount);
 }
 
 function manualCheckProductionTracker(e) {
@@ -5687,6 +5780,11 @@ function setupProductionTrackerMonitor() {
 
 // Function to check WP status for all rows in the sheet
 function checkAllWPStatuses() {
+  // Circuit breaker check
+  if (!isWordPressHealthy()) {
+    SpreadsheetApp.getUi().alert('WordPress is currently under heavy load. Status checks are paused for 10 minutes to let it recover. Try again later.');
+    return;
+  }
   var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(CONFIG.SHEETS.WP_EDITING_TRACKER);
   if (!sheet) {
     SpreadsheetApp.getUi().alert('WP Editing Tracker sheet not found');
@@ -14930,6 +15028,7 @@ function fetchArticlesForDateRange(username, appPassword, startDate, endDate) {
       'page=' + page,
       'status=publish',
       '_embed=true',
+      '_fields=id,title,link,date,slug,categories,tags,_links,_embedded',
       'after=' + startDate.toISOString(),
       'before=' + endDate.toISOString(),
       'orderby=date',
@@ -15246,6 +15345,7 @@ function updateArticleCollection() {
       'page=' + page,
       'status=publish',
       '_embed=true',
+      '_fields=id,title,link,date,slug,categories,tags,_links,_embedded',
       'after=' + sevenDaysAgo.toISOString(),
       'orderby=date',
       'order=desc'
@@ -16273,6 +16373,7 @@ function populateArticleCollection() {
       'page=' + page,
       'status=publish',
       '_embed=true',
+      '_fields=id,title,link,date,slug,categories,tags,_links,_embedded',
       'after=2025-07-16T00:00:00',
       'orderby=date',
       'order=desc'
