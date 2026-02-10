@@ -1057,6 +1057,9 @@ function createEmailNewsletterSheet() {
     .build();
   sheet.getRange(2, 19, 100, 1).setDataValidation(statusValidation);
 
+  // Clip text on all data rows so URLs don't blow up row heights
+  sheet.getRange(2, 1, 100, headers.length).setWrapStrategy(SpreadsheetApp.WrapStrategy.CLIP);
+
   // Freeze header row
   sheet.setFrozenRows(1);
 
@@ -1274,6 +1277,10 @@ function createNewsletters() {
 
     // Update status: column S(19)
     emailSheet.getRange(emailRow, 19).setValue('Complete');
+
+    // Set row height and clip text so URLs don't blow up the row
+    emailSheet.setRowHeight(emailRow, 40);
+    emailSheet.getRange(emailRow, 1, 1, 19).setWrapStrategy(SpreadsheetApp.WrapStrategy.CLIP);
     SpreadsheetApp.flush();
   }
 
