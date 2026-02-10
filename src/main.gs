@@ -15380,19 +15380,20 @@ function sortArticleCollection() {
     }
   }
 
-  // Set URL columns to hyperlink blue (C=Title, D=Article URL, E=Thumbnail URL)
+  // Set URL columns to hyperlink blue (D=Article URL, E=Thumbnail URL)
   var numRows = sortedData.length;
-  sheet.getRange(2, 3, numRows, 1).setFontColor('#1155cc'); // Title hyperlinks
   sheet.getRange(2, 4, numRows, 1).setFontColor('#1155cc'); // Article URLs
   sheet.getRange(2, 5, numRows, 1).setFontColor('#1155cc'); // Thumbnail URLs
 
-  // Set status colors in column F: green for Available, red for Used
+  // Set status colors in column F: green background for Available, red background for Used
   for (var r = 0; r < sortedData.length; r++) {
     var statusCell = sheet.getRange(r + 2, 6);
     if (sortedData[r][5] === 'Available') {
-      statusCell.setFontColor('#0b5e3f'); // dark green
+      statusCell.setBackground('#0b5e3f'); // dark green background
+      statusCell.setFontColor('#FFFFFF'); // white text
     } else if (sortedData[r][5] === 'Used') {
-      statusCell.setFontColor('#8B0000'); // dark red
+      statusCell.setBackground('#8B0000'); // dark red background
+      statusCell.setFontColor('#FFFFFF'); // white text
     }
   }
 
