@@ -14987,16 +14987,6 @@ function appendArticlesToSheet(articles) {
 
   sheet.getRange(startRow, 1, data.length, 6).setValues(data);
 
-  // Add hyperlinks
-  for (var r = 0; r < articles.length; r++) {
-    var rowNum = startRow + r;
-    var article = articles[r];
-    if (article.url) {
-      var formula = '=HYPERLINK("' + article.url + '", "' + article.title.replace(/"/g, '""') + '")';
-      sheet.getRange(rowNum, 3).setFormula(formula);
-    }
-  }
-
   SpreadsheetApp.flush();
 }
 
@@ -15094,16 +15084,6 @@ function writeArticlesToCollectionSheet(sheet, articles) {
 
   // Write all data at once (starting from row 2)
   sheet.getRange(2, 1, data.length, 6).setValues(data);
-
-  // Make titles into hyperlinks
-  for (var r = 0; r < articles.length; r++) {
-    var rowNum = r + 2;
-    var article = articles[r];
-    if (article.url) {
-      var formula = '=HYPERLINK("' + article.url + '", "' + article.title.replace(/"/g, '""') + '")';
-      sheet.getRange(rowNum, 3).setFormula(formula);
-    }
-  }
 
   Logger.log('Wrote ' + articles.length + ' articles to Collection sheet');
 }
@@ -15294,16 +15274,6 @@ function updateArticleCollection() {
 
     sheet.getRange(2, 1, data.length, 6).setValues(data);
 
-    // Add hyperlinks
-    for (var r = 0; r < categorizedArticles.length; r++) {
-      var rowNum = r + 2;
-      var article = categorizedArticles[r];
-      if (article.url) {
-        var formula = '=HYPERLINK("' + article.url + '", "' + article.title.replace(/"/g, '""') + '")';
-        sheet.getRange(rowNum, 3).setFormula(formula);
-      }
-    }
-
     // Fetch intros for the new articles
     for (var r = 0; r < categorizedArticles.length; r++) {
       var article = categorizedArticles[r];
@@ -15355,7 +15325,6 @@ function sortArticleCollection() {
   var lastCol = sheet.getLastColumn();
   var dataRange = sheet.getRange(2, 1, lastRow - 1, lastCol);
   var data = dataRange.getValues();
-  var formulas = dataRange.getFormulas();
 
   // Migrate old values: "Yes" → "Used", "No" → "Available"
   for (var i = 0; i < data.length; i++) {
@@ -15370,7 +15339,7 @@ function sortArticleCollection() {
   var used = [];
 
   for (var i = 0; i < data.length; i++) {
-    var item = { data: data[i], formulas: formulas[i] };
+    var item = { data: data[i] };
     if (data[i][5] === 'Used') {
       used.push(item);
     } else {
@@ -15383,7 +15352,6 @@ function sortArticleCollection() {
 
   // Write sorted data back to sheet
   var sortedData = sorted.map(function(item) { return item.data; });
-  var sortedFormulas = sorted.map(function(item) { return item.formulas; });
 
   var outputRange = sheet.getRange(2, 1, sortedData.length, lastCol);
   outputRange.setValues(sortedData);
@@ -15392,13 +15360,6 @@ function sortArticleCollection() {
   outputRange.setBackground('#FFFFFF');
   outputRange.setFontColor('#000000');
   outputRange.setFontWeight('normal');
-
-  // Restore hyperlink formulas in column C (Title)
-  for (var r = 0; r < sortedFormulas.length; r++) {
-    if (sortedFormulas[r][2] && sortedFormulas[r][2] !== '') {
-      sheet.getRange(r + 2, 3).setFormula(sortedFormulas[r][2]);
-    }
-  }
 
   // Set URL columns to hyperlink blue (D=Article URL, E=Thumbnail URL)
   var numRows = sortedData.length;
