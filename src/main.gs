@@ -15368,7 +15368,7 @@ function sortArticleCollection() {
   var outputRange = sheet.getRange(2, 1, sortedData.length, lastCol);
   outputRange.setValues(sortedData);
 
-  // Set consistent formatting on ALL data rows — white background, black text, normal weight
+  // Set consistent formatting on ALL data rows
   outputRange.setBackground('#FFFFFF');
   outputRange.setFontColor('#000000');
   outputRange.setFontWeight('normal');
@@ -15377,6 +15377,22 @@ function sortArticleCollection() {
   for (var r = 0; r < sortedFormulas.length; r++) {
     if (sortedFormulas[r][2] && sortedFormulas[r][2] !== '') {
       sheet.getRange(r + 2, 3).setFormula(sortedFormulas[r][2]);
+    }
+  }
+
+  // Set URL columns to hyperlink blue (C=Title, D=Article URL, E=Thumbnail URL)
+  var numRows = sortedData.length;
+  sheet.getRange(2, 3, numRows, 1).setFontColor('#1155cc'); // Title hyperlinks
+  sheet.getRange(2, 4, numRows, 1).setFontColor('#1155cc'); // Article URLs
+  sheet.getRange(2, 5, numRows, 1).setFontColor('#1155cc'); // Thumbnail URLs
+
+  // Set status colors in column F: green for Available, red for Used
+  for (var r = 0; r < sortedData.length; r++) {
+    var statusCell = sheet.getRange(r + 2, 6);
+    if (sortedData[r][5] === 'Available') {
+      statusCell.setFontColor('#0b5e3f'); // dark green
+    } else if (sortedData[r][5] === 'Used') {
+      statusCell.setFontColor('#8B0000'); // dark red
     }
   }
 
