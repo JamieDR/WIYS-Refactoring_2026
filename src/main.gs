@@ -1342,10 +1342,20 @@ function generatePreview(title, intro, apiKey) {
       muteHttpExceptions: true
     });
 
-    var result = JSON.parse(response.getContentText());
+    var responseCode = response.getResponseCode();
+    var responseText = response.getContentText();
+    Logger.log('Preview API response code: ' + responseCode);
+
+    if (responseCode !== 200) {
+      Logger.log('Preview API error: ' + responseText);
+      return 'Error: API returned ' + responseCode;
+    }
+
+    var result = JSON.parse(responseText);
     if (result.content && result.content[0]) {
       return result.content[0].text.trim().replace(/^["']|["']$/g, '');
     }
+    Logger.log('Preview API unexpected response: ' + responseText);
     return '';
   } catch (e) {
     Logger.log('Preview generation error: ' + e.message);
