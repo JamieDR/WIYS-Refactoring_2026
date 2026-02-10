@@ -15337,11 +15337,6 @@ function sortArticleCollection() {
   var data = dataRange.getValues();
   var formulas = dataRange.getFormulas();
 
-  // Read formatting so it moves with the data when sorted
-  var backgrounds = dataRange.getBackgrounds();
-  var fontColors = dataRange.getFontColors();
-  var fontWeights = dataRange.getFontWeights();
-
   // Migrate old values: "Yes" → "Used", "No" → "Available"
   for (var i = 0; i < data.length; i++) {
     var statusVal = data[i][5]; // Column F
@@ -15350,18 +15345,12 @@ function sortArticleCollection() {
     else if (!statusVal || statusVal.toString().trim() === '') data[i][5] = 'Available';
   }
 
-  // Split into Available and Used arrays (preserving row index for formulas + formatting)
+  // Split into Available and Used arrays
   var available = [];
   var used = [];
 
   for (var i = 0; i < data.length; i++) {
-    var item = {
-      data: data[i],
-      formulas: formulas[i],
-      backgrounds: backgrounds[i],
-      fontColors: fontColors[i],
-      fontWeights: fontWeights[i]
-    };
+    var item = { data: data[i], formulas: formulas[i] };
     if (data[i][5] === 'Used') {
       used.push(item);
     } else {
@@ -15375,15 +15364,14 @@ function sortArticleCollection() {
   // Write sorted data back to sheet
   var sortedData = sorted.map(function(item) { return item.data; });
   var sortedFormulas = sorted.map(function(item) { return item.formulas; });
-  var sortedBgs = sorted.map(function(item) { return item.backgrounds; });
-  var sortedFontColors = sorted.map(function(item) { return item.fontColors; });
-  var sortedFontWeights = sorted.map(function(item) { return item.fontWeights; });
 
   var outputRange = sheet.getRange(2, 1, sortedData.length, lastCol);
   outputRange.setValues(sortedData);
-  outputRange.setBackgrounds(sortedBgs);
-  outputRange.setFontColors(sortedFontColors);
-  outputRange.setFontWeights(sortedFontWeights);
+
+  // Set consistent formatting on ALL data rows — white background, black text, normal weight
+  outputRange.setBackground('#FFFFFF');
+  outputRange.setFontColor('#000000');
+  outputRange.setFontWeight('normal');
 
   // Restore hyperlink formulas in column C (Title)
   for (var r = 0; r < sortedFormulas.length; r++) {
