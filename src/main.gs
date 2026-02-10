@@ -14825,6 +14825,12 @@ function fetchArticlesForDateRange(username, appPassword, startDate, endDate) {
   var perPage = 100;
   var hasMore = true;
 
+  // Get Slideshow feed_type ID to filter only slideshow articles
+  var slideshowId = getCachedFeedTypeId('Slideshow');
+  if (!slideshowId) {
+    Logger.log('Warning: Could not find Slideshow feed_type ID. Fetching all articles.');
+  }
+
   while (hasMore) {
     var queryParams = [
       'per_page=' + perPage,
@@ -14836,6 +14842,11 @@ function fetchArticlesForDateRange(username, appPassword, startDate, endDate) {
       'orderby=date',
       'order=desc'
     ];
+
+    // Only fetch slideshow articles
+    if (slideshowId) {
+      queryParams.push('feed_type=' + slideshowId);
+    }
 
     var queryUrl = CONFIG.ENDPOINTS.WP_POSTS + '?' + queryParams.join('&');
 
@@ -15136,6 +15147,12 @@ function updateArticleCollection() {
   var sevenDaysAgo = new Date();
   sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
 
+  // Get Slideshow feed_type ID to filter only slideshow articles
+  var slideshowId = getCachedFeedTypeId('Slideshow');
+  if (!slideshowId) {
+    Logger.log('Warning: Could not find Slideshow feed_type ID. Fetching all articles.');
+  }
+
   var articles = [];
   var page = 1;
   var perPage = 50;
@@ -15151,6 +15168,11 @@ function updateArticleCollection() {
       'orderby=date',
       'order=desc'
     ];
+
+    // Only fetch slideshow articles
+    if (slideshowId) {
+      queryParams.push('feed_type=' + slideshowId);
+    }
 
     var queryUrl = CONFIG.ENDPOINTS.WP_POSTS + '?' + queryParams.join('&');
 
@@ -15266,7 +15288,7 @@ function updateArticleCollection() {
         article.title,
         article.url,
         article.thumbnailUrl,
-        'No'
+        'Available'
       ]);
     }
 
@@ -15309,10 +15331,11 @@ function sortArticleCollection() {
   var lastRow = sheet.getLastRow();
   if (lastRow < 2) return; // Nothing to sort
 
-  // Read all data (columns A through G, to preserve any Intro column)
+  // Read all data (columns A through last column)
   var lastCol = sheet.getLastColumn();
-  var data = sheet.getRange(2, 1, lastRow - 1, lastCol).getValues();
-  var formulas = sheet.getRange(2, 1, lastRow - 1, lastCol).getFormulas();
+  var dataRange = sheet.getRange(2, 1, lastRow - 1, lastCol);
+  var data = dataRange.getValues();
+  var formulas = dataRange.getFormulas();
 
   // Migrate old values: "Yes" → "Used", "No" → "Available"
   for (var i = 0; i < data.length; i++) {
@@ -15349,6 +15372,16 @@ function sortArticleCollection() {
     if (sortedFormulas[r][2] && sortedFormulas[r][2] !== '') {
       sheet.getRange(r + 2, 3).setFormula(sortedFormulas[r][2]);
     }
+  }
+
+  // Apply row 2's cell formatting to all data rows
+  // Row 2 is the first data row (row 1 is headings with different formatting)
+  if (sortedData.length > 1) {
+    var templateRow = sheet.getRange(2, 1, 1, lastCol);
+    var targetRange = sheet.getRange(3, 1, sortedData.length - 1, lastCol);
+
+    // Copy formatting from row 2 to all other data rows
+    templateRow.copyTo(targetRange, SpreadsheetApp.CopyPasteType.PASTE_FORMAT, false);
   }
 
   SpreadsheetApp.flush();
