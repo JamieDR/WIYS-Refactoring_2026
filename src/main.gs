@@ -1099,7 +1099,7 @@ function createNewsletters() {
   var emailLastRow = emailSheet.getLastRow();
   if (emailLastRow < 2) return;
 
-  var emailData = emailSheet.getRange(2, 1, emailLastRow - 1, 15).getValues();
+  var emailData = emailSheet.getRange(2, 1, emailLastRow - 1, 19).getValues();
   var rowsToProcess = [];
 
   for (var i = 0; i < emailData.length; i++) {
@@ -1164,7 +1164,7 @@ function createNewsletters() {
   for (var r = 0; r < rowsToProcess.length; r++) {
     var emailRow = rowsToProcess[r];
 
-    emailSheet.getRange(emailRow, 15).setValue('Processing...');
+    emailSheet.getRange(emailRow, 19).setValue('Processing...');
     SpreadsheetApp.flush();
 
     // Find featured article (rotate category)
@@ -1184,7 +1184,7 @@ function createNewsletters() {
     }
 
     if (!featured) {
-      emailSheet.getRange(emailRow, 15).setValue('Error: No featured article available');
+      emailSheet.getRange(emailRow, 19).setValue('Error: No featured article available');
       continue;
     }
 
@@ -1224,7 +1224,7 @@ function createNewsletters() {
     }
 
     if (selectedArticles.length < 4) {
-      emailSheet.getRange(emailRow, 15).setValue('Error: Not enough articles');
+      emailSheet.getRange(emailRow, 19).setValue('Error: Not enough articles');
       continue;
     }
 
@@ -1246,30 +1246,34 @@ function createNewsletters() {
     // Column M: Article #4 URL
     // Column N: Article #4 Image
 
+    // Featured article: columns B(2), C(3), D(4), E(5)
     emailSheet.getRange(emailRow, 2).setValue(selectedArticles[0].title);
     emailSheet.getRange(emailRow, 3).setValue(selectedArticles[0].url);
     emailSheet.getRange(emailRow, 4).setValue(selectedArticles[0].thumbnail);
     emailSheet.getRange(emailRow, 5).setValue(preview);
 
-    emailSheet.getRange(emailRow, 6).setValue(selectedArticles[1].title);
-    emailSheet.getRange(emailRow, 7).setValue(selectedArticles[1].url);
-    emailSheet.getRange(emailRow, 8).setValue(selectedArticles[1].thumbnail);
+    // Article #2: columns G(7), H(8), I(9) — skip divider F(6)
+    emailSheet.getRange(emailRow, 7).setValue(selectedArticles[1].title);
+    emailSheet.getRange(emailRow, 8).setValue(selectedArticles[1].url);
+    emailSheet.getRange(emailRow, 9).setValue(selectedArticles[1].thumbnail);
 
-    emailSheet.getRange(emailRow, 9).setValue(selectedArticles[2].title);
-    emailSheet.getRange(emailRow, 10).setValue(selectedArticles[2].url);
-    emailSheet.getRange(emailRow, 11).setValue(selectedArticles[2].thumbnail);
+    // Article #3: columns K(11), L(12), M(13) — skip divider J(10)
+    emailSheet.getRange(emailRow, 11).setValue(selectedArticles[2].title);
+    emailSheet.getRange(emailRow, 12).setValue(selectedArticles[2].url);
+    emailSheet.getRange(emailRow, 13).setValue(selectedArticles[2].thumbnail);
 
-    emailSheet.getRange(emailRow, 12).setValue(selectedArticles[3].title);
-    emailSheet.getRange(emailRow, 13).setValue(selectedArticles[3].url);
-    emailSheet.getRange(emailRow, 14).setValue(selectedArticles[3].thumbnail);
+    // Article #4: columns O(15), P(16), Q(17) — skip divider N(14)
+    emailSheet.getRange(emailRow, 15).setValue(selectedArticles[3].title);
+    emailSheet.getRange(emailRow, 16).setValue(selectedArticles[3].url);
+    emailSheet.getRange(emailRow, 17).setValue(selectedArticles[3].thumbnail);
 
     // Mark articles as Used in collection
     for (var s = 0; s < selectedArticles.length; s++) {
       collectionSheet.getRange(selectedArticles[s].row, 6).setValue('Used');
     }
 
-    // Update status
-    emailSheet.getRange(emailRow, 15).setValue('Complete');
+    // Update status: column S(19)
+    emailSheet.getRange(emailRow, 19).setValue('Complete');
     SpreadsheetApp.flush();
   }
 
