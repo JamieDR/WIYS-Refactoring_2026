@@ -971,7 +971,7 @@ function createArticleCollectionSheet() {
 
   // Add data validation for Used? column (Yes/No dropdown)
   var usedValidation = SpreadsheetApp.newDataValidation()
-    .requireValueInList(['Yes', 'No'], true)
+    .requireValueInList(['Available', 'Used'], true)
     .build();
   sheet.getRange(2, 6, 500, 1).setDataValidation(usedValidation);
 
@@ -14970,7 +14970,7 @@ function appendArticlesToSheet(articles) {
       article.title,
       article.url,
       article.thumbnailUrl,
-      'No'
+      'Available'
     ]);
   }
 
@@ -15077,7 +15077,7 @@ function writeArticlesToCollectionSheet(sheet, articles) {
       article.title,
       article.url,
       article.thumbnailUrl,
-      'No' // Used? default to No
+      'Available'
     ]);
   }
 
@@ -15286,11 +15286,79 @@ function updateArticleCollection() {
   } else {
     Logger.log('No new articles to add');
   }
+
+  // Sort: Available on top, Used on bottom
+  sortArticleCollection();
+}
+
+
+/**
+ * Sorts the Article Collection: Available articles on top, Used articles on bottom.
+ * Within each group, preserves existing order.
+ * Also migrates any old "Yes"/"No" values to "Used"/"Available".
+ */
+function sortArticleCollection() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName(CONFIG.SHEETS.ARTICLE_COLLECTION);
+
+  if (!sheet) {
+    Logger.log('Article Collection sheet not found');
+    return;
+  }
+
+  var lastRow = sheet.getLastRow();
+  if (lastRow < 2) return; // Nothing to sort
+
+  // Read all data (columns A through G, to preserve any Intro column)
+  var lastCol = sheet.getLastColumn();
+  var data = sheet.getRange(2, 1, lastRow - 1, lastCol).getValues();
+  var formulas = sheet.getRange(2, 1, lastRow - 1, lastCol).getFormulas();
+
+  // Migrate old values: "Yes" → "Used", "No" → "Available"
+  for (var i = 0; i < data.length; i++) {
+    var statusVal = data[i][5]; // Column F
+    if (statusVal === 'Yes') data[i][5] = 'Used';
+    else if (statusVal === 'No') data[i][5] = 'Available';
+    else if (!statusVal || statusVal.toString().trim() === '') data[i][5] = 'Available';
+  }
+
+  // Split into Available and Used arrays (preserving row index for formulas)
+  var available = [];
+  var used = [];
+
+  for (var i = 0; i < data.length; i++) {
+    var item = { data: data[i], formulas: formulas[i], originalIndex: i };
+    if (data[i][5] === 'Used') {
+      used.push(item);
+    } else {
+      available.push(item);
+    }
+  }
+
+  // Combine: Available first, then Used
+  var sorted = available.concat(used);
+
+  // Write sorted data back to sheet
+  var sortedData = sorted.map(function(item) { return item.data; });
+  var sortedFormulas = sorted.map(function(item) { return item.formulas; });
+
+  sheet.getRange(2, 1, sortedData.length, lastCol).setValues(sortedData);
+
+  // Restore hyperlink formulas in column C (Title)
+  for (var r = 0; r < sortedFormulas.length; r++) {
+    if (sortedFormulas[r][2] && sortedFormulas[r][2] !== '') {
+      sheet.getRange(r + 2, 3).setFormula(sortedFormulas[r][2]);
+    }
+  }
+
+  SpreadsheetApp.flush();
+  Logger.log('Article Collection sorted: ' + available.length + ' Available on top, ' + used.length + ' Used on bottom');
 }
 
 
 /**
  * Sets up daily trigger for article collection updates
+ * Runs at 3 PM Phoenix time = 6 AM Manila time (next day)
  */
 function setupDailyCollectionUpdate() {
   // Remove existing triggers for this function
@@ -15301,15 +15369,15 @@ function setupDailyCollectionUpdate() {
     }
   }
 
-  // Create new daily trigger (runs at 6 AM)
+  // Create new daily trigger (3 PM Phoenix = 6 AM Manila)
   ScriptApp.newTrigger('updateArticleCollection')
     .timeBased()
     .everyDays(1)
-    .atHour(6)
+    .atHour(15)
     .create();
 
-  Logger.log('Daily collection update trigger created');
-  SpreadsheetApp.getUi().alert('Success', 'Daily auto-update scheduled for 6 AM.', SpreadsheetApp.getUi().ButtonSet.OK);
+  Logger.log('Daily collection update trigger created (3 PM Phoenix = 6 AM Manila)');
+  SpreadsheetApp.getUi().alert('Success', 'Daily auto-update scheduled for 6 AM Manila time.', SpreadsheetApp.getUi().ButtonSet.OK);
 }
 
 
@@ -15360,6 +15428,7 @@ function onOpen() {
     .addItem('⛔ Stop Collection', 'stopArticleCollection')
     .addSeparator()
     .addItem('🔄 Update Collection (Check New)', 'updateArticleCollection')
+    .addItem('🔃 Sort Collection (Available on Top)', 'sortArticleCollection')
     .addSeparator()
     .addItem('📋 Create Email Sheet', 'createEmailNewsletterSheet')
     .addItem('✉️ Create Newsletters', 'createNewsletters')
