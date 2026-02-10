@@ -15481,6 +15481,7 @@ function onOpen() {
     .addSeparator()
     .addItem('🔄 Update Collection (Check New)', 'updateArticleCollection')
     .addItem('🔃 Sort Collection (Available on Top)', 'sortArticleCollection')
+    .addItem('📝 Fetch Missing Intros', 'fetchIntrosForCollectionBulk')
     .addSeparator()
     .addItem('📋 Create Email Sheet', 'createEmailNewsletterSheet')
     .addItem('✉️ Create Newsletters', 'createNewsletters')
