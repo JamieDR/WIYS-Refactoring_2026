@@ -447,10 +447,19 @@ function findH1TitleIndex(body, articleTitle) {
  * Run this ONCE to add Claude API key to Script Properties
  */
 function addClaudeApiKey() {
-  var scriptProps = PropertiesService.getScriptProperties();
-  scriptProps.setProperty('CLAUDE_API_KEY', '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');
-  
-  SpreadsheetApp.getUi().alert('Done!', 'Claude API key added to Script Properties.', SpreadsheetApp.getUi().ButtonSet.OK);
+  var ui = SpreadsheetApp.getUi();
+  var response = ui.prompt('Claude API Key', 'Paste your Anthropic API key:', ui.ButtonSet.OK_CANCEL);
+
+  if (response.getSelectedButton() !== ui.Button.OK) return;
+
+  var apiKey = response.getResponseText().trim();
+  if (!apiKey) {
+    ui.alert('Error', 'No key entered.', ui.ButtonSet.OK);
+    return;
+  }
+
+  PropertiesService.getScriptProperties().setProperty('CLAUDE_API_KEY', apiKey);
+  ui.alert('Done!', 'Claude API key saved to Script Properties.', ui.ButtonSet.OK);
 }
 
 
