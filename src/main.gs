@@ -15304,6 +15304,26 @@ function updateArticleCollection() {
       }
     }
 
+    // Fetch intros for the new articles
+    for (var r = 0; r < categorizedArticles.length; r++) {
+      var article = categorizedArticles[r];
+      try {
+        var slug = extractSlugFromUrlIntro(article.url);
+        if (slug) {
+          var result = fetchIntroBySlugIntro(slug, username, appPassword);
+          if (result.success) {
+            var introText = '';
+            if (result.subheading) introText = result.subheading + '\n\n';
+            if (result.content) introText += result.content;
+            sheet.getRange(r + 2, 7).setValue(introText.trim());
+          }
+        }
+      } catch (e) {
+        Logger.log('Could not fetch intro for: ' + article.url + ' - ' + e.message);
+      }
+      Utilities.sleep(250);
+    }
+
     Logger.log('Added ' + articles.length + ' new articles to Collection');
   } else {
     Logger.log('No new articles to add');
