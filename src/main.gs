@@ -15337,6 +15337,11 @@ function sortArticleCollection() {
   var data = dataRange.getValues();
   var formulas = dataRange.getFormulas();
 
+  // Read formatting so it moves with the data when sorted
+  var backgrounds = dataRange.getBackgrounds();
+  var fontColors = dataRange.getFontColors();
+  var fontWeights = dataRange.getFontWeights();
+
   // Migrate old values: "Yes" → "Used", "No" → "Available"
   for (var i = 0; i < data.length; i++) {
     var statusVal = data[i][5]; // Column F
@@ -15345,12 +15350,18 @@ function sortArticleCollection() {
     else if (!statusVal || statusVal.toString().trim() === '') data[i][5] = 'Available';
   }
 
-  // Split into Available and Used arrays (preserving row index for formulas)
+  // Split into Available and Used arrays (preserving row index for formulas + formatting)
   var available = [];
   var used = [];
 
   for (var i = 0; i < data.length; i++) {
-    var item = { data: data[i], formulas: formulas[i], originalIndex: i };
+    var item = {
+      data: data[i],
+      formulas: formulas[i],
+      backgrounds: backgrounds[i],
+      fontColors: fontColors[i],
+      fontWeights: fontWeights[i]
+    };
     if (data[i][5] === 'Used') {
       used.push(item);
     } else {
@@ -15364,24 +15375,21 @@ function sortArticleCollection() {
   // Write sorted data back to sheet
   var sortedData = sorted.map(function(item) { return item.data; });
   var sortedFormulas = sorted.map(function(item) { return item.formulas; });
+  var sortedBgs = sorted.map(function(item) { return item.backgrounds; });
+  var sortedFontColors = sorted.map(function(item) { return item.fontColors; });
+  var sortedFontWeights = sorted.map(function(item) { return item.fontWeights; });
 
-  sheet.getRange(2, 1, sortedData.length, lastCol).setValues(sortedData);
+  var outputRange = sheet.getRange(2, 1, sortedData.length, lastCol);
+  outputRange.setValues(sortedData);
+  outputRange.setBackgrounds(sortedBgs);
+  outputRange.setFontColors(sortedFontColors);
+  outputRange.setFontWeights(sortedFontWeights);
 
   // Restore hyperlink formulas in column C (Title)
   for (var r = 0; r < sortedFormulas.length; r++) {
     if (sortedFormulas[r][2] && sortedFormulas[r][2] !== '') {
       sheet.getRange(r + 2, 3).setFormula(sortedFormulas[r][2]);
     }
-  }
-
-  // Apply row 2's cell formatting to all data rows
-  // Row 2 is the first data row (row 1 is headings with different formatting)
-  if (sortedData.length > 1) {
-    var templateRow = sheet.getRange(2, 1, 1, lastCol);
-    var targetRange = sheet.getRange(3, 1, sortedData.length - 1, lastCol);
-
-    // Copy formatting from row 2 to all other data rows
-    templateRow.copyTo(targetRange, SpreadsheetApp.CopyPasteType.PASTE_FORMAT, false);
   }
 
   SpreadsheetApp.flush();
