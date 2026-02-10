@@ -15385,6 +15385,12 @@ function sortArticleCollection() {
   sheet.getRange(2, 4, numRows, 1).setFontColor('#1155cc'); // Article URLs
   sheet.getRange(2, 5, numRows, 1).setFontColor('#1155cc'); // Thumbnail URLs
 
+  // Re-apply dropdown validation on column F (setValues wipes it out)
+  var statusValidation = SpreadsheetApp.newDataValidation()
+    .requireValueInList(['Available', 'Used'], true)
+    .build();
+  sheet.getRange(2, 6, numRows, 1).setDataValidation(statusValidation);
+
   // Set status colors in column F: green background for Available, red background for Used
   for (var r = 0; r < sortedData.length; r++) {
     var statusCell = sheet.getRange(r + 2, 6);
