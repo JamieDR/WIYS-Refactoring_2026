@@ -1059,6 +1059,11 @@ function createEmailNewsletterSheet() {
 
   // Clip text on all data rows so URLs don't blow up row heights
   sheet.getRange(2, 1, 100, headers.length).setWrapStrategy(SpreadsheetApp.WrapStrategy.CLIP);
+  // But wrap title columns so article names are readable
+  sheet.getRange(2, 2, 100, 1).setWrapStrategy(SpreadsheetApp.WrapStrategy.WRAP);  // Featured title
+  sheet.getRange(2, 7, 100, 1).setWrapStrategy(SpreadsheetApp.WrapStrategy.WRAP);  // Article #2 title
+  sheet.getRange(2, 11, 100, 1).setWrapStrategy(SpreadsheetApp.WrapStrategy.WRAP); // Article #3 title
+  sheet.getRange(2, 15, 100, 1).setWrapStrategy(SpreadsheetApp.WrapStrategy.WRAP); // Article #4 title
 
   // Freeze header row
   sheet.setFrozenRows(1);
@@ -1272,15 +1277,22 @@ function createNewsletters() {
 
     // Mark articles as Used in collection
     for (var s = 0; s < selectedArticles.length; s++) {
-      collectionSheet.getRange(selectedArticles[s].row, 6).setValue('Used');
+      var usedCell = collectionSheet.getRange(selectedArticles[s].row, 6);
+      usedCell.setValue('Used');
+      usedCell.setBackground('#8B0000');
+      usedCell.setFontColor('#FFFFFF');
     }
 
     // Update status: column S(19)
     emailSheet.getRange(emailRow, 19).setValue('Complete');
 
-    // Set row height and clip text so URLs don't blow up the row
+    // Set row height, clip URLs, but wrap title columns
     emailSheet.setRowHeight(emailRow, 40);
     emailSheet.getRange(emailRow, 1, 1, 19).setWrapStrategy(SpreadsheetApp.WrapStrategy.CLIP);
+    emailSheet.getRange(emailRow, 2).setWrapStrategy(SpreadsheetApp.WrapStrategy.WRAP);  // Featured title
+    emailSheet.getRange(emailRow, 7).setWrapStrategy(SpreadsheetApp.WrapStrategy.WRAP);  // Article #2 title
+    emailSheet.getRange(emailRow, 11).setWrapStrategy(SpreadsheetApp.WrapStrategy.WRAP); // Article #3 title
+    emailSheet.getRange(emailRow, 15).setWrapStrategy(SpreadsheetApp.WrapStrategy.WRAP); // Article #4 title
     SpreadsheetApp.flush();
   }
 
@@ -1319,7 +1331,7 @@ function generatePreview(title, intro, apiKey) {
         'anthropic-version': '2023-06-01'
       },
       payload: JSON.stringify({
-        model: 'claude-3-haiku-20240307',
+        model: 'claude-opus-4-6',
         max_tokens: 100,
         messages: [{ role: 'user', content: prompt }]
       }),
