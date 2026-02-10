@@ -661,10 +661,14 @@ function fetchIntroBySlugIntro(slug, username, appPassword) {
     var h3Match = blockContent.match(/<h3[^>]*>([\s\S]*?)<\/h3>/);
     if (h3Match) result.subheading = h3Match[1].replace(/&#8217;/g, "'").replace(/&#8220;/g, '"').replace(/&#8221;/g, '"').replace(/&amp;/g, '&').trim();
 
-    var pMatch = blockContent.match(/<p[^>]*>([\s\S]*?)<\/p>/);
-    if (pMatch) {
-      var pContent = pMatch[1].replace(/<[^>]+>/g, '').replace(/&#8217;/g, "'").replace(/&#8220;/g, '"').replace(/&#8221;/g, '"').replace(/&amp;/g, '&').replace(/\s+/g, ' ').trim();
-      result.content = pContent;
+    var pMatches = blockContent.match(/<p[^>]*>[\s\S]*?<\/p>/g);
+    if (pMatches && pMatches.length > 0) {
+      var allParagraphs = [];
+      for (var p = 0; p < pMatches.length; p++) {
+        var pText = pMatches[p].replace(/<[^>]+>/g, '').replace(/&#8217;/g, "'").replace(/&#8216;/g, "'").replace(/&#8220;/g, '"').replace(/&#8221;/g, '"').replace(/&#038;/g, '&').replace(/&amp;/g, '&').replace(/\s+/g, ' ').trim();
+        if (pText) allParagraphs.push(pText);
+      }
+      result.content = allParagraphs.join('\n\n');
     }
 
     if (!result.subheading && !result.content) return { success: false, error: 'No intro found' };
