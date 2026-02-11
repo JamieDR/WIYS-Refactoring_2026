@@ -11150,21 +11150,29 @@ function onOpen() {
   var currentLock = isUploaderSheetLocked();
   var lockStatus = currentLock ? ' (🔒 LOCKED)' : '';
   
+  // Create menu for Email Newsletter
+  ui.createMenu('      **Newsletter')
+    .addItem('🔄 Update Collection (Check New)', 'updateArticleCollection')
+    .addItem('🔃 Sort Collection (Available on Top)', 'sortArticleCollection')
+    .addSeparator()
+    .addItem('✉️ Create Newsletters', 'createNewsletters')
+    .addToUi();
+
    ui.createMenu('      **Splitter')
-    .addItem('Split Input', 'splitter')
+    .addItem('✂️ Split Input', 'splitter')
     .addToUi();
 
   ui.createMenu('      **Drafting')
-    .addItem('Transfer to Enhanced Drafter', 'transferToEnhancedDrafter')
-    .addItem('Transfer Drafts to Article Tracker', 'transferDraftsToArticleTracker')
+    .addItem('📋 Transfer to Enhanced Drafter', 'transferToEnhancedDrafter')
+    .addItem('📊 Transfer Drafts to Article Tracker', 'transferDraftsToArticleTracker')
     .addSeparator()
-    .addItem('Batch Create GDocs', 'batchCreateGDocs')
+    .addItem('📄 Batch Create GDocs', 'batchCreateGDocs')
     .addSeparator()
-    .addItem('Delete Done', 'deleteDoneRows')
+    .addItem('🗑️ Delete Done', 'deleteDoneRows')
     .addToUi();
 
   // Create menu for WP Editing Tracker
-  ui.createMenu('      *Editing')
+  ui.createMenu('      **Editing')
     .addSeparator()
     .addItem('🫳🏻 Get Intro & Subheadings', 'getIntroSubheading')
     .addSeparator()
@@ -11178,19 +11186,11 @@ function onOpen() {
     .addItem('🎉 Record Published/Scheduled', 'recordAllReady')
     .addToUi();
 
-  // Create menu for Email Newsletter
-  ui.createMenu('      *Newsletter')
-    .addItem('🔄 Update Collection (Check New)', 'updateArticleCollection')
-    .addItem('🔃 Sort Collection (Available on Top)', 'sortArticleCollection')
-    .addSeparator()
-    .addItem('✉️ Create Newsletters', 'createNewsletters')
-    .addToUi();
 
 
 
 
-
-  ui.createMenu('      *Prep for Upload' + lockStatus)
+  ui.createMenu('      **Prep for Upload' + lockStatus)
     .addItem('🗄️ Create New Rows for Articles', 'batchProcessUploaderTransfers')
     .addItem('📚 Paste All Content', 'batchPasteArticleSections')
     .addItem('📸 Get All Image Metadata', 'batchGetImageMetadata')
