@@ -15943,6 +15943,245 @@ function splitClaudeUrls(sheet) {
   return results.length;
 }
 
+
+/**
+ * ============================================================================
+ * CREATE GDOC FROM RAW INPUT
+ * ============================================================================
+ * Triggered when column L is set to "Create GDoc" on Enhanced Drafter.
+ * Parses raw input from column E, creates a formatted Google Doc,
+ * and updates the row with parsed data + doc URL.
+ *
+ * Columns: E=Raw Input, G=State, H=Title, I=Body, J=Tags, K=Doc URL, L=Status
+ */
+
+function createGDocFromRawInput(sheet, row) {
+  var rawInput = sheet.getRange(row, 5).getValue();
+  if (!rawInput) {
+    sheet.getRange(row, 12).setValue('Error: No raw input in column E');
+    return;
+  }
+
+  sheet.getRange(row, 12).setValue('Creating GDoc...');
+  SpreadsheetApp.flush();
+
+  try {
+    var parsed = parseEnhancedDrafterInput(rawInput);
+
+    if (!parsed.title) {
+      sheet.getRange(row, 12).setValue('Error: No title (H1) found in raw input');
+      return;
+    }
+
+    var docUrl = createFormattedGDoc(parsed.title, parsed.body);
+
+    if (!docUrl) {
+      sheet.getRange(row, 12).setValue('Error: Failed to create GDoc');
+      return;
+    }
+
+    // Update the row with parsed data
+    sheet.getRange(row, 7).setValue(parsed.state);     // G: State
+    sheet.getRange(row, 8).setValue(parsed.title);      // H: Title
+    sheet.getRange(row, 9).setValue(parsed.body);       // I: Body
+    sheet.getRange(row, 10).setValue(parsed.tags);      // J: Tags
+    sheet.getRange(row, 11).setValue(docUrl);            // K: Doc URL
+    sheet.getRange(row, 12).setValue('Ready for Transfer'); // L: Status
+
+    Logger.log('Created GDoc for row ' + row + ': ' + parsed.title);
+
+  } catch (error) {
+    Logger.log('Error creating GDoc for row ' + row + ': ' + error.message);
+    sheet.getRange(row, 12).setValue('Error: ' + error.message);
+  }
+}
+
+
+/**
+ * Parse raw input text into title, body, state, and tags.
+ * Recognizes H1 (# or (H1 --)), H2 (## or (H2 --)), STATE:, TAGS: markers.
+ */
+function parseEnhancedDrafterInput(rawInput) {
+  var result = { title: '', intro: '', body: '', state: '', tags: '' };
+  var lines = rawInput.trim().split('\n');
+
+  // --- Find title (H1) ---
+  var titleIdx = -1;
+  for (var i = 0; i < lines.length; i++) {
+    if (isH1Line(lines[i])) {
+      result.title = cleanHeadingMarkers(lines[i]);
+      titleIdx = i;
+      break;
+    }
+  }
+  // Fallback: first non-empty line
+  if (titleIdx === -1) {
+    for (var i = 0; i < lines.length; i++) {
+      if (lines[i].trim()) {
+        result.title = lines[i].trim();
+        titleIdx = i;
+        break;
+      }
+    }
+  }
+
+  // --- Find STATE: and TAGS: ---
+  var stateIdx = -1;
+  var tagsIdx = -1;
+  for (var i = 0; i < lines.length; i++) {
+    var clean = lines[i].trim().replace(/\*+/g, '');
+    if (clean.indexOf('STATE:') === 0) {
+      result.state = clean.substring(6).trim();
+      stateIdx = i;
+    } else if (clean.indexOf('TAGS:') === 0) {
+      result.tags = clean.substring(5).trim();
+      tagsIdx = i;
+    }
+  }
+
+  // --- Extract body (everything from title to STATE/TAGS) ---
+  var bodyEnd = lines.length;
+  if (stateIdx > -1) bodyEnd = Math.min(bodyEnd, stateIdx);
+  if (tagsIdx > -1) bodyEnd = Math.min(bodyEnd, tagsIdx);
+
+  if (titleIdx > -1) {
+    var bodyLines = lines.slice(titleIdx, bodyEnd);
+    result.body = bodyLines.join('\n').trim();
+
+    // Extract intro (first H2 section content)
+    var inIntro = false;
+    var introLines = [];
+    for (var i = 1; i < bodyLines.length; i++) {
+      if (isH2Line(bodyLines[i])) {
+        if (inIntro) break;
+        inIntro = true;
+        continue;
+      } else if (inIntro && bodyLines[i].trim()) {
+        introLines.push(bodyLines[i].trim());
+      }
+    }
+    result.intro = introLines.join(' ').trim();
+  }
+
+  return result;
+}
+
+
+/** Check if a line is an H1 heading */
+function isH1Line(line) {
+  line = line.trim();
+  if (/\(H1\s*--\)/.test(line)) return true;
+  if (line.indexOf('# ') === 0 || (line.indexOf('#') === 0 && line.indexOf('##') !== 0)) return true;
+  return false;
+}
+
+/** Check if a line is an H2 heading */
+function isH2Line(line) {
+  line = line.trim();
+  if (/\(H2\s*--\)/.test(line)) return true;
+  if (line.indexOf('## ') === 0 || line.indexOf('##') === 0) return true;
+  return false;
+}
+
+/** Strip heading markers (H1 --), ##, *, etc. and return clean text */
+function cleanHeadingMarkers(text) {
+  text = text.trim();
+  text = text.replace(/\(H1\s*--\)/g, '');
+  text = text.replace(/\(H2\s*--\)/g, '');
+  text = text.replace(/^#{1,2}\s*/, '');
+  text = text.replace(/\*+/g, '');
+  text = text.replace(/\s+/g, ' ').trim();
+  return text;
+}
+
+
+/**
+ * Create a formatted Google Doc and move it to the parent folder.
+ * Returns the doc URL, or null on failure.
+ */
+function createFormattedGDoc(title, body) {
+  try {
+    // Create the document
+    var doc = DocumentApp.create(title);
+    var docId = doc.getId();
+    var docBody = doc.getBody();
+
+    // Clear default empty paragraph
+    docBody.clear();
+
+    // Parse body into sections and build the document
+    var lines = body.split('\n');
+
+    for (var i = 0; i < lines.length; i++) {
+      var line = lines[i];
+
+      // Skip STATE/TAGS lines
+      var cleanCheck = line.trim().replace(/\*+/g, '');
+      if (cleanCheck.indexOf('STATE:') === 0 || cleanCheck.indexOf('TAGS:') === 0) continue;
+      // Skip ### lines
+      if (line.trim().indexOf('### ') === 0) continue;
+
+      if (isH1Line(line)) {
+        var cleanTitle = cleanHeadingMarkers(line);
+        var para = docBody.appendParagraph(cleanTitle);
+        para.setHeading(DocumentApp.ParagraphHeading.HEADING1);
+        para.setAttributes({
+          'FONT_FAMILY': 'Arial',
+          'FONT_SIZE': 20,
+          'BOLD': true
+        });
+
+      } else if (isH2Line(line)) {
+        var cleanH2 = cleanHeadingMarkers(line);
+        var para = docBody.appendParagraph('## ' + cleanH2);
+        para.setHeading(DocumentApp.ParagraphHeading.HEADING2);
+        para.setAttributes({
+          'FONT_FAMILY': 'Arial',
+          'FONT_SIZE': 16,
+          'BOLD': true
+        });
+
+      } else if (line.trim()) {
+        var para = docBody.appendParagraph(line.trim());
+        para.setHeading(DocumentApp.ParagraphHeading.NORMAL);
+        para.setAttributes({
+          'FONT_FAMILY': 'Arial',
+          'FONT_SIZE': 11,
+          'BOLD': false,
+          'ITALIC': false
+        });
+      }
+    }
+
+    // Add footer
+    docBody.appendParagraph('');
+    var disclaimer = docBody.appendParagraph('This article was created with AI assistance and human editing.');
+    disclaimer.setAttributes({ 'FONT_FAMILY': 'Arial', 'FONT_SIZE': 11, 'ITALIC': true, 'BOLD': false });
+
+    var readMore = docBody.appendParagraph('Read more from this brand:');
+    readMore.setAttributes({ 'FONT_FAMILY': 'Arial', 'FONT_SIZE': 11, 'BOLD': true, 'ITALIC': false });
+
+    var links = docBody.appendParagraph('- Link #1\n- Link #2\n- Link #3');
+    links.setAttributes({ 'FONT_FAMILY': 'Arial', 'FONT_SIZE': 11, 'BOLD': false, 'ITALIC': false });
+
+    // Save the document
+    doc.saveAndClose();
+
+    // Move to parent folder
+    var file = DriveApp.getFileById(docId);
+    var parentFolder = DriveApp.getFolderById(CONFIG.GOOGLE.PARENT_FOLDER_ID);
+    parentFolder.addFile(file);
+    DriveApp.getRootFolder().removeFile(file);
+
+    return 'https://docs.google.com/document/d/' + docId + '/edit';
+
+  } catch (error) {
+    Logger.log('Error creating Google Doc: ' + error.message);
+    return null;
+  }
+}
+
+
 function onEdit(e) {
   Logger.log('onEdit triggered!');
   if (!e || !e.range) return;
@@ -16002,6 +16241,13 @@ function onEdit(e) {
             sheet.getRange(currentRow, 12).setValue("");
           }
         }
+      }
+    }
+    // Enhanced Drafter - Column L set to "Create GDoc" (row 5+)
+    else if (sheet.getName() === 'Enhanced Drafter' && column === 12 && row >= 5) {
+      if (e.value === 'Create GDoc') {
+        Logger.log('Creating GDoc for Enhanced Drafter row ' + row);
+        createGDocFromRawInput(sheet, row);
       }
     }
     else {
