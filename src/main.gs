@@ -11156,6 +11156,8 @@ function onOpen() {
 
   ui.createMenu('      **Drafting')
     .addItem('Transfer to Enhanced Drafter', 'transferToEnhancedDrafter')
+    .addSeparator()
+    .addItem('Delete Done', 'deleteDoneRows')
     .addToUi();
 
   // Create menu for WP Editing Tracker
@@ -11484,6 +11486,63 @@ function transferToEnhancedDrafter() {
   }
 
   ui.alert('Done!', rowsToTransfer.length + ' row(s) transferred to Enhanced Drafter.', ui.ButtonSet.OK);
+}
+
+
+/**
+ * ============================================================================
+ * DELETE DONE ROWS
+ * ============================================================================
+ * Asks which sheet to clean, then finds rows with Done/DONE status.
+ * Clears all cell values from column A up to and including the Done cell.
+ * Resets formatting to default (white background).
+ */
+function deleteDoneRows() {
+  var ui = SpreadsheetApp.getUi();
+  var response = ui.prompt('Delete Done', 'Enter the sheet name to clean:', ui.ButtonSet.OK_CANCEL);
+
+  if (response.getSelectedButton() !== ui.Button.OK) return;
+
+  var sheetName = response.getResponseText().trim();
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName(sheetName);
+
+  if (!sheet) {
+    ui.alert('Error', 'Sheet "' + sheetName + '" not found.', ui.ButtonSet.OK);
+    return;
+  }
+
+  var lastRow = sheet.getLastRow();
+  var lastCol = sheet.getLastColumn();
+  if (lastRow < 2 || lastCol < 1) {
+    ui.alert('Nothing to clean', 'Sheet is empty.', ui.ButtonSet.OK);
+    return;
+  }
+
+  var data = sheet.getRange(2, 1, lastRow - 1, lastCol).getValues();
+  var cleared = 0;
+
+  for (var i = data.length - 1; i >= 0; i--) {
+    var row = data[i];
+    for (var j = 0; j < row.length; j++) {
+      var val = row[j].toString().trim();
+      if (val === 'Done' || val === 'DONE') {
+        // Clear from column A to this column, reset background
+        var range = sheet.getRange(i + 2, 1, 1, j + 1);
+        range.clearContent();
+        range.setBackground(null);
+        range.setFontLine(null);
+        cleared++;
+        break; // Only process first Done found in this row
+      }
+    }
+  }
+
+  if (cleared === 0) {
+    ui.alert('Nothing found', 'No rows with Done/DONE status in "' + sheetName + '".', ui.ButtonSet.OK);
+  } else {
+    ui.alert('Done!', cleared + ' row(s) cleared in "' + sheetName + '".', ui.ButtonSet.OK);
+  }
 }
 
 
