@@ -11803,6 +11803,7 @@ var BATCH_CONFIG = {
   MAX_RUNTIME_MS: 270000,                // 4.5 minutes (of 6 min limit)
   OPERATION_DELAY_MS: 2000,              // 2 seconds between Sheets operations
   FOLDER_DELAY_MS: 3000,                 // 3 seconds between Drive folder operations
+  WORKSPACE_DELAY_MS: 10000,             // 10 seconds cooldown between workspaces
   ARTICLE_DELAY_MS: 2000,               // 2 seconds between article processing (Paste Content / Delete)
   RETRY_DELAYS_MS: [5000, 10000, 20000], // Exponential backoff: 5s, 10s, 20s
   MAX_RETRIES: 3,
@@ -12548,7 +12549,8 @@ function processCreateNewRowsChunk(state) {
       saveBatchState('CREATE_NEW_ROWS', state);
 
       if (state.currentWorkspaceIndex < state.workspaces.length) {
-        Utilities.sleep(BATCH_CONFIG.OPERATION_DELAY_MS);
+        Logger.log('Cooldown before next workspace (' + (BATCH_CONFIG.WORKSPACE_DELAY_MS / 1000) + 's)...');
+        Utilities.sleep(BATCH_CONFIG.WORKSPACE_DELAY_MS);
       }
     }
   }
