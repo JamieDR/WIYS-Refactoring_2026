@@ -11508,62 +11508,76 @@ function deleteDoneRows() {
   ];
 
   var response = ui.prompt('Delete Done',
-    'Which sheet?\n\n' +
+    'Which sheet(s)?\n\n' +
     '1. WP Editing Tracker\n' +
     '2. Article Status Tracker\n' +
     '3. Topic List\n' +
     '4. Email Newsletter\n' +
     '5. Enhanced Drafter\n\n' +
-    'Enter a number (1-5):',
+    'Enter numbers (e.g. 1,3,5) or "all":',
     ui.ButtonSet.OK_CANCEL);
 
   if (response.getSelectedButton() !== ui.Button.OK) return;
 
-  var choice = parseInt(response.getResponseText().trim());
-  if (isNaN(choice) || choice < 1 || choice > sheets.length) {
-    ui.alert('Error', 'Enter a number between 1 and ' + sheets.length + '.', ui.ButtonSet.OK);
-    return;
-  }
-
-  var sheetName = sheets[choice - 1];
+  var input = response.getResponseText().trim().toLowerCase();
   var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var sheet = ss.getSheetByName(sheetName);
+  var selectedSheets = [];
 
-  if (!sheet) {
-    ui.alert('Error', 'Sheet "' + sheetName + '" not found.', ui.ButtonSet.OK);
-    return;
-  }
-
-  var lastRow = sheet.getLastRow();
-  var lastCol = sheet.getLastColumn();
-  if (lastRow < 2 || lastCol < 1) {
-    ui.alert('Nothing to clean', 'Sheet is empty.', ui.ButtonSet.OK);
-    return;
-  }
-
-  var data = sheet.getRange(2, 1, lastRow - 1, lastCol).getValues();
-  var cleared = 0;
-
-  for (var i = data.length - 1; i >= 0; i--) {
-    var row = data[i];
-    for (var j = 0; j < row.length; j++) {
-      var val = row[j].toString().trim();
-      if (val === 'Done' || val === 'DONE') {
-        // Clear from column A to this column, reset background
-        var range = sheet.getRange(i + 2, 1, 1, j + 1);
-        range.clearContent();
-        range.setBackground(null);
-        range.setFontLine(null);
-        cleared++;
-        break; // Only process first Done found in this row
+  if (input === 'all') {
+    selectedSheets = sheets.slice();
+  } else {
+    var parts = input.split(',');
+    for (var p = 0; p < parts.length; p++) {
+      var num = parseInt(parts[p].trim());
+      if (num >= 1 && num <= sheets.length) {
+        selectedSheets.push(sheets[num - 1]);
       }
     }
   }
 
-  if (cleared === 0) {
-    ui.alert('Nothing found', 'No rows with Done/DONE status in "' + sheetName + '".', ui.ButtonSet.OK);
+  if (selectedSheets.length === 0) {
+    ui.alert('Error', 'No valid sheets selected.', ui.ButtonSet.OK);
+    return;
+  }
+
+  var results = [];
+
+  for (var s = 0; s < selectedSheets.length; s++) {
+    var sheetName = selectedSheets[s];
+    var sheet = ss.getSheetByName(sheetName);
+    if (!sheet) continue;
+
+    var lastRow = sheet.getLastRow();
+    var lastCol = sheet.getLastColumn();
+    if (lastRow < 2 || lastCol < 1) continue;
+
+    var data = sheet.getRange(2, 1, lastRow - 1, lastCol).getValues();
+    var cleared = 0;
+
+    for (var i = data.length - 1; i >= 0; i--) {
+      var row = data[i];
+      for (var j = 0; j < row.length; j++) {
+        var val = row[j].toString().trim();
+        if (val === 'Done' || val === 'DONE') {
+          var range = sheet.getRange(i + 2, 1, 1, j + 1);
+          range.clearContent();
+          range.setBackground(null);
+          range.setFontLine(null);
+          cleared++;
+          break;
+        }
+      }
+    }
+
+    if (cleared > 0) {
+      results.push(sheetName + ': ' + cleared + ' row(s)');
+    }
+  }
+
+  if (results.length === 0) {
+    ui.alert('Nothing found', 'No rows with Done/DONE status in selected sheets.', ui.ButtonSet.OK);
   } else {
-    ui.alert('Done!', cleared + ' row(s) cleared in "' + sheetName + '".', ui.ButtonSet.OK);
+    ui.alert('Done!', 'Cleared:\n\n' + results.join('\n'), ui.ButtonSet.OK);
   }
 }
 
