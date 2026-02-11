@@ -12924,12 +12924,83 @@ function finishBatchPasteContent(state) {
  * ============================================================================
  * DELETE SUCCESSFUL UPLOADS — Chunked batch processor
  * ============================================================================
- * Ports python/delete_successful_uploads.py to GAS.
- * Finds articles with "Successful WP Upload" status and deletes their rows.
- * Re-scans each chunk for fresh row numbers (deletion shifts everything).
- * Deletes bottom-to-top so row numbers above stay valid.
+ * Faithful port of python/delete_successful_uploads.py to GAS.
+ *
+ * Python flow (matched exactly):
+ * 1. Scan Uploader for "Successful WP Upload" articles
+ * 2. Delete bottom-to-top (so row shifts don't affect articles above)
+ * 3. Before each delete: verify status hasn't changed
+ * 4. Delay between deletions
+ *
+ * GAS additions: workspace picker, 4.5min chunking with auto-continue.
+ * Uses bulk column A+L reads for fast scanning (no cell-by-cell merge checks).
  * ============================================================================
  */
+
+/**
+ * Scan Uploader for articles with "Successful WP Upload" in column L.
+ * Reads columns A and L in bulk (2 API calls), finds articles in memory.
+ * Returns list of {title, row, rowsToDelete, workspace}.
+ */
+function scanUploaderForDeleteArticles(uploaderSheet, selectedWorkspaces) {
+  var lastRow = uploaderSheet.getLastRow();
+  var colA = uploaderSheet.getRange(1, 1, lastRow, 1).getValues();
+  var colL = uploaderSheet.getRange(1, 12, lastRow, 1).getValues();
+
+  var articles = [];
+
+  for (var w = 0; w < selectedWorkspaces.length; w++) {
+    var workspaceName = selectedWorkspaces[w];
+    var upperName = workspaceName.toUpperCase();
+    var inWorkspace = false;
+
+    for (var i = 0; i < colA.length; i++) {
+      var val = colA[i][0] ? colA[i][0].toString() : '';
+      if (!val) continue;
+
+      var upper = val.toUpperCase().trim();
+
+      if (!inWorkspace) {
+        if (upper.indexOf(upperName) !== -1 && upper.indexOf('END ROW') === -1) {
+          inWorkspace = true;
+        }
+        continue;
+      }
+
+      // Inside workspace — check for boundaries
+      if (upper.indexOf('END ROW') !== -1) break;
+      var isOther = false;
+      for (var ww = 0; ww < ALL_UPLOADER_WORKSPACES.length; ww++) {
+        if (upper === ALL_UPLOADER_WORKSPACES[ww].toUpperCase()) { isOther = true; break; }
+      }
+      if (isOther) break;
+
+      // Check if this article has "Successful WP Upload" status
+      var status = colL[i][0] ? colL[i][0].toString().trim() : '';
+      if (status !== 'Successful WP Upload') continue;
+
+      // Count how many rows this article spans (title + content rows below)
+      var rowCount = 1;
+      for (var j = i + 1; j < colA.length; j++) {
+        var nextVal = colA[j][0] ? colA[j][0].toString().trim() : '';
+        if (nextVal) break; // next title, header, or END ROW
+        rowCount++;
+      }
+
+      articles.push({
+        title: val.trim(),
+        row: i + 1,
+        rowsToDelete: rowCount,
+        workspace: workspaceName
+      });
+    }
+  }
+
+  Logger.log('Scanning Uploader for Successful WP Upload articles...');
+  Logger.log('Found ' + articles.length + ' articles to delete');
+  return articles;
+}
+
 
 function batchDeleteUploaded() {
   var operationType = 'Delete Successful Uploads';
@@ -12937,25 +13008,17 @@ function batchDeleteUploaded() {
   if (!checkUploaderLock(operationType)) return;
 
   try {
-    // Step 1: Select workspaces
     var selectedWorkspaces = selectWorkspaces('Delete Successful Uploads');
     if (!selectedWorkspaces) {
       unlockUploaderSheet(operationType);
       return;
     }
 
-    // Step 2: Scan Uploader for articles to delete
     var ss = SpreadsheetApp.getActiveSpreadsheet();
     var uploaderSheet = ss.getSheetByName(CONFIG.SHEETS.UPLOADER);
 
-    var allArticles = [];
-    for (var w = 0; w < selectedWorkspaces.length; w++) {
-      var workspace = findWorkspaceBoundaries(uploaderSheet, selectedWorkspaces[w]);
-      if (workspace) {
-        var articles = getArticlesInWorkspace(uploaderSheet, workspace, 'DELETE');
-        allArticles = allArticles.concat(articles);
-      }
-    }
+    // Fast scan: bulk read columns A + L
+    var allArticles = scanUploaderForDeleteArticles(uploaderSheet, selectedWorkspaces);
 
     if (allArticles.length === 0) {
       SpreadsheetApp.getUi().alert('No articles found with "Successful WP Upload" status in selected workspaces.');
@@ -12969,7 +13032,7 @@ function batchDeleteUploaded() {
       totalRows += allArticles[i].rowsToDelete;
     }
 
-    // Step 3: Show plan
+    // Show plan
     var planMessage = 'DELETE SUCCESSFUL UPLOADS\n\n';
     planMessage += 'Workspaces: ' + selectedWorkspaces.join(', ') + '\n';
     planMessage += 'Articles to delete: ' + allArticles.length + '\n';
@@ -12982,7 +13045,7 @@ function batchDeleteUploaded() {
       planMessage += '  ... and ' + (allArticles.length - 8) + ' more\n';
     }
 
-    planMessage += '\nWARNING: This cannot be undone!\nDeletes bottom-up for safety.\nAuto-continues if over 4.5 min.\nProceed?';
+    planMessage += '\nWARNING: This cannot be undone!\nDeletes bottom-up.\nAuto-continues if over 4.5 min.\nProceed?';
 
     var response = SpreadsheetApp.getUi().alert('Delete Uploads', planMessage, SpreadsheetApp.getUi().ButtonSet.YES_NO);
     if (response !== SpreadsheetApp.getUi().Button.YES) {
@@ -12990,7 +13053,6 @@ function batchDeleteUploaded() {
       return;
     }
 
-    // Step 4: Start chunked processing
     var state = {
       selectedWorkspaces: selectedWorkspaces,
       deleted: 0,
@@ -13010,8 +13072,8 @@ function batchDeleteUploaded() {
 
 /**
  * Process one chunk of Delete Successful Uploads.
- * Re-scans each chunk for fresh row numbers (deletions shift everything).
- * Deletes bottom-to-top so remaining articles above keep their row numbers.
+ * Re-scans each chunk via fast bulk read (fresh row numbers after deletions).
+ * Deletes bottom-to-top so row shifts don't affect articles above.
  */
 function processDeleteUploadedChunk(state) {
   var startTime = new Date().getTime();
@@ -13025,59 +13087,49 @@ function processDeleteUploadedChunk(state) {
              'Auto-Continue', 5);
   }
 
-  // Re-scan for articles to delete (fresh row numbers after previous deletions)
-  var allArticles = [];
-  for (var w = 0; w < state.selectedWorkspaces.length; w++) {
-    var workspace = findWorkspaceBoundaries(uploaderSheet, state.selectedWorkspaces[w]);
-    if (workspace) {
-      var articles = getArticlesInWorkspace(uploaderSheet, workspace, 'DELETE');
-      allArticles = allArticles.concat(articles);
-    }
-  }
+  // Fresh scan each chunk — fast bulk read of columns A + L
+  var allArticles = scanUploaderForDeleteArticles(uploaderSheet, state.selectedWorkspaces);
 
   if (allArticles.length === 0) {
     finishBatchDeleteUploaded(state);
     return;
   }
 
-  // Sort bottom-to-top (CRITICAL — deleting lower rows first preserves upper row numbers)
+  // Sort bottom-to-top (deleting lower rows first preserves upper row numbers)
   allArticles.sort(function(a, b) { return b.row - a.row; });
 
   for (var i = 0; i < allArticles.length; i++) {
-    // Check time before processing next article
     if (!hasTimeRemaining(startTime)) {
       saveBatchState('DELETE_UPLOADED', state);
       scheduleBatchContinuation('continueBatchDeleteUploaded');
-
       ss.toast('Pausing deletion. Will auto-continue in 1 minute. (Deleted: ' + state.deleted + ')',
                'Time Limit Reached', 10);
-      Logger.log('Delete chunk complete. Scheduling continuation.');
-      return; // Exit without unlocking
+      Logger.log('Delete chunk paused. Scheduling continuation.');
+      return;
     }
 
     var article = allArticles[i];
+    Logger.log('[' + (i + 1) + '/' + allArticles.length + '] Deleting: ' + article.title + ' (' + article.rowsToDelete + ' rows at row ' + article.row + ')');
 
     try {
       // Verify status hasn't changed since scan
       var currentStatus = uploaderSheet.getRange(article.row, 12).getValue();
-      if (currentStatus === 'Successful WP Upload') {
+      if (currentStatus && currentStatus.toString() === 'Successful WP Upload') {
         uploaderSheet.deleteRows(article.row, article.rowsToDelete);
         state.deleted++;
-        Logger.log('Deleted: ' + article.title + ' (' + article.rowsToDelete + ' rows)');
+        Logger.log('  Deleted');
       } else {
-        Logger.log('Skipped: ' + article.title + ' (status changed to: ' + currentStatus + ')');
+        Logger.log('  Skipped (status changed to: ' + currentStatus + ')');
       }
 
     } catch (error) {
       state.errors++;
       state.errorDetails.push(article.title + ': ' + error.message);
-      Logger.log('Error deleting ' + article.title + ': ' + error.message);
+      Logger.log('  Error: ' + error.message);
     }
 
-    // Save progress after each article
     saveBatchState('DELETE_UPLOADED', state);
 
-    // Delay between articles (skip on last one)
     if (i < allArticles.length - 1) {
       Utilities.sleep(BATCH_CONFIG.ARTICLE_DELAY_MS);
     }
@@ -13085,7 +13137,6 @@ function processDeleteUploadedChunk(state) {
     SpreadsheetApp.flush();
   }
 
-  // All articles in this chunk processed
   finishBatchDeleteUploaded(state);
 }
 
