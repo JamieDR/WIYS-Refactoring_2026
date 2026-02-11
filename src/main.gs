@@ -11513,23 +11513,25 @@ function deleteDoneRows() {
     '2. Article Status Tracker\n' +
     '3. Topic List\n' +
     '4. Email Newsletter\n' +
-    '5. Enhanced Drafter\n\n' +
-    'Enter numbers (e.g. 1,3,5) or "all":',
+    '5. Enhanced Drafter\n' +
+    '6. All\n\n' +
+    'Enter numbers (e.g. 135 or 1,3,5):',
     ui.ButtonSet.OK_CANCEL);
 
   if (response.getSelectedButton() !== ui.Button.OK) return;
 
-  var input = response.getResponseText().trim().toLowerCase();
+  var input = response.getResponseText().trim();
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var selectedSheets = [];
 
-  if (input === 'all') {
+  if (input === '6' || input.toLowerCase() === 'all') {
     selectedSheets = sheets.slice();
   } else {
-    var parts = input.split(',');
-    for (var p = 0; p < parts.length; p++) {
-      var num = parseInt(parts[p].trim());
-      if (num >= 1 && num <= sheets.length) {
+    // Support both "135" and "1,3,5" formats
+    var digits = input.replace(/[^1-5]/g, '');
+    for (var p = 0; p < digits.length; p++) {
+      var num = parseInt(digits[p]);
+      if (num >= 1 && num <= sheets.length && selectedSheets.indexOf(sheets[num - 1]) === -1) {
         selectedSheets.push(sheets[num - 1]);
       }
     }
