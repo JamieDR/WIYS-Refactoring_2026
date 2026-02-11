@@ -11499,11 +11499,33 @@ function transferToEnhancedDrafter() {
  */
 function deleteDoneRows() {
   var ui = SpreadsheetApp.getUi();
-  var response = ui.prompt('Delete Done', 'Enter the sheet name to clean:', ui.ButtonSet.OK_CANCEL);
+  var sheets = [
+    'WP Editing Tracker',
+    'Article Status Tracker',
+    'Topic List',
+    'Email Newsletter',
+    'Enhanced Drafter'
+  ];
+
+  var response = ui.prompt('Delete Done',
+    'Which sheet?\n\n' +
+    '1. WP Editing Tracker\n' +
+    '2. Article Status Tracker\n' +
+    '3. Topic List\n' +
+    '4. Email Newsletter\n' +
+    '5. Enhanced Drafter\n\n' +
+    'Enter a number (1-5):',
+    ui.ButtonSet.OK_CANCEL);
 
   if (response.getSelectedButton() !== ui.Button.OK) return;
 
-  var sheetName = response.getResponseText().trim();
+  var choice = parseInt(response.getResponseText().trim());
+  if (isNaN(choice) || choice < 1 || choice > sheets.length) {
+    ui.alert('Error', 'Enter a number between 1 and ' + sheets.length + '.', ui.ButtonSet.OK);
+    return;
+  }
+
+  var sheetName = sheets[choice - 1];
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var sheet = ss.getSheetByName(sheetName);
 
