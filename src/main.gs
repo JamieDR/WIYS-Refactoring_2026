@@ -11301,7 +11301,7 @@ function splitter() {
       var title = line.substring(0, httpIndex).replace(/[\s:\-–—]+$/, '').trim();
       var url = line.substring(httpIndex).trim();
       sheet.getRange(row, 3).setValue(title)
-        .setFontLine('none').setWrapStrategy(SpreadsheetApp.WrapStrategy.WRAP).setHorizontalAlignment('left').setBackground('#dce8f8');
+        .setFontLine('none').setWrapStrategy(SpreadsheetApp.WrapStrategy.WRAP).setHorizontalAlignment('left').setBackground('#c9daf8');
       sheet.getRange(row, 4).setValue(url).setWrapStrategy(SpreadsheetApp.WrapStrategy.CLIP);
     } else if (httpIndex === 0) {
       // Line is just a URL
@@ -11309,7 +11309,7 @@ function splitter() {
     } else {
       // Line is just a title, no URL
       sheet.getRange(row, 3).setValue(line)
-        .setFontLine('none').setWrapStrategy(SpreadsheetApp.WrapStrategy.WRAP).setHorizontalAlignment('left').setBackground('#dce8f8');
+        .setFontLine('none').setWrapStrategy(SpreadsheetApp.WrapStrategy.WRAP).setHorizontalAlignment('left').setBackground('#c9daf8');
     }
 
     sheet.getRange(row, 2).setValue('Current News');             // B: Article Type
@@ -11348,13 +11348,26 @@ function onTopicListEdit(e) {
       sheet.getRange(row, 4).setValue('N/A').setHorizontalAlignment('center').setBackground('#d9d9d9');  // D: grey
       sheet.getRange(row, 5).setValue('N/A').setHorizontalAlignment('center').setBackground('#d9d9d9');  // E: grey
     } else if (e.value === 'Current News') {
-      sheet.getRange(row, 3).setBackground('#dce8f8');                                                   // C: light blue
+      sheet.getRange(row, 3).setBackground('#c9daf8');                                                   // C: light blue
       sheet.getRange(row, 4).clearContent().setBackground('#ffffff');                                    // D: white
       sheet.getRange(row, 5).clearContent().setBackground('#ffe5ef');                                    // E: light pink
     } else {
       sheet.getRange(row, 3).setBackground(null);
       sheet.getRange(row, 4).clearContent().setBackground('#ffffff');                                    // D: white
       sheet.getRange(row, 5).clearContent().setBackground('#ffe5ef');                                    // E: light pink
+    }
+  }
+
+  // Column C (Topic) deleted on Travel Feature → revert D and E to defaults
+  if (column === 3) {
+    var topicValue = e.range.getValue();
+    if (!topicValue || topicValue.toString().trim() === '') {
+      var articleType = sheet.getRange(row, 2).getValue();
+      if (articleType === 'Travel Feature') {
+        sheet.getRange(row, 4).clearContent().setBackground('#ffffff');   // D: white
+        sheet.getRange(row, 5).clearContent().setBackground('#ffe5ef');   // E: light pink
+        sheet.getRange(row, 7).clearContent();                            // G: clear status
+      }
     }
   }
 
