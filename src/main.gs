@@ -11465,10 +11465,10 @@ function transferToEnhancedDrafter() {
     return;
   }
 
-  // Find first empty row in Enhanced Drafter (data starts at row 6)
+  // Find first empty row in Enhanced Drafter (transfer starts at row 52)
   var drafterLastRow = drafterSheet.getLastRow();
-  var startRow = 6;
-  if (drafterLastRow >= 6) {
+  var startRow = 52;
+  if (drafterLastRow >= 52) {
     startRow = drafterLastRow + 1;
   }
 
