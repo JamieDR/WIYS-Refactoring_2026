@@ -15955,12 +15955,27 @@ function splitClaudeUrls(sheet) {
  * ============================================================================
  * CREATE GDOC FROM RAW INPUT
  * ============================================================================
- * Triggered when column L is set to "Create GDoc" on Enhanced Drafter.
  * Parses raw input from column E, creates a formatted Google Doc,
  * and updates the row with parsed data + doc URL.
  *
  * Columns: E=Raw Input, G=State, H=Title, I=Body, J=Tags, K=Doc URL, L=Status
+ *
+ * Trigger setup: Create installable trigger → From spreadsheet → On edit → onEnhancedDrafterEdit
  */
+
+/** Installable trigger handler for Enhanced Drafter. Set up as: From spreadsheet → On edit */
+function onEnhancedDrafterEdit(e) {
+  if (!e || !e.range || !e.value) return;
+  var sheet = e.range.getSheet();
+  var column = e.range.getColumn();
+  var row = e.range.getRow();
+
+  if (sheet.getName() !== 'Enhanced Drafter' || column !== 12 || row < 5) return;
+
+  if (e.value === 'Create GDoc') {
+    createGDocFromRawInput(sheet, row);
+  }
+}
 
 function createGDocFromRawInput(sheet, row) {
   var rawInput = sheet.getRange(row, 5).getValue();
@@ -16248,13 +16263,6 @@ function onEdit(e) {
             sheet.getRange(currentRow, 12).setValue("");
           }
         }
-      }
-    }
-    // Enhanced Drafter - Column L set to "Create GDoc" (row 5+)
-    else if (sheet.getName() === 'Enhanced Drafter' && column === 12 && row >= 5) {
-      if (e.value === 'Create GDoc') {
-        Logger.log('Creating GDoc for Enhanced Drafter row ' + row);
-        createGDocFromRawInput(sheet, row);
       }
     }
     else {
