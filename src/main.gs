@@ -11986,6 +11986,23 @@ function retryWithBackoff(fn) {
 
 
 /**
+ * Build a lookup of article titles that have "Row Created" status in AST column G.
+ * Used by Paste Content to match the Python scanning behavior exactly:
+ * only paste content for articles that have been through Create New Rows.
+ */
+function buildRowCreatedLookup(statusSheet) {
+  var statusData = statusSheet.getRange('C:G').getValues();
+  var lookup = {};
+  for (var i = 0; i < statusData.length; i++) {
+    if (statusData[i][4] === 'Row Created' && statusData[i][0]) { // G = index 4, C = index 0
+      lookup[statusData[i][0].toString().trim().toLowerCase()] = true;
+    }
+  }
+  return lookup;
+}
+
+
+/**
  * Refresh the uploader lock timestamp to prevent it from expiring
  * during long multi-chunk operations.
  */
@@ -12000,9 +12017,16 @@ function refreshUploaderLock(operationType) {
  * ============================================================================
  * CREATE NEW ROWS — Chunked batch processor
  * ============================================================================
- * Ports python/batch_article_processor.py to GAS.
- * Scans AST for "Not Available Yet" articles, creates Uploader rows + Drive folders.
- * Calls existing processNewArticleComplete() per article (no duplication).
+ * Faithful port of python/batch_article_processor.py to GAS.
+ * Processes each workspace through phases: SCAN → FOLDERS → INSERT → VERIFY
+ *
+ * Key behaviors matching Python:
+ * - Duplicate checking is workspace-scoped (not whole sheet)
+ * - Drive folders created one at a time with delay
+ * - Rows batch-inserted at once per workspace (not one-by-one)
+ * - Each article verified after insertion
+ * - Failed articles get "Retry Row" + error context in column H
+ * - Only verified articles marked "Row Created" in AST
  * ============================================================================
  */
 
@@ -12019,21 +12043,20 @@ function batchCreateNewRows() {
       return;
     }
 
-    // Step 2: Scan AST for "Not Available Yet" articles in selected workspaces
+    // Step 2: Quick scan for article counts (plan display only)
     var ss = SpreadsheetApp.getActiveSpreadsheet();
     var statusSheet = ss.getSheetByName(CONFIG.SHEETS.ARTICLE_STATUS_TRACKER);
 
-    var allArticles = [];
+    var totalCount = 0;
+    var byWorkspace = {};
     for (var w = 0; w < selectedWorkspaces.length; w++) {
       var workspaceName = selectedWorkspaces[w];
       var articles = getArticlesForUploaderTransfer(statusSheet, workspaceName);
-      for (var a = 0; a < articles.length; a++) {
-        articles[a].workspace = workspaceName;
-      }
-      allArticles = allArticles.concat(articles);
+      byWorkspace[workspaceName] = articles;
+      totalCount += articles.length;
     }
 
-    if (allArticles.length === 0) {
+    if (totalCount === 0) {
       SpreadsheetApp.getUi().alert('No articles found with "Not Available Yet" status for selected workspaces.');
       unlockUploaderSheet(operationType);
       return;
@@ -12042,25 +12065,22 @@ function batchCreateNewRows() {
     // Step 3: Show plan
     var planMessage = 'CREATE NEW ROWS\n\n';
     planMessage += 'Workspaces: ' + selectedWorkspaces.join(', ') + '\n';
-    planMessage += 'Total articles: ' + allArticles.length + '\n\n';
+    planMessage += 'Total articles: ' + totalCount + '\n\n';
 
-    var byWorkspace = {};
-    for (var i = 0; i < allArticles.length; i++) {
-      var ws = allArticles[i].workspace;
-      if (!byWorkspace[ws]) byWorkspace[ws] = [];
-      byWorkspace[ws].push(allArticles[i]);
-    }
     for (var ws in byWorkspace) {
-      planMessage += ws + ': ' + byWorkspace[ws].length + ' articles\n';
-      for (var j = 0; j < Math.min(byWorkspace[ws].length, 5); j++) {
-        planMessage += '  - ' + byWorkspace[ws][j].title + '\n';
-      }
-      if (byWorkspace[ws].length > 5) {
-        planMessage += '  ... and ' + (byWorkspace[ws].length - 5) + ' more\n';
+      if (byWorkspace[ws].length > 0) {
+        planMessage += ws + ': ' + byWorkspace[ws].length + ' articles\n';
+        for (var j = 0; j < Math.min(byWorkspace[ws].length, 5); j++) {
+          planMessage += '  - ' + byWorkspace[ws][j].title + '\n';
+        }
+        if (byWorkspace[ws].length > 5) {
+          planMessage += '  ... and ' + (byWorkspace[ws].length - 5) + ' more\n';
+        }
       }
     }
 
-    planMessage += '\n8s delay between articles.\nAuto-continues if over 4.5 min.\nProceed?';
+    planMessage += '\nProcesses each workspace: scan → dedupe → folders → insert → verify.\n';
+    planMessage += '8s delay between folder creations.\nAuto-continues if over 4.5 min.\nProceed?';
 
     var response = SpreadsheetApp.getUi().alert('Create New Rows', planMessage, SpreadsheetApp.getUi().ButtonSet.YES_NO);
     if (response !== SpreadsheetApp.getUi().Button.YES) {
@@ -12068,14 +12088,19 @@ function batchCreateNewRows() {
       return;
     }
 
-    // Step 4: Start chunked processing
+    // Step 4: Initialize state and start processing
     var state = {
-      articles: allArticles,
-      currentIndex: 0,
-      processed: 0,
-      errors: 0,
-      duplicates: 0,
-      errorDetails: []
+      workspaces: selectedWorkspaces,
+      currentWorkspaceIndex: 0,
+      phase: 'SCAN',
+      // Per-workspace working data (rebuilt each workspace)
+      currentArticles: [],
+      articlesWithFolders: [],
+      currentFolderIndex: 0,
+      verifiedArticles: [],
+      currentVerifyIndex: 0,
+      // Running totals
+      stats: { processed: 0, duplicates: 0, errors: 0, errorDetails: [] }
     };
 
     processCreateNewRowsChunk(state);
@@ -12089,79 +12114,316 @@ function batchCreateNewRows() {
 
 
 /**
- * Process one chunk of Create New Rows articles.
- * Runs for up to 4.5 minutes, then saves state and schedules continuation.
+ * Process Create New Rows in phases, following the Python workflow exactly.
+ * Each workspace goes through: SCAN → FOLDERS → INSERT → VERIFY
+ * Can pause and resume between any phase when the time limit is reached.
  */
 function processCreateNewRowsChunk(state) {
   var startTime = new Date().getTime();
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var statusSheet = ss.getSheetByName(CONFIG.SHEETS.ARTICLE_STATUS_TRACKER);
-  var isContinuation = state.currentIndex > 0;
+  var uploaderSheet = ss.getSheetByName(CONFIG.SHEETS.UPLOADER);
+  var isContinuation = state.phase !== 'SCAN' || state.currentWorkspaceIndex > 0;
 
   if (isContinuation) {
     refreshUploaderLock('Create New Rows');
-    ss.toast('Continuing Create New Rows... (' + state.currentIndex + '/' + state.articles.length + ')',
-             'Auto-Continue', 5);
+    ss.toast('Continuing Create New Rows... Phase: ' + state.phase, 'Auto-Continue', 5);
   }
 
-  while (state.currentIndex < state.articles.length) {
-    // Check time before processing next article
-    if (!hasTimeRemaining(startTime)) {
-      saveBatchState('CREATE_NEW_ROWS', state);
-      scheduleBatchContinuation('continueBatchCreateNewRows');
+  // Process workspaces one at a time (matching Python's process_workspace)
+  while (state.currentWorkspaceIndex < state.workspaces.length) {
+    var workspaceName = state.workspaces[state.currentWorkspaceIndex];
 
-      var progress = state.currentIndex + '/' + state.articles.length;
-      ss.toast('Pausing at ' + progress + '. Will auto-continue in 1 minute.',
-               'Time Limit Reached', 10);
-      Logger.log('Chunk complete at ' + progress + '. Scheduling continuation.');
-      return; // Exit without unlocking — continuation will handle it
-    }
+    // ── PHASE: SCAN ──────────────────────────────────────────────
+    // Scan AST for articles, check duplicates within workspace only,
+    // mark duplicates. Matches Python's scan_articles_for_workspace +
+    // get_existing_titles_in_workspace.
+    if (state.phase === 'SCAN') {
+      Logger.log('SCAN: ' + workspaceName);
 
-    var article = state.articles[state.currentIndex];
+      // Scan AST for "Not Available Yet" articles in this workspace
+      var articles = getArticlesForUploaderTransfer(statusSheet, workspaceName);
 
-    try {
-      retryWithBackoff(function() {
-        processNewArticleComplete(statusSheet, article.row, article.title, article.workspace);
-      });
-
-      // Check what status was set by processNewArticleComplete
-      var newStatus = statusSheet.getRange(article.row, 7).getValue();
-      if (newStatus === 'DUPLICATE FOUND!') {
-        state.duplicates++;
-        Logger.log('Duplicate: ' + article.title);
-      } else if (newStatus === 'Row Created') {
-        state.processed++;
-        Logger.log('Created: ' + article.title);
-      } else {
-        state.errors++;
-        state.errorDetails.push(article.title + ': ' + newStatus);
-        Logger.log('Unexpected status for ' + article.title + ': ' + newStatus);
+      if (articles.length === 0) {
+        Logger.log('No articles for ' + workspaceName);
+        state.currentWorkspaceIndex++;
+        continue;
       }
 
-    } catch (error) {
-      state.errors++;
-      state.errorDetails.push(article.title + ': ' + error.message);
-      Logger.log('Error processing ' + article.title + ': ' + error.message);
+      // Workspace-scoped duplicate check (matching Python exactly)
+      var existingTitles = getExistingTitlesLightning(uploaderSheet, workspaceName);
+      var titleMap = createTitleHashMap(existingTitles);
+
+      state.currentArticles = [];
+      var duplicateCount = 0;
+
+      for (var i = 0; i < articles.length; i++) {
+        articles[i].workspace = workspaceName;
+        if (titleMap[articles[i].title.toLowerCase()]) {
+          // Mark duplicate in AST (matching Python's update_status_tracker for dupes)
+          statusSheet.getRange(articles[i].row, 7).setValue('DUPLICATE FOUND!');
+          state.stats.duplicates++;
+          duplicateCount++;
+        } else {
+          state.currentArticles.push(articles[i]);
+        }
+      }
+
+      Logger.log(workspaceName + ': ' + state.currentArticles.length + ' new, ' + duplicateCount + ' duplicates');
+
+      if (state.currentArticles.length === 0) {
+        state.currentWorkspaceIndex++;
+        continue;
+      }
+
+      // Initialize folder creation phase
+      state.articlesWithFolders = [];
+      state.currentFolderIndex = 0;
+      state.phase = 'FOLDERS';
+      saveBatchState('CREATE_NEW_ROWS', state);
+      SpreadsheetApp.flush();
+    }
+
+    // ── PHASE: FOLDERS ───────────────────────────────────────────
+    // Create Drive folders one at a time with delay between each.
+    // Matches Python's create_drive_folder loop. Failed folders get
+    // "Retry Row" status + error context in column H.
+    if (state.phase === 'FOLDERS') {
+      Logger.log('FOLDERS: ' + workspaceName + ' (' + state.currentFolderIndex + '/' + state.currentArticles.length + ')');
+
+      while (state.currentFolderIndex < state.currentArticles.length) {
+        if (!hasTimeRemaining(startTime)) {
+          saveBatchState('CREATE_NEW_ROWS', state);
+          scheduleBatchContinuation('continueBatchCreateNewRows');
+          ss.toast('Pausing folder creation (' + state.currentFolderIndex + '/' + state.currentArticles.length + '). Continuing in 1 min.',
+                   'Time Limit', 10);
+          return;
+        }
+
+        var article = state.currentArticles[state.currentFolderIndex];
+
+        try {
+          var folderUrl = retryWithBackoff(function() {
+            return createArticleFolderComplete(article.title);
+          });
+
+          if (folderUrl) {
+            article.folderUrl = folderUrl;
+            state.articlesWithFolders.push(article);
+            Logger.log('Folder: ' + article.title);
+          } else {
+            // Match Python: mark_article_failed with "Retry Row" + error context
+            statusSheet.getRange(article.row, 7).setValue('Retry Row');
+            statusSheet.getRange(article.row, 5).setValue('Folder creation returned no URL');
+            state.stats.errors++;
+            state.stats.errorDetails.push(article.title + ': Folder creation returned no URL');
+          }
+        } catch (error) {
+          statusSheet.getRange(article.row, 7).setValue('Retry Row');
+          statusSheet.getRange(article.row, 5).setValue('Folder error: ' + error.message.substring(0, 80));
+          state.stats.errors++;
+          state.stats.errorDetails.push(article.title + ': ' + error.message);
+        }
+
+        state.currentFolderIndex++;
+        saveBatchState('CREATE_NEW_ROWS', state);
+
+        // Delay between folder creations (matching Python's self.delay())
+        if (state.currentFolderIndex < state.currentArticles.length) {
+          Utilities.sleep(BATCH_CONFIG.ARTICLE_DELAY_MS);
+        }
+        SpreadsheetApp.flush();
+      }
+
+      if (state.articlesWithFolders.length === 0) {
+        state.currentWorkspaceIndex++;
+        state.phase = 'SCAN';
+        continue;
+      }
+
+      state.phase = 'INSERT';
+      saveBatchState('CREATE_NEW_ROWS', state);
+    }
+
+    // ── PHASE: INSERT ────────────────────────────────────────────
+    // Batch insert all rows at once, then format and populate.
+    // Matches Python's insert_article_rows (batch insert + batch format
+    // + batch values + copy dropdowns — all in one operation).
+    if (state.phase === 'INSERT') {
+      if (!hasTimeRemaining(startTime)) {
+        saveBatchState('CREATE_NEW_ROWS', state);
+        scheduleBatchContinuation('continueBatchCreateNewRows');
+        ss.toast('Pausing before insert. Continuing in 1 min.', 'Time Limit', 10);
+        return;
+      }
+
+      Logger.log('INSERT: ' + workspaceName + ' (' + state.articlesWithFolders.length + ' articles)');
 
       try {
-        statusSheet.getRange(article.row, 7).setValue('Error: ' + error.message);
-      } catch (e) { /* best effort */ }
+        // Find END ROW for this workspace
+        var personRow = findPersonRow(uploaderSheet, workspaceName);
+        var endRow = findPersonEndRow(uploaderSheet, personRow);
+        if (!endRow) throw new Error('END ROW not found for ' + workspaceName);
+
+        // Batch insert all rows at once (matching Python's insert_dimension)
+        var totalRows = state.articlesWithFolders.length * 2;
+        uploaderSheet.insertRowsBefore(endRow, totalRows);
+
+        // Format and populate each article (matching Python's formatting requests)
+        for (var i = 0; i < state.articlesWithFolders.length; i++) {
+          var art = state.articlesWithFolders[i];
+          var titleRow = endRow + (i * 2);
+          var contentRow = titleRow + 1;
+          art.titleRow = titleRow; // Store for verification
+
+          // TITLE ROW: merge A-K, black bg, white bold text, centered
+          var titleRange = uploaderSheet.getRange(titleRow, 1, 1, 11);
+          titleRange.merge();
+          titleRange.setValue(art.title);
+          titleRange.setBackground(CONFIG.COLORS.BLACK);
+          titleRange.setFontColor(CONFIG.COLORS.WHITE);
+          titleRange.setFontSize(11);
+          titleRange.setFontWeight('bold');
+          titleRange.setHorizontalAlignment('center');
+          titleRange.setVerticalAlignment('middle');
+
+          // TITLE ROW: Column L — dropdown + dark gray bg + white text
+          var dropdownCell = uploaderSheet.getRange(titleRow, 12);
+          uploaderSheet.getRange(2, 12).copyTo(dropdownCell, SpreadsheetApp.CopyPasteType.PASTE_DATA_VALIDATION, false);
+          dropdownCell.setValue(CONFIG.STATUS.GDRIVE_FOLDER_READY);
+          dropdownCell.setBackground('#333333');
+          dropdownCell.setFontColor(CONFIG.COLORS.WHITE);
+          dropdownCell.setHorizontalAlignment('center');
+
+          // TITLE ROW: Column M — folder URL
+          if (art.folderUrl) {
+            uploaderSheet.getRange(titleRow, 13).setValue(art.folderUrl);
+          }
+
+          // TITLE ROW: Column M+ — white bg
+          if (uploaderSheet.getLastColumn() > 12) {
+            uploaderSheet.getRange(titleRow, 13, 1, uploaderSheet.getLastColumn() - 12)
+              .clearFormat().setBackground(CONFIG.COLORS.WHITE);
+          }
+
+          // CONTENT ROW: clip wrap on entire row
+          uploaderSheet.getRange(contentRow, 1, 1, uploaderSheet.getLastColumn())
+            .setWrapStrategy(SpreadsheetApp.WrapStrategy.CLIP);
+
+          // CONTENT ROW: A-K white bg
+          uploaderSheet.getRange(contentRow, 1, 1, 11)
+            .clearFormat().setBackground(CONFIG.COLORS.WHITE)
+            .setWrapStrategy(SpreadsheetApp.WrapStrategy.CLIP);
+
+          // CONTENT ROW: Column D — pink bg, center
+          uploaderSheet.getRange(contentRow, 4)
+            .setHorizontalAlignment('center')
+            .setBackground(CONFIG.COLORS.LIGHT_PINK);
+
+          // CONTENT ROW: Columns H, I, J — center
+          uploaderSheet.getRange(contentRow, 8).setHorizontalAlignment('center');
+          uploaderSheet.getRange(contentRow, 9).setHorizontalAlignment('center');
+          uploaderSheet.getRange(contentRow, 10).setHorizontalAlignment('center');
+
+          // CONTENT ROW: Column L — gray bg, clear dropdown
+          uploaderSheet.getRange(contentRow, 12).clearFormat().setBackground('#CCCCCC');
+
+          // CONTENT ROW: Column M+ — white bg
+          if (uploaderSheet.getLastColumn() > 12) {
+            uploaderSheet.getRange(contentRow, 13, 1, uploaderSheet.getLastColumn() - 12)
+              .clearFormat().setBackground(CONFIG.COLORS.WHITE);
+          }
+        }
+
+        SpreadsheetApp.flush();
+        Logger.log('Inserted and formatted ' + state.articlesWithFolders.length + ' articles');
+
+      } catch (error) {
+        // Batch insert failed — mark all as error (matching Python behavior)
+        Logger.log('Insert failed for ' + workspaceName + ': ' + error.message);
+        for (var i = 0; i < state.articlesWithFolders.length; i++) {
+          statusSheet.getRange(state.articlesWithFolders[i].row, 7).setValue('Retry Row');
+          statusSheet.getRange(state.articlesWithFolders[i].row, 5).setValue('Row insert failed: ' + error.message.substring(0, 80));
+          state.stats.errors++;
+        }
+        state.articlesWithFolders = []; // Nothing to verify
+      }
+
+      state.verifiedArticles = [];
+      state.currentVerifyIndex = 0;
+      state.phase = 'VERIFY';
+      saveBatchState('CREATE_NEW_ROWS', state);
     }
 
-    state.currentIndex++;
+    // ── PHASE: VERIFY ────────────────────────────────────────────
+    // Verify each article was correctly inserted. Matches Python's
+    // verify_article: checks title, status, and folder URL.
+    // Only verified articles get "Row Created" in AST.
+    if (state.phase === 'VERIFY') {
+      Logger.log('VERIFY: ' + workspaceName + ' (' + state.currentVerifyIndex + '/' + state.articlesWithFolders.length + ')');
 
-    // Save progress after each article (crash recovery)
-    saveBatchState('CREATE_NEW_ROWS', state);
+      while (state.currentVerifyIndex < state.articlesWithFolders.length) {
+        if (!hasTimeRemaining(startTime)) {
+          saveBatchState('CREATE_NEW_ROWS', state);
+          scheduleBatchContinuation('continueBatchCreateNewRows');
+          ss.toast('Pausing verification. Continuing in 1 min.', 'Time Limit', 10);
+          return;
+        }
 
-    // Delay between articles (skip on last one)
-    if (state.currentIndex < state.articles.length) {
-      Utilities.sleep(BATCH_CONFIG.ARTICLE_DELAY_MS);
+        var art = state.articlesWithFolders[state.currentVerifyIndex];
+
+        // Verify: title in A, status in L, URL in M (matching Python's verify_article)
+        var verifyData = uploaderSheet.getRange(art.titleRow, 1, 1, 13).getValues()[0];
+        var actualTitle = verifyData[0] ? verifyData[0].toString().trim() : '';
+        var actualStatus = verifyData[11] ? verifyData[11].toString().trim() : '';
+        var actualUrl = verifyData[12] ? verifyData[12].toString().trim() : '';
+
+        if (actualTitle === art.title && actualStatus === CONFIG.STATUS.GDRIVE_FOLDER_READY && actualUrl) {
+          state.verifiedArticles.push(art);
+          Logger.log('Verified: ' + art.title);
+        } else {
+          // Verification failed — mark as error (matching Python behavior)
+          var verifyReason = actualTitle !== art.title ? 'Title mismatch in row ' + art.titleRow
+            : actualStatus !== CONFIG.STATUS.GDRIVE_FOLDER_READY ? 'Status is "' + actualStatus + '" instead of expected'
+            : !actualUrl ? 'Folder URL missing in column M' : 'Unknown verification error';
+          statusSheet.getRange(art.row, 7).setValue('Retry Row');
+          statusSheet.getRange(art.row, 5).setValue('Verify failed: ' + verifyReason);
+          state.stats.errors++;
+          state.stats.errorDetails.push(art.title + ': ' + verifyReason);
+          Logger.log('Verify failed: ' + art.title +
+            ' (title=' + (actualTitle === art.title) +
+            ', status=' + actualStatus +
+            ', url=' + !!actualUrl + ')');
+        }
+
+        state.currentVerifyIndex++;
+      }
+
+      // Update AST for verified articles only (matching Python's update_status_tracker)
+      for (var i = 0; i < state.verifiedArticles.length; i++) {
+        var v = state.verifiedArticles[i];
+        statusSheet.getRange(v.row, 6).setValue(v.folderUrl); // Column F — folder URL
+        statusSheet.getRange(v.row, 7).setValue('Row Created'); // Column G — status
+        state.stats.processed++;
+      }
+
+      SpreadsheetApp.flush();
+      Logger.log(workspaceName + ' complete: ' + state.verifiedArticles.length + ' verified, ' +
+        (state.articlesWithFolders.length - state.verifiedArticles.length) + ' failed');
+
+      // Move to next workspace
+      state.currentWorkspaceIndex++;
+      state.phase = 'SCAN';
+      saveBatchState('CREATE_NEW_ROWS', state);
+
+      // Delay between workspaces (matching Python's delay between workspaces)
+      if (state.currentWorkspaceIndex < state.workspaces.length) {
+        Utilities.sleep(BATCH_CONFIG.ARTICLE_DELAY_MS);
+      }
     }
-
-    SpreadsheetApp.flush();
   }
 
-  // All articles processed
+  // All workspaces done
   finishBatchCreateNewRows(state);
 }
 
@@ -12188,7 +12450,7 @@ function continueBatchCreateNewRows() {
     return;
   }
 
-  if (state.currentIndex >= state.articles.length) {
+  if (state.currentWorkspaceIndex >= state.workspaces.length) {
     finishBatchCreateNewRows(state);
     return;
   }
@@ -12206,14 +12468,14 @@ function finishBatchCreateNewRows(state) {
 
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var message = 'CREATE NEW ROWS COMPLETE\n\n';
-  message += 'Created: ' + state.processed + '\n';
-  message += 'Duplicates: ' + state.duplicates + '\n';
-  message += 'Errors: ' + state.errors + '\n';
+  message += 'Created: ' + state.stats.processed + '\n';
+  message += 'Duplicates: ' + state.stats.duplicates + '\n';
+  message += 'Errors: ' + state.stats.errors + '\n';
 
-  if (state.errorDetails.length > 0) {
+  if (state.stats.errorDetails.length > 0) {
     message += '\nError details:\n';
-    for (var i = 0; i < Math.min(state.errorDetails.length, 10); i++) {
-      message += '- ' + state.errorDetails[i] + '\n';
+    for (var i = 0; i < Math.min(state.stats.errorDetails.length, 10); i++) {
+      message += '- ' + state.stats.errorDetails[i] + '\n';
     }
   }
 
@@ -12255,23 +12517,33 @@ function batchPasteContent() {
       return;
     }
 
-    // Step 2: Scan Uploader for articles needing paste
+    // Step 2: Scan for articles needing paste
+    // Matches Python logic: only articles with "Row Created" in AST column G
     var ss = SpreadsheetApp.getActiveSpreadsheet();
     var uploaderSheet = ss.getSheetByName(CONFIG.SHEETS.UPLOADER);
+    var statusSheet = ss.getSheetByName(CONFIG.SHEETS.ARTICLE_STATUS_TRACKER);
+
+    // Build lookup of "Row Created" titles from AST (matches Python's get_articles_ready_for_paste)
+    var rowCreatedTitles = buildRowCreatedLookup(statusSheet);
 
     var allArticles = [];
     for (var w = 0; w < selectedWorkspaces.length; w++) {
       var workspace = findWorkspaceBoundaries(uploaderSheet, selectedWorkspaces[w]);
       if (workspace) {
         var articles = getArticlesInWorkspace(uploaderSheet, workspace, 'PASTE');
-        allArticles = allArticles.concat(articles);
+        // Filter: only articles that are "Row Created" in AST (matching Python behavior)
+        for (var a = 0; a < articles.length; a++) {
+          if (rowCreatedTitles[articles[a].title.toLowerCase()]) {
+            allArticles.push(articles[a]);
+          }
+        }
       }
     }
 
     if (allArticles.length === 0) {
       SpreadsheetApp.getUi().alert('No articles found needing content paste in selected workspaces.\n\n' +
         'Articles must have:\n' +
-        '• Status: "_", blank, or "GDrive Folder is Ready" in column L\n' +
+        '• "Row Created" status in AST column G\n' +
         '• A Google Doc URL in Article Status Tracker');
       unlockUploaderSheet(operationType);
       return;
@@ -12334,12 +12606,19 @@ function processPasteContentChunk(state) {
   }
 
   // Re-scan for articles that still need pasting (fresh row numbers)
+  // Only include articles with "Row Created" in AST (matching Python behavior)
+  var rowCreatedTitles = buildRowCreatedLookup(statusSheet);
+
   var allArticles = [];
   for (var w = 0; w < state.selectedWorkspaces.length; w++) {
     var workspace = findWorkspaceBoundaries(uploaderSheet, state.selectedWorkspaces[w]);
     if (workspace) {
       var articles = getArticlesInWorkspace(uploaderSheet, workspace, 'PASTE');
-      allArticles = allArticles.concat(articles);
+      for (var a = 0; a < articles.length; a++) {
+        if (rowCreatedTitles[articles[a].title.toLowerCase()]) {
+          allArticles.push(articles[a]);
+        }
+      }
     }
   }
 
