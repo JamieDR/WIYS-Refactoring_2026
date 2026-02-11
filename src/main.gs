@@ -11340,11 +11340,11 @@ function onTopicListEdit(e) {
   // Column B (Article Type) → Travel Feature sets E (Place to Visit) to "N/A"
   if (column === 2) {
     if (e.value === 'Travel Feature') {
-      sheet.getRange(row, 4).setValue('N/A').setHorizontalAlignment('center');  // D: URL
-      sheet.getRange(row, 5).setValue('N/A').setHorizontalAlignment('center');  // E: Place to Visit
+      sheet.getRange(row, 4).setValue('N/A').setHorizontalAlignment('center').setBackground('#d9d9d9');  // D: URL
+      sheet.getRange(row, 5).setValue('N/A').setHorizontalAlignment('center').setBackground('#d9d9d9');  // E: Place to Visit
     } else {
-      sheet.getRange(row, 4).clearContent();
-      sheet.getRange(row, 5).clearContent();
+      sheet.getRange(row, 4).clearContent().setBackground(null);
+      sheet.getRange(row, 5).clearContent().setBackground(null);
     }
   }
 
@@ -11355,6 +11355,19 @@ function onTopicListEdit(e) {
       sheet.getRange(row, 7).setValue('Outline Ready');
     } else {
       sheet.getRange(row, 7).setValue('Topic Set');
+    }
+  }
+
+  // Travel Feature: set Status to "Topic Set" when B, C, D, E are all filled
+  // Current News: already handled by splitter setting "Topic Set" on split
+  if (column >= 2 && column <= 5) {
+    var articleType = sheet.getRange(row, 2).getValue();
+    if (articleType === 'Travel Feature') {
+      var vals = sheet.getRange(row, 2, 1, 4).getValues()[0]; // B, C, D, E
+      var allFilled = vals.every(function(v) { return v !== '' && v !== null; });
+      if (allFilled) {
+        sheet.getRange(row, 7).setValue('Topic Set');
+      }
     }
   }
 
