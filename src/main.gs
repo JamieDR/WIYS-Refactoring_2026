@@ -11158,15 +11158,13 @@ function onOpen() {
     .addItem('✉️ Create Newsletters', 'createNewsletters')
     .addToUi();
 
-   ui.createMenu('      **Splitter')
-    .addItem('✂️ Split Input', 'splitter')
-    .addToUi();
-
   ui.createMenu('      **Drafting')
+    .addItem('✂️ Split Topic/URL', 'splitter')
     .addItem('📋 Transfer to Enhanced Drafter', 'transferToEnhancedDrafter')
-    .addItem('📊 Transfer Drafts to Article Tracker', 'transferDraftsToArticleTracker')
     .addSeparator()
     .addItem('📄 Batch Create GDocs', 'batchCreateGDocs')
+    .addSeparator()
+    .addItem('📊 Send to Article Status Tracker', 'transferDraftsToArticleTracker')
     .addSeparator()
     .addItem('🗑️ Delete Done', 'deleteDoneRows')
     .addToUi();
@@ -11259,7 +11257,7 @@ function onColumnLEdit(e) {
 
 /**
  * ============================================================================
- * SPLITTER - Split titles and URLs from input cells
+ * SPLIT TOPIC/URL
  * ============================================================================
  */
 
@@ -11494,151 +11492,6 @@ function transferToEnhancedDrafter() {
 
 /**
  * ============================================================================
- * TRANSFER DRAFTS TO ARTICLE TRACKER
- * ============================================================================
- * Transfers "Ready for Transfer" rows from Enhanced Drafter to Article Status Tracker.
- *
- * Enhanced Drafter → Article Status Tracker mapping:
- *   G (State)          → A
- *   H (Title)          → C
- *   K (Doc URL)        → D
- *   "Not Available Yet" → G
- *   B (Original Topic) → I
- *   J (Tags)           → J
- *   Topic & Summary    → K
- *   L (Status)         → set to "DONE"
- */
-function transferDraftsToArticleTracker() {
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var edSheet = ss.getSheetByName('Enhanced Drafter');
-  var astSheet = ss.getSheetByName('Article Status Tracker');
-  var ui = SpreadsheetApp.getUi();
-
-  if (!edSheet || !astSheet) {
-    ui.alert('Error', 'Could not find Enhanced Drafter or Article Status Tracker sheet.', ui.ButtonSet.OK);
-    return;
-  }
-
-  // Find rows with "Ready for Transfer" in column L (12)
-  var lastRow = edSheet.getLastRow();
-  if (lastRow < 2) {
-    ui.alert('Nothing to transfer', 'No data in Enhanced Drafter.', ui.ButtonSet.OK);
-    return;
-  }
-
-  var data = edSheet.getRange(2, 1, lastRow - 1, 12).getValues(); // A through L
-  var rowsToTransfer = [];
-
-  for (var i = 0; i < data.length; i++) {
-    if (data[i][11] === 'Ready for Transfer') { // L (index 11)
-      var title = data[i][7]; // H (index 7)
-      if (!title || title.toString().trim() === '') continue;
-
-      var rawInput = data[i][4] || ''; // E (index 4)
-      var topicSummary = extractTopicSummary(title, rawInput);
-
-      rowsToTransfer.push({
-        sourceRow: i + 2,
-        state: data[i][6],           // G
-        title: title,                 // H
-        docUrl: data[i][10],          // K
-        originalTopic: data[i][1],    // B
-        tags: data[i][9],             // J
-        topicSummary: topicSummary
-      });
-    }
-  }
-
-  if (rowsToTransfer.length === 0) {
-    ui.alert('Nothing to transfer', 'No rows with "Ready for Transfer" status.', ui.ButtonSet.OK);
-    return;
-  }
-
-  // Confirm
-  var confirm = ui.alert('Transfer Drafts',
-    rowsToTransfer.length + ' row(s) ready to transfer to Article Status Tracker.\n\nProceed?',
-    ui.ButtonSet.YES_NO);
-  if (confirm !== ui.Button.YES) return;
-
-  // Find last row in Article Status Tracker
-  var startRow = Math.max(2, astSheet.getLastRow() + 1);
-
-  var transferred = 0;
-  var errors = 0;
-
-  for (var j = 0; j < rowsToTransfer.length; j++) {
-    var item = rowsToTransfer[j];
-    var destRow = startRow + j;
-
-    try {
-      astSheet.getRange(destRow, 1).setValue(item.state);              // → A
-      astSheet.getRange(destRow, 3).setValue(item.title);              // → C
-      astSheet.getRange(destRow, 4).setValue(item.docUrl);             // → D
-      astSheet.getRange(destRow, 7).setValue('Not Available Yet');      // → G
-      astSheet.getRange(destRow, 9).setValue(item.originalTopic);      // → I
-      astSheet.getRange(destRow, 10).setValue(item.tags);              // → J
-      astSheet.getRange(destRow, 11).setValue(item.topicSummary);      // → K
-
-      // Mark as DONE in Enhanced Drafter
-      edSheet.getRange(item.sourceRow, 12).setValue('DONE');           // L
-      transferred++;
-    } catch (error) {
-      Logger.log('Error transferring row ' + item.sourceRow + ': ' + error.message);
-      errors++;
-    }
-  }
-
-  var message = transferred + ' row(s) transferred to Article Status Tracker.';
-  if (errors > 0) message += '\n' + errors + ' error(s) — check Logs.';
-  ui.alert('Done!', message, ui.ButtonSet.OK);
-}
-
-
-/**
- * Extracts title + intro summary from raw input for the Topic & Summary column.
- * Returns "TOPIC: title" or "TOPIC: title\nSUMMARY: intro"
- */
-function extractTopicSummary(title, rawInput) {
-  if (!rawInput || rawInput.toString().trim() === '') {
-    return 'TOPIC: ' + title;
-  }
-
-  var lines = rawInput.toString().split('\n');
-  var foundH1 = false;
-  var inIntro = false;
-  var introLines = [];
-
-  for (var i = 0; i < lines.length; i++) {
-    var line = lines[i];
-
-    // Found the H1 (title line)
-    if (line.indexOf('# ') === 0 && line.indexOf('## ') !== 0) {
-      foundH1 = true;
-      continue;
-    }
-
-    if (foundH1) {
-      // Found an H2 (subheading)
-      if (line.indexOf('## ') === 0) {
-        if (inIntro) break; // End of intro section
-        inIntro = true;
-        continue;
-      } else if (inIntro && line.trim()) {
-        introLines.push(line.trim());
-      }
-    }
-  }
-
-  var intro = introLines.join(' ').trim();
-  if (intro) {
-    return 'TOPIC: ' + title + '\nSUMMARY: ' + intro;
-  }
-  return 'TOPIC: ' + title;
-}
-
-
-/**
- * ============================================================================
  * BATCH CREATE GDOCS
  * ============================================================================
  * Processes all "Raw Input Pasted" rows in Enhanced Drafter.
@@ -11699,6 +11552,160 @@ function batchCreateGDocs() {
   var message = created + ' GDoc(s) created successfully.';
   if (errors > 0) message += '\n' + errors + ' row(s) failed — check Logs.';
   ui.alert('Done!', message, ui.ButtonSet.OK);
+}
+
+
+/**
+ * ============================================================================
+ * SEND TO ARTICLE STATUS TRACKER
+ * ============================================================================
+ * Sends "Ready for Transfer" rows from Enhanced Drafter to Article Status Tracker.
+ *
+ * Enhanced Drafter → Article Status Tracker mapping:
+ *   G (State)          → A
+ *   H (Title)          → C
+ *   K (Doc URL)        → D
+ *   "Not Available Yet" → G
+ *   C (Article Type)   → H
+ *   B (Original Topic) → I
+ *   J (Tags)           → J
+ *   Topic & Summary    → K
+ *   L (Status)         → set to "DONE"
+ */
+function transferDraftsToArticleTracker() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var edSheet = ss.getSheetByName('Enhanced Drafter');
+  var astSheet = ss.getSheetByName('Article Status Tracker');
+  var ui = SpreadsheetApp.getUi();
+
+  if (!edSheet || !astSheet) {
+    ui.alert('Error', 'Could not find Enhanced Drafter or Article Status Tracker sheet.', ui.ButtonSet.OK);
+    return;
+  }
+
+  // Find rows with "Ready for Transfer" in column L (12)
+  var lastRow = edSheet.getLastRow();
+  if (lastRow < 2) {
+    ui.alert('Nothing to transfer', 'No data in Enhanced Drafter.', ui.ButtonSet.OK);
+    return;
+  }
+
+  var data = edSheet.getRange(2, 1, lastRow - 1, 12).getValues(); // A through L
+  var rowsToTransfer = [];
+
+  for (var i = 0; i < data.length; i++) {
+    if (data[i][11] === 'Ready for Transfer') { // L (index 11)
+      var title = data[i][7]; // H (index 7)
+      if (!title || title.toString().trim() === '') continue;
+
+      var rawInput = data[i][4] || ''; // E (index 4)
+      var originalTopic = data[i][1] || ''; // B (index 1)
+      var topicSummary = extractTopicSummary(originalTopic, rawInput);
+
+      rowsToTransfer.push({
+        sourceRow: i + 2,
+        state: data[i][6],           // G
+        title: title,                 // H
+        docUrl: data[i][10],          // K
+        articleType: data[i][2],      // C
+        originalTopic: data[i][1],    // B
+        tags: data[i][9],             // J
+        topicSummary: topicSummary
+      });
+    }
+  }
+
+  if (rowsToTransfer.length === 0) {
+    ui.alert('Nothing to transfer', 'No rows with "Ready for Transfer" status.', ui.ButtonSet.OK);
+    return;
+  }
+
+  // Confirm
+  var confirm = ui.alert('Send to Article Status Tracker',
+    rowsToTransfer.length + ' row(s) ready to send to Article Status Tracker.\n\nProceed?',
+    ui.ButtonSet.YES_NO);
+  if (confirm !== ui.Button.YES) return;
+
+  // Find last row in Article Status Tracker
+  var startRow = Math.max(2, astSheet.getLastRow() + 1);
+
+  var transferred = 0;
+  var errors = 0;
+
+  for (var j = 0; j < rowsToTransfer.length; j++) {
+    var item = rowsToTransfer[j];
+    var destRow = startRow + j;
+
+    try {
+      astSheet.getRange(destRow, 1).setValue(item.state)               // → A
+        .setFontSize(10).setHorizontalAlignment('center');
+      astSheet.getRange(destRow, 3).setValue(item.title)              // → C
+        .setWrapStrategy(SpreadsheetApp.WrapStrategy.WRAP).setHorizontalAlignment('left');
+      astSheet.getRange(destRow, 4).setValue(item.docUrl);             // → D
+      astSheet.getRange(destRow, 7).setValue('Not Available Yet');      // → G
+      astSheet.getRange(destRow, 8).setValue(item.articleType);        // → H
+      astSheet.getRange(destRow, 9).setValue(item.originalTopic)       // → I
+        .setWrapStrategy(SpreadsheetApp.WrapStrategy.CLIP);
+      astSheet.getRange(destRow, 10).setValue(item.tags)              // → J
+        .setWrapStrategy(SpreadsheetApp.WrapStrategy.CLIP);
+      astSheet.getRange(destRow, 11).setValue(item.topicSummary)      // → K
+        .setWrapStrategy(SpreadsheetApp.WrapStrategy.CLIP);
+
+      // Mark as DONE in Enhanced Drafter
+      edSheet.getRange(item.sourceRow, 12).setValue('DONE');           // L
+      transferred++;
+    } catch (error) {
+      Logger.log('Error transferring row ' + item.sourceRow + ': ' + error.message);
+      errors++;
+    }
+  }
+
+  var message = transferred + ' row(s) sent to Article Status Tracker.';
+  if (errors > 0) message += '\n' + errors + ' error(s) — check Logs.';
+  ui.alert('Done!', message, ui.ButtonSet.OK);
+}
+
+
+/**
+ * Extracts base topic + full intro from raw input for the Topic & Summary column.
+ * Returns "base topic -- full intro" or just "base topic" if no intro found.
+ */
+function extractTopicSummary(baseTopic, rawInput) {
+  if (!rawInput || rawInput.toString().trim() === '') {
+    return baseTopic.toString();
+  }
+
+  var lines = rawInput.toString().split('\n');
+  var foundH1 = false;
+  var inIntro = false;
+  var introLines = [];
+
+  for (var i = 0; i < lines.length; i++) {
+    var line = lines[i];
+
+    // Found the H1 (title line)
+    if (line.indexOf('# ') === 0 && line.indexOf('## ') !== 0) {
+      foundH1 = true;
+      continue;
+    }
+
+    if (foundH1) {
+      // Found an H2 (subheading)
+      if (line.indexOf('## ') === 0) {
+        if (inIntro) break; // End of intro section
+        inIntro = true;
+        continue;
+      } else if (inIntro && line.trim()) {
+        introLines.push(line.trim());
+      }
+    }
+  }
+
+  var intro = introLines.join(' ').trim();
+  if (intro) {
+    return baseTopic + ' -- ' + intro;
+  }
+  return baseTopic.toString();
 }
 
 
