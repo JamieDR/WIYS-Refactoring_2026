@@ -11256,162 +11256,52 @@ function onColumnLEdit(e) {
  */
 
 function splitter() {
-  var ui = SpreadsheetApp.getUi();
   var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var sheet = ss.getSheetByName('Enhanced Drafter');
-  
+  var sheet = ss.getSheetByName('Topic List');
+
   if (!sheet) {
-    ui.alert('Error', 'Sheet "Enhanced Drafter" not found.', ui.ButtonSet.OK);
+    SpreadsheetApp.getUi().alert('Error', 'Sheet "Topic List" not found.', SpreadsheetApp.getUi().ButtonSet.OK);
     return;
   }
-  
-  var response = ui.prompt(
-    'Splitter',
-    'Split Input Options:\n\n' +
-    '1. Split Titles/URLs (from B3)\n' +
-    '2. Split Claude URLs (from F3)\n' +
-    '3. Both\n\n' +
-    'Enter your choice (1, 2, or 3):',
-    ui.ButtonSet.OK_CANCEL
-  );
-  
-  if (response.getSelectedButton() !== ui.Button.OK) {
-    return;
-  }
-  
-  var choice = response.getResponseText().trim();
-  
-  if (choice !== '1' && choice !== '2' && choice !== '3') {
-    ui.alert('Invalid Choice', 'Please enter 1, 2, or 3.', ui.ButtonSet.OK);
-    return;
-  }
-  
-  var results = {
-    titlesProcessed: 0,
-    urlsProcessed: 0
-  };
-  
-  if (choice === '1' || choice === '3') {
-    results.titlesProcessed = splitTitlesUrls(sheet);
-  }
-  
-  if (choice === '2' || choice === '3') {
-    results.urlsProcessed = splitClaudeUrls(sheet);
-  }
-  
-  var message = '✅ Splitter Complete!\n\n';
-  
-  if (choice === '1' || choice === '3') {
-    message += '📝 Titles/URLs processed: ' + results.titlesProcessed + ' rows\n';
-  }
-  
-  if (choice === '2' || choice === '3') {
-    message += '🔗 Claude URLs processed: ' + results.urlsProcessed + ' rows\n';
-  }
-  
-  ui.alert('Done!', message, ui.ButtonSet.OK);
-}
 
-function splitTitlesUrls(sheet) {
-  var content = sheet.getRange('B3').getValue();
-  
+  var content = sheet.getRange('A2').getValue();
   if (!content || content.toString().trim() === '') {
-    return 0;
+    SpreadsheetApp.getUi().alert('Nothing to split', 'Paste titles into A2 first.', SpreadsheetApp.getUi().ButtonSet.OK);
+    return;
   }
-  
-  var lines = content.toString().split('\n').filter(function(line) {
+
+  // Split into individual titles
+  var titles = content.toString().split('\n').filter(function(line) {
     return line.trim() !== '';
   });
-  
-  if (lines.length === 0) {
-    return 0;
-  }
-  
-  var results = [];
-  
-  for (var i = 0; i < lines.length; i++) {
-    var line = lines[i].trim();
-    var httpIndex = line.lastIndexOf('http');
-    
-    if (httpIndex > 0) {
-      var title = line.substring(0, httpIndex).replace(/[:\-]\s*$/, '').trim();
-      var url = line.substring(httpIndex).trim();
-      results.push([title, url]);
-    } else if (httpIndex === 0) {
-      results.push(['', line.trim()]);
-    } else {
-      results.push([line.trim(), '']);
-    }
-  }
-  
+
+  if (titles.length === 0) return;
+
+  // Find the first empty row in column C
   var lastRow = sheet.getLastRow();
-  var startRow = 4;
-  
-  if (lastRow >= 4) {
-    var dataRange = sheet.getRange(4, 2, lastRow - 3, 2);
-    var data = dataRange.getValues();
-    
-    for (var i = data.length - 1; i >= 0; i--) {
-      if (data[i][0] !== '' || data[i][1] !== '') {
-        startRow = 4 + i + 1;
+  var startRow = 2;
+  if (lastRow >= 2) {
+    var colC = sheet.getRange(2, 3, lastRow - 1, 1).getValues();
+    for (var i = colC.length - 1; i >= 0; i--) {
+      if (colC[i][0] !== '') {
+        startRow = 2 + i + 1;
         break;
       }
     }
   }
-  
-  if (results.length > 0) {
-    sheet.getRange(startRow, 2, results.length, 2).setValues(results);
-    sheet.getRange('B3').clearContent();
-  }
-  
-  return results.length;
-}
 
-function splitClaudeUrls(sheet) {
-  var content = sheet.getRange('F3').getValue();
-  
-  if (!content || content.toString().trim() === '') {
-    return 0;
+  // Write titles to column C, set Article Type (B) and Status (F)
+  for (var i = 0; i < titles.length; i++) {
+    var row = startRow + i;
+    sheet.getRange(row, 3).setValue(titles[i].trim());       // C: Topic
+    sheet.getRange(row, 2).setValue('Current News');           // B: Article Type
+    sheet.getRange(row, 6).setValue('Topic Set');              // F: Status
   }
-  
-  var lines = content.toString().split('\n').filter(function(line) {
-    return line.trim() !== '';
-  });
-  
-  if (lines.length === 0) {
-    return 0;
-  }
-  
-  var results = [];
-  
-  for (var i = 0; i < lines.length; i++) {
-    var line = lines[i].trim();
-    if (line !== '') {
-      results.push([line]);
-    }
-  }
-  
-  var lastRow = sheet.getLastRow();
-  var startRow = 6;
-  
-  if (lastRow >= 6) {
-    var dataRange = sheet.getRange(6, 6, lastRow - 5, 1);
-    var data = dataRange.getValues();
-    
-    for (var i = data.length - 1; i >= 0; i--) {
-      if (data[i][0] !== '') {
-        startRow = 4 + i + 1;
-        break;
-      }
-    }
-  }
-  
-  if (results.length > 0) {
-    sheet.getRange(startRow, 6, results.length, 1).setValues(results);
-    sheet.getRange('F3').clearContent();
-  }
-  
-  return results.length;
+
+  // Clear the input cell
+  sheet.getRange('A2').clearContent();
+
+  SpreadsheetApp.getUi().alert('Done!', titles.length + ' topics added to Topic List.', SpreadsheetApp.getUi().ButtonSet.OK);
 }
 
 
