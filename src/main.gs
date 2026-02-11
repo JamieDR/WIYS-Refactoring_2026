@@ -11641,15 +11641,20 @@ function transferDraftsToArticleTracker() {
         .setFontSize(10).setHorizontalAlignment('center');
       astSheet.getRange(destRow, 3).setValue(item.title)              // → C
         .setWrapStrategy(SpreadsheetApp.WrapStrategy.WRAP).setHorizontalAlignment('left');
-      astSheet.getRange(destRow, 4).setValue(item.docUrl);             // → D
-      astSheet.getRange(destRow, 7).setValue('Not Available Yet');      // → G
-      astSheet.getRange(destRow, 8).setValue(item.articleType);        // → H
+      astSheet.getRange(destRow, 4).setValue(item.docUrl)              // → D
+        .setFontFamily('Arial').setFontSize(8);
+      astSheet.getRange(destRow, 6)                                   // → F
+        .setFontFamily('Arial').setFontSize(8);
+      astSheet.getRange(destRow, 7).setValue('Not Available Yet')      // → G
+        .setFontFamily('Arial').setFontSize(8);
+      astSheet.getRange(destRow, 8).setValue(item.articleType)        // → H
+        .setFontFamily('Arial').setFontSize(8);
       astSheet.getRange(destRow, 9).setValue(item.originalTopic)       // → I
-        .setWrapStrategy(SpreadsheetApp.WrapStrategy.CLIP);
+        .setWrapStrategy(SpreadsheetApp.WrapStrategy.CLIP).setFontFamily('Arial').setFontSize(8);
       astSheet.getRange(destRow, 10).setValue(item.tags)              // → J
-        .setWrapStrategy(SpreadsheetApp.WrapStrategy.CLIP);
+        .setWrapStrategy(SpreadsheetApp.WrapStrategy.CLIP).setFontFamily('Arial').setFontSize(8);
       astSheet.getRange(destRow, 11).setValue(item.topicSummary)      // → K
-        .setWrapStrategy(SpreadsheetApp.WrapStrategy.CLIP);
+        .setWrapStrategy(SpreadsheetApp.WrapStrategy.CLIP).setFontFamily('Arial').setFontSize(8);
 
       // Mark as DONE in Enhanced Drafter
       edSheet.getRange(item.sourceRow, 12).setValue('DONE');           // L
