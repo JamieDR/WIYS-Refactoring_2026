@@ -11301,7 +11301,7 @@ function splitter() {
       var title = line.substring(0, httpIndex).replace(/[\s:\-–—]+$/, '').trim();
       var url = line.substring(httpIndex).trim();
       sheet.getRange(row, 3).setValue(title)
-        .setFontLine('none').setWrapStrategy(SpreadsheetApp.WrapStrategy.WRAP).setHorizontalAlignment('left');
+        .setFontLine('none').setWrapStrategy(SpreadsheetApp.WrapStrategy.WRAP).setHorizontalAlignment('left').setBackground('#dce8f8');
       sheet.getRange(row, 4).setValue(url).setWrapStrategy(SpreadsheetApp.WrapStrategy.CLIP);
     } else if (httpIndex === 0) {
       // Line is just a URL
@@ -11309,7 +11309,7 @@ function splitter() {
     } else {
       // Line is just a title, no URL
       sheet.getRange(row, 3).setValue(line)
-        .setFontLine('none').setWrapStrategy(SpreadsheetApp.WrapStrategy.WRAP).setHorizontalAlignment('left');
+        .setFontLine('none').setWrapStrategy(SpreadsheetApp.WrapStrategy.WRAP).setHorizontalAlignment('left').setBackground('#dce8f8');
     }
 
     sheet.getRange(row, 2).setValue('Current News');             // B: Article Type
@@ -11342,9 +11342,15 @@ function onTopicListEdit(e) {
   // Column B (Article Type) → Travel Feature sets E (Place to Visit) to "N/A"
   if (column === 2) {
     if (e.value === 'Travel Feature') {
+      sheet.getRange(row, 3).setBackground('#d9ead3');                                                   // C: light green
       sheet.getRange(row, 4).setValue('N/A').setHorizontalAlignment('center').setBackground('#d9d9d9');  // D: URL
       sheet.getRange(row, 5).setValue('N/A').setHorizontalAlignment('center').setBackground('#d9d9d9');  // E: Place to Visit
+    } else if (e.value === 'Current News') {
+      sheet.getRange(row, 3).setBackground('#dce8f8');                                                   // C: light blue
+      sheet.getRange(row, 4).clearContent().setBackground(null);
+      sheet.getRange(row, 5).clearContent().setBackground(null);
     } else {
+      sheet.getRange(row, 3).setBackground(null);
       sheet.getRange(row, 4).clearContent().setBackground(null);
       sheet.getRange(row, 5).clearContent().setBackground(null);
     }
