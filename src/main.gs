@@ -11300,10 +11300,14 @@ function splitter() {
       // Line has both title and URL
       var title = line.substring(0, httpIndex).replace(/[\s:\-–—]+$/, '').trim();
       var url = line.substring(httpIndex).trim();
-      sheet.getRange(row, 3).setFormula('=HYPERLINK("' + url + '","' + title.replace(/"/g, '""') + '")');
+      var cell = sheet.getRange(row, 3);
+      cell.setFormula('=HYPERLINK("' + url + '","' + title.replace(/"/g, '""') + '")');
+      cell.setFontColor('#000000');
     } else if (httpIndex === 0) {
       // Line is just a URL
-      sheet.getRange(row, 3).setFormula('=HYPERLINK("' + line + '","' + line + '")');
+      var cell = sheet.getRange(row, 3);
+      cell.setFormula('=HYPERLINK("' + line + '","' + line + '")');
+      cell.setFontColor('#000000');
     } else {
       // Line is just a title, no URL
       sheet.getRange(row, 3).setValue(line);
@@ -11323,7 +11327,7 @@ function splitter() {
 /**
  * onTopicListEdit - Standalone installable trigger for Topic List sheet.
  * - Column B → "Travel Feature": sets Column D to "N/A" (centered)
- * - Column E (Outline) filled in: sets Column F to "Ready for Drafting"
+ * - Column E (Outline) filled in: sets Column F to "Outline Ready"
  */
 function onTopicListEdit(e) {
   if (!e || !e.range) return;
@@ -11344,7 +11348,7 @@ function onTopicListEdit(e) {
   if (column === 5) {
     var outlineValue = e.range.getValue();
     if (outlineValue && outlineValue.toString().trim() !== '') {
-      sheet.getRange(row, 6).setValue('Ready for Drafting');
+      sheet.getRange(row, 6).setValue('Outline Ready');
     }
   }
 }
