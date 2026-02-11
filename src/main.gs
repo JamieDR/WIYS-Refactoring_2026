@@ -11465,18 +11465,8 @@ function transferToEnhancedDrafter() {
     return;
   }
 
-  // Find first empty row in Enhanced Drafter column B (starting from row 52)
-  var drafterLastRow = drafterSheet.getLastRow();
-  var startRow = 52;
-  if (drafterLastRow >= 52) {
-    var colB = drafterSheet.getRange(52, 2, drafterLastRow - 51, 1).getValues();
-    for (var k = colB.length - 1; k >= 0; k--) {
-      if (colB[k][0] !== '') {
-        startRow = 52 + k + 1;
-        break;
-      }
-    }
-  }
+  // Start after the last row with any data (min row 52, skips any empty gaps)
+  var startRow = Math.max(52, drafterSheet.getLastRow() + 1);
 
   // Transfer each row
   for (var j = 0; j < rowsToTransfer.length; j++) {
