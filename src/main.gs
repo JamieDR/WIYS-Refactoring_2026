@@ -9878,25 +9878,18 @@ function createUploaderEntry(uploaderSheet, personRow, articleTitle) {
 
 function createArticleFolderComplete(articleTitle) {
   var parentFolder = DriveApp.getFolderById(CONFIG.GOOGLE.PARENT_FOLDER_ID);
-  
-  // Check for existing folder
-  var folders = parentFolder.getFolders();
-  while (folders.hasNext()) {
-    var folder = folders.next();
-    if (folder.getName() === articleTitle) {
-      Logger.log('Folder already exists: ' + articleTitle);
-      return folder.getUrl(); // Return existing folder URL
-    }
+
+  // Targeted search by name (not iterating ALL folders in parent)
+  var existing = parentFolder.getFoldersByName(articleTitle);
+  if (existing.hasNext()) {
+    Logger.log('Folder already exists: ' + articleTitle);
+    return existing.next().getUrl();
   }
 
   try {
-    // Create new folder
     var folder = parentFolder.createFolder(articleTitle);
-    var folderUrl = folder.getUrl();
-    
-    Logger.log('Created new folder: ' + articleTitle + ' at ' + folderUrl);
-    return folderUrl;
-    
+    Logger.log('Created new folder: ' + articleTitle);
+    return folder.getUrl();
   } catch (error) {
     Logger.log('Error creating folder: ' + error.message);
     return null;
@@ -11808,9 +11801,10 @@ function getCategoryFromTitleAndTags(title, tags) {
 
 var BATCH_CONFIG = {
   MAX_RUNTIME_MS: 270000,                // 4.5 minutes (of 6 min limit)
-  OPERATION_DELAY_MS: 7000,              // 7 seconds between major operations (matches Python OPERATION_DELAY)
-  ARTICLE_DELAY_MS: 7000,               // Alias for OPERATION_DELAY_MS (used by Paste Content / Delete)
-  RETRY_DELAYS_MS: [10000, 20000, 40000], // Exponential backoff: 10s, 20s, 40s (matches Python RETRY_DELAYS)
+  OPERATION_DELAY_MS: 2000,              // 2 seconds between Sheets operations
+  FOLDER_DELAY_MS: 3000,                 // 3 seconds between Drive folder operations
+  ARTICLE_DELAY_MS: 2000,               // 2 seconds between article processing (Paste Content / Delete)
+  RETRY_DELAYS_MS: [5000, 10000, 20000], // Exponential backoff: 5s, 10s, 20s
   MAX_RETRIES: 3,
   CONTINUE_DELAY_MINUTES: 1,             // 1 minute gap between chunks
   WORKSPACES: ['JAMIE', 'CHARL', 'LARA', 'NAINTARA', 'KARL', 'MARIE']
@@ -12064,6 +12058,37 @@ function getExistingWorkspaceTitles(uploaderSheet, workspaceName) {
 
 
 /**
+ * Bulk-read versions of findPersonRow/findPersonEndRow.
+ * Reads column A once, then searches in memory — avoids hundreds of cell-by-cell API calls.
+ * allColA is a 2D array from uploaderSheet.getRange(1, 1, lastRow, 1).getValues()
+ */
+function findPersonRowFast(allColA, personName) {
+  var upperName = personName.toUpperCase();
+  for (var i = 0; i < allColA.length; i++) {
+    var val = allColA[i][0] ? allColA[i][0].toString().toUpperCase() : '';
+    if (val.indexOf(upperName) !== -1 && val.indexOf('END ROW') === -1) {
+      Logger.log('Found person "' + personName + '" at row ' + (i + 1));
+      return i + 1;
+    }
+  }
+  Logger.log('Person "' + personName + '" not found');
+  return null;
+}
+
+function findPersonEndRowFast(allColA, personRow) {
+  for (var i = personRow; i < allColA.length; i++) {
+    var val = allColA[i][0] ? allColA[i][0].toString().toUpperCase() : '';
+    if (val.indexOf('END ROW') !== -1) {
+      Logger.log('Found END ROW at row ' + (i + 1) + ' for person in row ' + personRow);
+      return i + 1;
+    }
+  }
+  Logger.log('END ROW not found for person in row ' + personRow);
+  return null;
+}
+
+
+/**
  * ============================================================================
  * CREATE NEW ROWS — Chunked batch processor
  * ============================================================================
@@ -12072,9 +12097,10 @@ function getExistingWorkspaceTitles(uploaderSheet, workspaceName) {
  *
  * Key behaviors matching Python:
  * - Duplicate checking via plain text scan of column A (not merge detection)
- * - Drive folders created one at a time with 7s delay
+ * - Drive folders created one at a time with 3s delay
  * - Rows batch-inserted, formatted via 2D arrays (not individual API calls)
- * - 7s delays between insert → format → values → dropdowns (matches Python)
+ * - Workspace/END ROW lookup via bulk column A read (not cell-by-cell)
+ * - 2s delays between insert → format → values → dropdowns
  * - Each article verified after insertion
  * - Failed articles get "Retry Row" + red background + error in column E
  * - Only verified articles marked "Row Created" in AST
@@ -12131,7 +12157,7 @@ function batchCreateNewRows() {
     }
 
     planMessage += '\nProcesses each workspace: scan → dedupe → folders → insert → verify.\n';
-    planMessage += '8s delay between folder creations.\nAuto-continues if over 4.5 min.\nProceed?';
+    planMessage += 'Auto-continues if over 4.5 min.\nProceed?';
 
     var response = SpreadsheetApp.getUi().alert('Create New Rows', planMessage, SpreadsheetApp.getUi().ButtonSet.YES_NO);
     if (response !== SpreadsheetApp.getUi().Button.YES) {
@@ -12140,10 +12166,12 @@ function batchCreateNewRows() {
     }
 
     // Step 4: Initialize state and start processing
+    // Pass pre-scanned articles so SCAN phase doesn't re-read the AST
     var state = {
       workspaces: selectedWorkspaces,
       currentWorkspaceIndex: 0,
       phase: 'SCAN',
+      preScannedArticles: byWorkspace,
       // Per-workspace working data (rebuilt each workspace)
       currentArticles: [],
       articlesWithFolders: [],
@@ -12192,8 +12220,10 @@ function processCreateNewRowsChunk(state) {
     if (state.phase === 'SCAN') {
       Logger.log('SCAN: ' + workspaceName);
 
-      // Scan AST for "Not Available Yet" articles in this workspace
-      var articles = getArticlesForUploaderTransfer(statusSheet, workspaceName);
+      // Use pre-scanned data from plan display if available, otherwise scan AST
+      var articles = (state.preScannedArticles && state.preScannedArticles[workspaceName])
+        ? state.preScannedArticles[workspaceName]
+        : getArticlesForUploaderTransfer(statusSheet, workspaceName);
 
       if (articles.length === 0) {
         Logger.log('No articles for ' + workspaceName);
@@ -12285,9 +12315,9 @@ function processCreateNewRowsChunk(state) {
         state.currentFolderIndex++;
         saveBatchState('CREATE_NEW_ROWS', state);
 
-        // 7s delay between folder creations (matching Python's self.delay())
+        // Delay between Drive folder operations
         if (state.currentFolderIndex < state.currentArticles.length) {
-          Utilities.sleep(BATCH_CONFIG.OPERATION_DELAY_MS);
+          Utilities.sleep(BATCH_CONFIG.FOLDER_DELAY_MS);
         }
         SpreadsheetApp.flush();
       }
@@ -12318,9 +12348,11 @@ function processCreateNewRowsChunk(state) {
       Logger.log('INSERT: ' + workspaceName + ' (' + state.articlesWithFolders.length + ' articles)');
 
       try {
-        // Find END ROW for this workspace
-        var personRow = findPersonRow(uploaderSheet, workspaceName);
-        var endRow = findPersonEndRow(uploaderSheet, personRow);
+        // Find END ROW for this workspace — bulk read column A once, search in memory
+        var allColA = uploaderSheet.getRange(1, 1, uploaderSheet.getLastRow(), 1).getValues();
+        var personRow = findPersonRowFast(allColA, workspaceName);
+        if (!personRow) throw new Error('Workspace "' + workspaceName + '" not found in Uploader');
+        var endRow = findPersonEndRowFast(allColA, personRow);
         if (!endRow) throw new Error('END ROW not found for ' + workspaceName);
 
         // Step 1: Batch insert all rows at once (matching Python's insert_dimension)
@@ -12328,7 +12360,7 @@ function processCreateNewRowsChunk(state) {
         uploaderSheet.insertRowsBefore(endRow, totalRows);
         SpreadsheetApp.flush();
         Logger.log('Inserted ' + totalRows + ' rows');
-        Utilities.sleep(BATCH_CONFIG.OPERATION_DELAY_MS); // 7s delay (matches Python)
+        Utilities.sleep(BATCH_CONFIG.OPERATION_DELAY_MS);
 
         // Step 2: Build 2D arrays for all formatting (matching Python's batch formatting)
         var numCols = Math.max(uploaderSheet.getLastColumn(), 13);
@@ -12394,7 +12426,7 @@ function processCreateNewRowsChunk(state) {
         fullRange.setWrapStrategies(wraps);
         SpreadsheetApp.flush();
         Logger.log('Applied formatting for ' + state.articlesWithFolders.length + ' articles');
-        Utilities.sleep(BATCH_CONFIG.OPERATION_DELAY_MS); // 7s delay (matches Python)
+        Utilities.sleep(BATCH_CONFIG.OPERATION_DELAY_MS);
 
         // Step 3: Build 2D value array and write ALL values at once
         var values = [];
@@ -12420,7 +12452,7 @@ function processCreateNewRowsChunk(state) {
         fullRange.setValues(values);
         SpreadsheetApp.flush();
         Logger.log('Wrote values for ' + state.articlesWithFolders.length + ' articles');
-        Utilities.sleep(BATCH_CONFIG.OPERATION_DELAY_MS); // 7s delay (matches Python)
+        Utilities.sleep(BATCH_CONFIG.OPERATION_DELAY_MS);
 
         // Step 4: Merge title rows A-K and copy dropdown validations
         // (These require per-article calls — can't batch merges or validation copies)
@@ -12515,7 +12547,6 @@ function processCreateNewRowsChunk(state) {
       state.phase = 'SCAN';
       saveBatchState('CREATE_NEW_ROWS', state);
 
-      // 7s delay between workspaces (matching Python's delay between workspaces)
       if (state.currentWorkspaceIndex < state.workspaces.length) {
         Utilities.sleep(BATCH_CONFIG.OPERATION_DELAY_MS);
       }
