@@ -5652,26 +5652,28 @@ function onProductionTrackerEdit(e) {
 }
 
 // Main monitor function (runs automatically every 5 minutes)
-function monitorProductionTracker() {
+function monitorProductionTracker(skipTimeCheck) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var sheet = ss.getSheetByName(CONFIG.SHEETS.WIYS_PRODUCTION_TRACKER);
-  
+
   if (!sheet) {
     Logger.log('WIYS Production Tracker sheet not found');
     return;
   }
-  
+
   var username = CONFIG.WORDPRESS.USERNAME;
   var applicationPassword = CONFIG.WORDPRESS.APP_PASSWORD;
-  
+
   // Check if current time is within Phoenix AZ business hours (9 AM - 8 PM)
-  var now = new Date();
-  var phoenixTime = new Date(now.toLocaleString("en-US", {timeZone: "America/Phoenix"}));
-  var hour = phoenixTime.getHours();
-  
-  if (hour < CONFIG.TIME.WORK_START_HOUR || hour >= CONFIG.TIME.WORK_END_HOUR) {
-    Logger.log('Outside monitoring hours (9 AM - 8 PM Phoenix time). Current hour: ' + hour);
-    return;
+  if (!skipTimeCheck) {
+    var now = new Date();
+    var phoenixTime = new Date(now.toLocaleString("en-US", {timeZone: "America/Phoenix"}));
+    var hour = phoenixTime.getHours();
+
+    if (hour < CONFIG.TIME.WORK_START_HOUR || hour >= CONFIG.TIME.WORK_END_HOUR) {
+      Logger.log('Outside monitoring hours (9 AM - 8 PM Phoenix time). Current hour: ' + hour);
+      return;
+    }
   }
   
   var lastRow = sheet.getLastRow();
@@ -5732,62 +5734,7 @@ function monitorProductionTracker() {
 
 /** Run the production tracker monitor without the time check. Use from Apps Script editor or menu. */
 function runProductionTrackerNow() {
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var sheet = ss.getSheetByName(CONFIG.SHEETS.WIYS_PRODUCTION_TRACKER);
-
-  if (!sheet) {
-    Logger.log('WIYS Production Tracker sheet not found');
-    return;
-  }
-
-  var username = CONFIG.WORDPRESS.USERNAME;
-  var applicationPassword = CONFIG.WORDPRESS.APP_PASSWORD;
-
-  var lastRow = sheet.getLastRow();
-  if (lastRow < 2) return;
-
-  for (var row = 2; row <= lastRow; row++) {
-    var draftUrl = sheet.getRange(row, 4).getValue();
-    var status = sheet.getRange(row, 7).getValue();
-
-    if (status === CONFIG.STATUS.SCHEDULED && draftUrl) {
-      var postId = extractPostIdFromUrl(draftUrl);
-      if (!postId) {
-        Logger.log('Could not extract post ID from URL in row ' + row + ': ' + draftUrl);
-        continue;
-      }
-
-      try {
-        var wpStatus = getWordPressPostStatus(postId, username, applicationPassword);
-
-        if (wpStatus && wpStatus.status === CONFIG.WP_POST_STATUS.PUBLISH) {
-          Logger.log('Post ' + postId + ' is published! Updating row ' + row);
-
-          var cleanTitle = wpStatus.title;
-          if (typeof cleanTitle !== 'string') {
-            cleanTitle = 'Title not found';
-          }
-
-          var publishDate = formatWordPressDateTime(wpStatus.publishDate);
-
-          var titleRange = sheet.getRange(row, 4);
-          titleRange.setValue(cleanTitle);
-          titleRange.clearFormat();
-
-          sheet.getRange(row, 3).setValue(publishDate);
-          sheet.getRange(row, 5).setValue(wpStatus.link);
-          sheet.getRange(row, 7).setValue("MSN Pending");
-
-          Logger.log('Updated row ' + row + ' with published article: ' + cleanTitle);
-          SpreadsheetApp.flush();
-        }
-      } catch (error) {
-        Logger.log('Error checking post ' + postId + ' in row ' + row + ': ' + error.message);
-      }
-    }
-  }
-
-  Logger.log('Production Tracker manual check completed');
+  monitorProductionTracker(true);
 }
 
 function manualCheckProductionTracker(e) {
