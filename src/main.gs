@@ -11300,14 +11300,16 @@ function splitter() {
       // Line has both title and URL
       var title = line.substring(0, httpIndex).replace(/[\s:\-–—]+$/, '').trim();
       var url = line.substring(httpIndex).trim();
-      sheet.getRange(row, 3).setValue(title);                   // C: Topic
-      sheet.getRange(row, 4).setValue(url).setWrapStrategy(SpreadsheetApp.WrapStrategy.CLIP); // D: URL
+      sheet.getRange(row, 3).setValue(title)
+        .setFontLine('none').setWrapStrategy(SpreadsheetApp.WrapStrategy.WRAP).setHorizontalAlignment('left');
+      sheet.getRange(row, 4).setValue(url).setWrapStrategy(SpreadsheetApp.WrapStrategy.CLIP);
     } else if (httpIndex === 0) {
       // Line is just a URL
-      sheet.getRange(row, 4).setValue(line).setWrapStrategy(SpreadsheetApp.WrapStrategy.CLIP); // D: URL
+      sheet.getRange(row, 4).setValue(line).setWrapStrategy(SpreadsheetApp.WrapStrategy.CLIP);
     } else {
       // Line is just a title, no URL
-      sheet.getRange(row, 3).setValue(line);                    // C: Topic
+      sheet.getRange(row, 3).setValue(line)
+        .setFontLine('none').setWrapStrategy(SpreadsheetApp.WrapStrategy.WRAP).setHorizontalAlignment('left');
     }
 
     sheet.getRange(row, 2).setValue('Current News');             // B: Article Type
