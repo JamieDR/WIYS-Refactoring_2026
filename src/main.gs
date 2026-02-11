@@ -11270,12 +11270,12 @@ function splitter() {
     return;
   }
 
-  // Split into individual titles
-  var titles = content.toString().split('\n').filter(function(line) {
+  // Split into individual lines, parse title + URL from each
+  var lines = content.toString().split('\n').filter(function(line) {
     return line.trim() !== '';
   });
 
-  if (titles.length === 0) return;
+  if (lines.length === 0) return;
 
   // Find the first empty row in column C
   var lastRow = sheet.getLastRow();
@@ -11290,10 +11290,25 @@ function splitter() {
     }
   }
 
-  // Write titles to column C, set Article Type (B) and Status (F)
-  for (var i = 0; i < titles.length; i++) {
+  // Write to column C (as hyperlink if URL found), set Article Type (B) and Status (F)
+  for (var i = 0; i < lines.length; i++) {
+    var line = lines[i].trim();
     var row = startRow + i;
-    sheet.getRange(row, 3).setValue(titles[i].trim());       // C: Topic
+    var httpIndex = line.lastIndexOf('http');
+
+    if (httpIndex > 0) {
+      // Line has both title and URL
+      var title = line.substring(0, httpIndex).replace(/[\s:\-–—]+$/, '').trim();
+      var url = line.substring(httpIndex).trim();
+      sheet.getRange(row, 3).setFormula('=HYPERLINK("' + url + '","' + title.replace(/"/g, '""') + '")');
+    } else if (httpIndex === 0) {
+      // Line is just a URL
+      sheet.getRange(row, 3).setFormula('=HYPERLINK("' + line + '","' + line + '")');
+    } else {
+      // Line is just a title, no URL
+      sheet.getRange(row, 3).setValue(line);
+    }
+
     sheet.getRange(row, 2).setValue('Current News');           // B: Article Type
     sheet.getRange(row, 6).setValue('Topic Set');              // F: Status
   }
