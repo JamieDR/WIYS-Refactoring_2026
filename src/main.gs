@@ -12111,6 +12111,20 @@ function onEdit(e) {
       Logger.log('Calling onProductionTrackerEdit');
       onProductionTrackerEdit(e);
     }
+    // Enhanced Drafter - Column F (Claude Outline) edited (row 5+)
+    else if (sheet.getName() === 'Enhanced Drafter' && column === 6) {
+      for (var i = 0; i < numRows; i++) {
+        var currentRow = row + i;
+        if (currentRow >= 5) {
+          var valueF = sheet.getRange(currentRow, 6).getValue();
+          if (valueF != "") {
+            sheet.getRange(currentRow, 12).setValue("Ready for Drafting");
+          } else {
+            sheet.getRange(currentRow, 12).setValue("");
+          }
+        }
+      }
+    }
     // Enhanced Drafter - Column E edited (row 5+)
     else if (sheet.getName() === 'Enhanced Drafter' && column === 5) {
       for (var i = 0; i < numRows; i++) {
