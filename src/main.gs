@@ -11340,10 +11340,10 @@ function onTopicListEdit(e) {
   // Column B (Article Type) → Travel Feature sets E (Place to Visit) to "N/A"
   if (column === 2) {
     if (e.value === 'Travel Feature') {
-      var cell = sheet.getRange(row, 5);
-      cell.setValue('N/A');
-      cell.setHorizontalAlignment('center');
+      sheet.getRange(row, 4).setValue('N/A').setHorizontalAlignment('center');  // D: URL
+      sheet.getRange(row, 5).setValue('N/A').setHorizontalAlignment('center');  // E: Place to Visit
     } else {
+      sheet.getRange(row, 4).clearContent();
       sheet.getRange(row, 5).clearContent();
     }
   }
