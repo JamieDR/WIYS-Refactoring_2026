@@ -11301,10 +11301,10 @@ function splitter() {
       var title = line.substring(0, httpIndex).replace(/[\s:\-–—]+$/, '').trim();
       var url = line.substring(httpIndex).trim();
       sheet.getRange(row, 3).setValue(title);                   // C: Topic
-      sheet.getRange(row, 4).setValue(url);                     // D: URL
+      sheet.getRange(row, 4).setValue(url).setWrapStrategy(SpreadsheetApp.WrapStrategy.CLIP); // D: URL
     } else if (httpIndex === 0) {
       // Line is just a URL
-      sheet.getRange(row, 4).setValue(line);                    // D: URL
+      sheet.getRange(row, 4).setValue(line).setWrapStrategy(SpreadsheetApp.WrapStrategy.CLIP); // D: URL
     } else {
       // Line is just a title, no URL
       sheet.getRange(row, 3).setValue(line);                    // C: Topic
