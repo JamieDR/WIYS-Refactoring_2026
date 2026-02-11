@@ -11542,6 +11542,12 @@ function deleteDoneRows() {
     return;
   }
 
+  // Default column backgrounds per sheet (column number → color)
+  var sheetColors = {
+    'Topic List': { 4: '#ffffff', 5: '#ffe5ef' },
+    'Enhanced Drafter': { 1: '#000000', 4: '#ffe5ef', 5: '#daee03', 7: '#d9d9d9' }
+  };
+
   var results = [];
 
   for (var s = 0; s < selectedSheets.length; s++) {
@@ -11554,6 +11560,7 @@ function deleteDoneRows() {
     if (lastRow < 2 || lastCol < 1) continue;
 
     var data = sheet.getRange(2, 1, lastRow - 1, lastCol).getValues();
+    var defaults = sheetColors[sheetName] || {};
     var cleared = 0;
 
     for (var i = data.length - 1; i >= 0; i--) {
@@ -11561,10 +11568,19 @@ function deleteDoneRows() {
       for (var j = 0; j < row.length; j++) {
         var val = row[j].toString().trim();
         if (val === 'Done' || val === 'DONE') {
-          var range = sheet.getRange(i + 2, 1, 1, j + 1);
+          var rowNum = i + 2;
+          var range = sheet.getRange(rowNum, 1, 1, j + 1);
           range.clearContent();
           range.setBackground(null);
           range.setFontLine(null);
+
+          // Restore default column colors
+          for (var col in defaults) {
+            if (parseInt(col) <= j + 1) {
+              sheet.getRange(rowNum, parseInt(col)).setBackground(defaults[col]);
+            }
+          }
+
           cleared++;
           break;
         }
