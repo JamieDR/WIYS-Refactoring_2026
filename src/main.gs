@@ -68,12 +68,11 @@ const CONFIG = {
   TRIGGERS: {
     PASTE_ARTICLE_SECTIONS: 'Paste Article Sections',
     SEND_TO_EDITORS: 'Send to Editors',
-    FOR_ALEKS_REVIEW: 'For Aleks Review',
     SET_DATE_TIME: 'Set Date/Time',
     SCHEDULE: 'Schedule',
     CHECK_WP_STATUS: 'Check WP Status',
     RECORD: 'Record',
-    UPDATE_TITLE_AND_INTRO: 'Update Title and Intro'
+    UPDATE_TITLE: 'Update Title'
   },
 
   // ===== COLUMN INDICES =====
@@ -4245,53 +4244,6 @@ function downloadShutterstockImage(e) {
 // WORDPRESS STATUS MONITOR FOR "WP Editing Tracker" SHEET
 // =============================================================================
 
-function transferToAleksReview(e) {
-  if (!e.value || e.value !== CONFIG.TRIGGERS.FOR_ALEKS_REVIEW) return;
-
-  var sheet = e.range.getSheet();
-  var row = e.range.getRow();
-  var targetSheet = e.source.getSheetByName(CONFIG.SHEETS.WP_EDITING_TRACKER);
-  
-  // Get the values from Article Status Tracker with UPDATED mappings
-  var columnBValue = sheet.getRange(row, 2).getValue(); // Column B
-  var title = sheet.getRange(row, 3).getValue();        // Column C
-  var wpUrl = sheet.getRange(row, 5).getValue();        // Column E
-  var columnKValue = sheet.getRange(row, 11).getValue(); // Column K
-  
-  // Get the last row with any data in the sheet
-  var lastRow = targetSheet.getLastRow();
-  var targetRow = lastRow + 1; // Start checking from the row after the last row with data
-  
-  // If there's data in the sheet, find the first empty row after the last row
-  if (lastRow > 0) {
-    // Check if the current last row + 1 has empty C and D
-    var cValue = targetSheet.getRange(targetRow, 3).getValue();
-    var dValue = targetSheet.getRange(targetRow, 4).getValue();
-    
-    // If C or D has data in the row after lastRow, keep checking further
-    while (cValue || dValue) {
-      targetRow++;
-      cValue = targetSheet.getRange(targetRow, 3).getValue();
-      dValue = targetSheet.getRange(targetRow, 4).getValue();
-    }
-  }
-  
-  // Set values in WP Editing Tracker with UPDATED mappings:
-  // Article Status Tracker → WP Editing Tracker
-  // B → A
-  // C → C
-  // E → D
-  // K → I
-  
-  targetSheet.getRange(targetRow, 1).setValue(columnBValue);  // B → A
-  targetSheet.getRange(targetRow, 3).setValue(title);         // C → C
-  targetSheet.getRange(targetRow, 4).setValue(wpUrl);         // E → D
-  targetSheet.getRange(targetRow, 9).setValue(columnKValue);  // K → I
-  targetSheet.getRange(targetRow, 8).setValue("WordPress Draft"); // Status in Column H
-
-  // Mark as DONE in Article Status Tracker
-  sheet.getRange(row, 7).setValue(CONFIG.STATUS.DONE);
-}
 
 
 
@@ -4538,8 +4490,8 @@ function onWPTrackerEdit(e) {
       checkWordPressStatus(e);
     } else if (e.value === CONFIG.TRIGGERS.RECORD) {
       transferToProductionTracker(e);
-    } else if (e.value === CONFIG.TRIGGERS.UPDATE_TITLE_AND_INTRO) {  // ADD THIS NEW CASE
-      updateTitleAndIntro(e);
+    } else if (e.value === CONFIG.TRIGGERS.UPDATE_TITLE) {
+      updateTitle(e);
     }
   }
 }
@@ -5642,296 +5594,6 @@ function convertTagsToWordPressIds(tagNames, username, applicationPassword) {
 
 
 
-
-/// GET INTRO SUBHEADINGS ONLY
-
-
-function getIntroSubheading() {
- var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(CONFIG.SHEETS.WP_EDITING_TRACKER);
- if (!sheet) {
-   SpreadsheetApp.getUi().alert('WP Editing Tracker sheet not found');
-   return;
- }
- 
- var lastRow = sheet.getLastRow();
- var articlesToProcess = [];
- 
- // Find all rows with WordPress URL and empty Column J OR Column K
- for (var row = 2; row <= lastRow; row++) {
-   var columnJ = sheet.getRange(row, 10).getValue(); // Column J - Subheading
-   var columnK = sheet.getRange(row, 11).getValue(); // Column K - Content
-   var wpUrl = sheet.getRange(row, 4).getValue(); // Column D
-   
-   // Check conditions - ONLY need WordPress URL
-   var columnJEmpty = !columnJ || columnJ.toString().trim() === '';
-   var columnKEmpty = !columnK || columnK.toString().trim() === '';
-   var hasUrl = wpUrl && wpUrl.toString().trim() !== '';
-   
-   // Process if URL exists and at least one of J or K is empty
-   if (hasUrl && (columnJEmpty || columnKEmpty)) {
-     articlesToProcess.push({
-       row: row,
-       wpUrl: wpUrl,
-       needsSubheading: columnJEmpty,
-       needsContent: columnKEmpty
-     });
-   }
- }
- 
- // Check if any articles found
- if (articlesToProcess.length === 0) {
-   SpreadsheetApp.getUi().alert(
-     'No Articles to Process',
-     'No articles found that meet the criteria:\n' +
-     '• Column J (subheading) OR Column K (content) is empty\n' +
-     '• Column D has WordPress URL',
-     SpreadsheetApp.getUi().ButtonSet.OK
-   );
-   return;
- }
- 
- // Show confirmation dialog
- var confirmMessage = 'Found ' + articlesToProcess.length + ' articles ready for extraction.\n\n';
- confirmMessage += 'This will extract missing subheadings and/or content from the first slide of each article.\n\n';
- confirmMessage += 'Continue?';
- 
- var response = SpreadsheetApp.getUi().alert(
-   'Extract Intro Subheadings & Content',
-   confirmMessage,
-   SpreadsheetApp.getUi().ButtonSet.YES_NO
- );
- 
- if (response !== SpreadsheetApp.getUi().Button.YES) {
-   return;
- }
- 
- // Process each article
- var successCount = 0;
- var errorCount = 0;
- var errors = [];
- 
- for (var i = 0; i < articlesToProcess.length; i++) {
-   var article = articlesToProcess[i];
-   
-   try {
-     Logger.log('Processing article ' + (i + 1) + ' of ' + articlesToProcess.length + ' (Row ' + article.row + ')');
-     
-     // Extract data from WordPress
-     var extractedData = extractSlideDataFromWordPress(article.wpUrl, article.needsSubheading, article.needsContent);
-     
-     if (extractedData && extractedData.success) {
-       var cellsUpdated = [];
-       
-       // Update subheading if needed and found
-       if (article.needsSubheading && extractedData.subheading) {
-         sheet.getRange(article.row, 10).setValue(extractedData.subheading);
-         cellsUpdated.push('subheading');
-       }
-       
-       // Update content if needed and found
-       if (article.needsContent && extractedData.content) {
-         sheet.getRange(article.row, 11).setValue(extractedData.content);
-         cellsUpdated.push('content');
-       }
-       
-       successCount++;
-       Logger.log('Successfully extracted ' + cellsUpdated.join(' + ') + ' for row ' + article.row);
-       
-     } else {
-       // Failed - write error message to appropriate cells and color them light red
-       var errorMessage = 'Failed - ' + (extractedData ? extractedData.error : 'Unknown error');
-       
-       if (article.needsSubheading) {
-         sheet.getRange(article.row, 10).setValue(errorMessage);
-         sheet.getRange(article.row, 10).setBackground(CONFIG.COLORS.LIGHT_RED); // Light red
-       }
-       
-       if (article.needsContent) {
-         sheet.getRange(article.row, 11).setValue(errorMessage);
-         sheet.getRange(article.row, 11).setBackground(CONFIG.COLORS.LIGHT_RED); // Light red
-       }
-       
-       errorCount++;
-       errors.push({
-         row: article.row,
-         error: extractedData ? extractedData.error : 'Unknown error'
-       });
-       Logger.log('Failed to extract data for row ' + article.row + ': ' + errorMessage);
-     }
-     
-     // Add delay to avoid overwhelming WordPress API
-     Utilities.sleep(1000);
-     
-   } catch (error) {
-     errorCount++;
-     var errorMessage = 'Failed - ' + error.message;
-     
-     if (article.needsSubheading) {
-       sheet.getRange(article.row, 10).setValue(errorMessage);
-       sheet.getRange(article.row, 10).setBackground(CONFIG.COLORS.LIGHT_RED); // Light red
-     }
-     
-     if (article.needsContent) {
-       sheet.getRange(article.row, 11).setValue(errorMessage);
-       sheet.getRange(article.row, 11).setBackground(CONFIG.COLORS.LIGHT_RED); // Light red
-     }
-     
-     errors.push({
-       row: article.row,
-       error: error.message
-     });
-     Logger.log('Error processing row ' + article.row + ': ' + error.message);
-   }
- }
- 
- // Force save
- SpreadsheetApp.flush();
- 
- // Show results
- var resultMessage = 'Extraction Complete!\n\n';
- resultMessage += '✅ Successfully extracted: ' + successCount + ' articles\n';
- 
- if (errorCount > 0) {
-   resultMessage += '❌ Errors: ' + errorCount + ' articles\n\n';
-   resultMessage += 'Failed articles (marked in light red):\n';
-   for (var j = 0; j < Math.min(errors.length, 5); j++) {
-     resultMessage += '• Row ' + errors[j].row + ': ' + errors[j].error + '\n';
-   }
-   if (errors.length > 5) {
-     resultMessage += '... and ' + (errors.length - 5) + ' more errors (check logs)\n';
-   }
- } else {
-   resultMessage += '\n🎉 All data extracted successfully!';
- }
- 
- SpreadsheetApp.getUi().alert('Extraction Results', resultMessage, SpreadsheetApp.getUi().ButtonSet.OK);
- 
- Logger.log('Data extraction completed - Success: ' + successCount + ', Errors: ' + errorCount);
-}
-
-// Helper function to extract subheading and/or content from WordPress post
-function extractSlideDataFromWordPress(wpUrl, needsSubheading, needsContent) {
- try {
-   // Extract post ID from URL
-   var postId = extractPostIdFromUrl(wpUrl);
-   if (!postId) {
-     return { success: false, error: 'Invalid URL format' };
-   }
-   
-   // WordPress API credentials
-   var username = CONFIG.WORDPRESS.USERNAME;
-   var applicationPassword = CONFIG.WORDPRESS.APP_PASSWORD;
-   var apiUrl = CONFIG.ENDPOINTS.WP_POSTS + '/' + postId + '?context=edit';
-   
-   // Fetch post content
-   var options = {
-     method: "get",
-     headers: {
-       "Authorization": "Basic " + Utilities.base64Encode(username + ":" + applicationPassword)
-     },
-     muteHttpExceptions: true
-   };
-   
-   var response = UrlFetchApp.fetch(apiUrl, options);
-   
-   if (response.getResponseCode() !== CONFIG.HTTP_STATUS.OK) {
-     return { success: false, error: 'Cannot access post (Code: ' + response.getResponseCode() + ')' };
-   }
-   
-   var postData = JSON.parse(response.getContentText());
-   var content = postData.content.raw;
-   
-   // Check if content has slideshow blocks
-   if (!content.includes('wp:clmsn/slideshow-item')) {
-     return { success: false, error: 'No slideshow found' };
-   }
-   
-   // Find the first slideshow item block
-   var firstSlidePattern = /<!-- wp:clmsn\/slideshow-item\s+({[^}]+})\s*-->([\s\S]*?)<!-- \/wp:clmsn\/slideshow-item -->/;
-   var match = content.match(firstSlidePattern);
-   
-   if (!match) {
-     return { success: false, error: 'Cannot parse slideshow structure' };
-   }
-   
-   var blockContent = match[2];
-   var result = { success: true };
-   
-   // Extract subheading if needed
-   if (needsSubheading) {
-     var h3Match = blockContent.match(/<h3[^>]*>([\s\S]*?)<\/h3>/);
-     
-     if (h3Match) {
-       var subheading = cleanHtmlEntities(h3Match[1].trim());
-       if (subheading) {
-         result.subheading = subheading;
-       }
-     }
-   }
-   
-   // Extract content if needed - CAPTURE EVERYTHING FROM FIRST <p> TO LAST </p>
-   if (needsContent) {
-     var firstPStart = blockContent.indexOf('<p>');
-     var lastPEnd = blockContent.lastIndexOf('</p>') + 4;
-     
-     if (firstPStart !== -1 && lastPEnd > firstPStart) {
-       var allPContent = blockContent.substring(firstPStart, lastPEnd);
-       
-       // Remove all p tags but keep the content
-       var cleanContent = allPContent.replace(/<\/?p[^>]*>/g, ' ');
-       
-       // Convert <br><br> to double line breaks
-       cleanContent = cleanContent.replace(/<br\s*\/?>\s*<br\s*\/?>/gi, '\n\n');
-       
-       // Convert remaining single <br> to single line breaks  
-       cleanContent = cleanContent.replace(/<br\s*\/?>/gi, '\n');
-       
-       // Clean up HTML entities
-       cleanContent = cleanHtmlEntities(cleanContent);
-       
-       // CLEAN UP EXCESSIVE WHITESPACE
-       cleanContent = cleanContent.replace(/\s+/g, ' '); // Multiple spaces → single space
-       cleanContent = cleanContent.replace(/\n\s+/g, '\n'); // Remove spaces after line breaks
-       cleanContent = cleanContent.replace(/\s+\n/g, '\n'); // Remove spaces before line breaks
-       cleanContent = cleanContent.trim(); // Remove leading/trailing whitespace
-       
-       if (cleanContent) {
-         result.content = cleanContent;
-       }
-     }
-   }
-   
-   // Check if we got what we needed
-   var gotSubheading = !needsSubheading || result.subheading;
-   var gotContent = !needsContent || result.content;
-   
-   if (!gotSubheading && !gotContent) {
-     return { success: false, error: 'No subheading or content found in first slide' };
-   } else if (!gotSubheading) {
-     return { success: false, error: 'No subheading found in first slide' };
-   } else if (!gotContent) {
-     return { success: false, error: 'No content found in first slide' };
-   }
-   
-   return result;
-   
- } catch (error) {
-   return { success: false, error: error.message };
- }
-}
-
-// Helper function to clean HTML entities
-function cleanHtmlEntities(text) {
- if (!text) return '';
- 
- return text
-   .replace(/&quot;/g, '"')
-   .replace(/&amp;/g, '&')
-   .replace(/&lt;/g, '<')
-   .replace(/&gt;/g, '>')
-   .replace(/&nbsp;/g, ' ')
-   .trim();
-}
 
 function batchPasteArticleSections() {
   var operationType = 'Batch Paste Article Sections';
@@ -7697,444 +7359,141 @@ function publishWordPressPostWithDate(wpUrl, date, time) {
   return result !== false;
 }
 
-// BATCH UPDATE TITLE AND INTRO
-function updateTitleAndIntro(e) {
+// UPDATE WORDPRESS TITLE FROM SHEET
+function updateTitle(e) {
   var sheet = e.range.getSheet();
   var row = e.range.getRow();
-  
+
   try {
-    // Get the necessary values
-    var wpUrl = sheet.getRange(row, 4).getValue(); // Column D - WP URL
-    var introSubheading = sheet.getRange(row, 10).getValue(); // Column J - Intro Subheading
-    var introContent = sheet.getRange(row, 11).getValue(); // Column K - Intro Content
-    var finalTitle = sheet.getRange(row, 12).getValue(); // Column L - Final Title
-    
-    // MUST have WordPress URL
+    var wpUrl = sheet.getRange(row, 4).getValue();     // Column D - WP URL
+    var finalTitle = sheet.getRange(row, 9).getValue(); // Column I - Final Title
+
     if (!wpUrl) {
-      sheet.getRange(row, 8).setValue('New H1 & Intro Ready'); // Keep original - missing URL
+      sheet.getRange(row, 8).setValue('New Title Ready');
       Logger.log('Skipping row ' + row + ' - No WordPress URL found');
       return;
     }
 
-    // Check which fields have values (not empty/null)
-    var hasTitle = finalTitle && finalTitle.toString().trim() !== '';
-    var hasSubheading = introSubheading && introSubheading.toString().trim() !== '';
-    var hasContent = introContent && introContent.toString().trim() !== '';
-
-    // Must have at least ONE field to update
-    if (!hasTitle && !hasSubheading && !hasContent) {
-      sheet.getRange(row, 8).setValue('New H1 & Intro Ready'); // Keep original - no data to update
-      Logger.log('Skipping row ' + row + ' - No data to update');
+    if (!finalTitle || finalTitle.toString().trim() === '') {
+      sheet.getRange(row, 8).setValue('New Title Ready');
+      Logger.log('Skipping row ' + row + ' - No final title found');
       return;
     }
 
-    // Extract post ID
     var postId = extractPostIdFromUrl(wpUrl);
     if (!postId) {
-      sheet.getRange(row, 8).setValue('New H1 & Intro Ready'); // Keep original - invalid URL
+      sheet.getRange(row, 8).setValue('New Title Ready');
       Logger.log('Skipping row ' + row + ' - Could not extract post ID from URL');
       return;
     }
-    
-    Logger.log('Updating post ID: ' + postId);
-    if (hasTitle) Logger.log('New title: ' + finalTitle);
-    if (hasSubheading) Logger.log('New subheading: ' + introSubheading);
-    if (hasContent) Logger.log('New content provided');
-    
-    // Get current post data from WordPress - REQUEST RAW CONTENT
-    var username = CONFIG.WORDPRESS.USERNAME;
-    var applicationPassword = CONFIG.WORDPRESS.APP_PASSWORD;
-    // Add context=edit to get raw content
-    var wpApiUrl = CONFIG.ENDPOINTS.WP_POSTS + '/' + postId + '?context=edit';
-    
-    var options = {
-      method: "get",
-      headers: {
-        "Authorization": "Basic " + Utilities.base64Encode(username + ":" + applicationPassword)
-      },
-      muteHttpExceptions: true
-    };
-    
-    var response = UrlFetchApp.fetch(wpApiUrl, options);
-    if (response.getResponseCode() !== CONFIG.HTTP_STATUS.OK) {
-      Logger.log('Error: Cannot fetch post - Response code: ' + response.getResponseCode());
-      sheet.getRange(row, 8).setValue('New H1 & Intro Ready'); // Keep original status
-      Logger.log('Skipping row ' + row + ' - Cannot fetch post from WordPress');
-      return;
-    }
 
-    // Check if response is actually JSON before parsing
-    var responseText = response.getContentText();
-    var contentType = response.getHeaders()['Content-Type'] || '';
+    Logger.log('Updating title for post ID: ' + postId + ' → ' + finalTitle);
 
-    // Check for HTML response (WordPress sometimes returns HTML error pages with 200 status)
-    if (responseText.trim().startsWith('<!DOCTYPE') || responseText.trim().startsWith('<html') || !contentType.includes('application/json')) {
-      Logger.log('Error: WordPress returned HTML instead of JSON for post ' + postId);
-      Logger.log('Content-Type: ' + contentType);
-      Logger.log('Response preview: ' + responseText.substring(0, 200));
-      sheet.getRange(row, 8).setValue('New H1 & Intro Ready'); // Keep original status
-      Logger.log('Skipping row ' + row + ' - WordPress returned non-JSON response');
-      return;
-    }
+    var result = updateWordPressPost(postId, { title: finalTitle });
 
-    var postData;
-    try {
-      postData = JSON.parse(responseText);
-    } catch (parseError) {
-      Logger.log('Error parsing JSON for post ' + postId + ': ' + parseError.message);
-      Logger.log('Response preview: ' + responseText.substring(0, 200));
-      sheet.getRange(row, 8).setValue('New H1 & Intro Ready'); // Keep original status
-      return;
-    }
-    // Get the raw content
-    var currentContent = postData.content.raw;
-    
-    Logger.log('Current content length: ' + currentContent.length);
-    
-    // Prepare update payload - only include fields that have values
-    var updatePayload = {};
-    
-    // Update title if provided
-    if (hasTitle) {
-      updatePayload.title = finalTitle;
-      Logger.log('Will update title to: ' + finalTitle);
-    }
-    
-    // Update content if we have subheading or content to change
-    if (hasSubheading || hasContent) {
-      // Format content with line breaks if provided
-      var formattedIntroContent = hasContent ? addLineBreaksEveryTwoSentences(introContent) : null;
-      
-      // Update the first slideshow item selectively
-      var updatedContent = updateFirstSlideContentSelective(
-        currentContent, 
-        hasSubheading ? introSubheading : null, 
-        formattedIntroContent
-      );
-      
-      if (updatedContent) {
-        updatePayload.content = updatedContent;
-        Logger.log('Content will be updated');
-      } else {
-        Logger.log('Error: Could not update slideshow content');
-        sheet.getRange(row, 8).setValue('New H1 & Intro Ready'); // Keep original - content update failed
-        Logger.log('Skipping row ' + row + ' - Could not update slideshow content');
-        return;
-      }
-    }
-    
-    // Send update to WordPress
-    var updateOptions = {
-      method: "post",
-      headers: {
-        "Authorization": "Basic " + Utilities.base64Encode(username + ":" + applicationPassword),
-        "Content-Type": "application/json"
-      },
-      payload: JSON.stringify(updatePayload),
-      muteHttpExceptions: true
-    };
-    
-    var updateResponse = UrlFetchApp.fetch(wpApiUrl, updateOptions);
-    
-    if (updateResponse.getResponseCode() === CONFIG.HTTP_STATUS.OK) {
-      sheet.getRange(row, 8).setValue('Title/Intro Updated');
-      
-      // Log what was actually updated
-      var updatedFields = [];
-      if (hasTitle) updatedFields.push('title');
-      if (hasSubheading) updatedFields.push('subheading');
-      if (hasContent) updatedFields.push('content');
-      
-      Logger.log('Successfully updated: ' + updatedFields.join(', ') + ' for post ' + postId);
+    if (result) {
+      sheet.getRange(row, 8).setValue('Title Updated');
+      Logger.log('Successfully updated title for post ' + postId);
     } else {
-      Logger.log('Failed to update post: ' + updateResponse.getContentText());
-      sheet.getRange(row, 8).setValue('New H1 & Intro Ready'); // Keep original status on failure
-      Logger.log('Keeping row ' + row + ' status as "New H1 & Intro Ready" due to update failure');
+      sheet.getRange(row, 8).setValue('New Title Ready');
+      Logger.log('Failed to update title for row ' + row);
     }
 
   } catch (error) {
-    Logger.log('Error in updateTitleAndIntro: ' + error.message);
-    Logger.log('Error stack: ' + error.stack);
-    sheet.getRange(row, 8).setValue('New H1 & Intro Ready'); // Keep original status on error
-    Logger.log('Keeping row ' + row + ' status as "New H1 & Intro Ready" due to error');
+    Logger.log('Error in updateTitle: ' + error.message);
+    sheet.getRange(row, 8).setValue('New Title Ready');
   }
 }
 
-// BATCH UPDATE FUNCTION
-function batchUpdateTitlesAndIntros() {
+// BATCH UPDATE TITLES
+function batchUpdateTitles() {
   var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(CONFIG.SHEETS.WP_EDITING_TRACKER);
   if (!sheet) {
     SpreadsheetApp.getUi().alert('WP Editing Tracker sheet not found');
     return;
   }
-  
+
   var lastRow = sheet.getLastRow();
   var articlesToUpdate = [];
-  
-  // Find all rows with "New H1 & Intro Ready" status
+
+  // Find all rows with "New Title Ready" status
   for (var row = 2; row <= lastRow; row++) {
     var status = sheet.getRange(row, 8).getValue(); // Column H
-    
-    if (status === 'New H1 & Intro Ready') {
-      // Check if required data exists
-      var wpUrl = sheet.getRange(row, 4).getValue(); // Column D
-      var introSubheading = sheet.getRange(row, 10).getValue(); // Column J
-      var introContent = sheet.getRange(row, 11).getValue(); // Column K
-      var finalTitle = sheet.getRange(row, 12).getValue(); // Column L
-      
-      // Check which fields have values (not empty/null)
-      var hasTitle = finalTitle && finalTitle.toString().trim() !== '';
-      var hasSubheading = introSubheading && introSubheading.toString().trim() !== '';
-      var hasContent = introContent && introContent.toString().trim() !== '';
-      
-      // MODIFIED: Only require WordPress URL + at least ONE of the update fields
-      if (wpUrl && (hasTitle || hasSubheading || hasContent)) {
-        articlesToUpdate.push({
-          row: row,
-          wpUrl: wpUrl,
-          title: hasTitle ? finalTitle : null,
-          subheading: hasSubheading ? introSubheading : null,
-          content: hasContent ? introContent : null,
-          hasTitle: hasTitle,
-          hasSubheading: hasSubheading,
-          hasContent: hasContent
-        });
+    if (status === 'New Title Ready') {
+      var wpUrl = sheet.getRange(row, 4).getValue();     // Column D
+      var finalTitle = sheet.getRange(row, 9).getValue(); // Column I
+
+      if (wpUrl && finalTitle && finalTitle.toString().trim() !== '') {
+        articlesToUpdate.push({ row: row, title: finalTitle });
       }
     }
   }
-  
-  // Check if any articles found
+
   if (articlesToUpdate.length === 0) {
     SpreadsheetApp.getUi().alert(
       'No Articles to Update',
-      'No articles found with "New H1 & Intro Ready" status that have the minimum required data.\n\n' +
+      'No articles found with "New Title Ready" status.\n\n' +
       'Make sure rows have:\n' +
-      '• Status = "New H1 & Intro Ready" in Column H\n' +
+      '• Status = "New Title Ready" in Column H\n' +
       '• WordPress URL in Column D\n' +
-      '• At least ONE of: Title (L), Subheading (J), or Content (K)',
+      '• Final Title in Column I',
       SpreadsheetApp.getUi().ButtonSet.OK
     );
     return;
   }
-  
-  // Show confirmation dialog with details about what will be updated
-  var updateSummary = 'Found ' + articlesToUpdate.length + ' articles ready to update.\n\n';
-  updateSummary += 'Update details:\n';
-  
+
+  // Confirmation
+  var summary = 'Found ' + articlesToUpdate.length + ' titles to update on WordPress.\n\n';
   for (var i = 0; i < Math.min(articlesToUpdate.length, 5); i++) {
-    var article = articlesToUpdate[i];
-    var updates = [];
-    if (article.hasTitle) updates.push('Title');
-    if (article.hasSubheading) updates.push('Subheading');
-    if (article.hasContent) updates.push('Content');
-    
-    updateSummary += '• Row ' + article.row + ': ' + updates.join(', ') + '\n';
+    summary += '• Row ' + articlesToUpdate[i].row + ': ' + articlesToUpdate[i].title + '\n';
   }
-  
   if (articlesToUpdate.length > 5) {
-    updateSummary += '... and ' + (articlesToUpdate.length - 5) + ' more articles\n';
+    summary += '... and ' + (articlesToUpdate.length - 5) + ' more\n';
   }
-  
-  updateSummary += '\nThis will:\n';
-  updateSummary += '• Update only the filled fields for each article\n';
-  updateSummary += '• Leave empty fields unchanged in WordPress\n';
-  updateSummary += '• Add line breaks every 2 sentences in intro content\n';
-  updateSummary += '• Change status to "Title/Intro Updated"\n\n';
-  updateSummary += 'Continue with selective batch update?';
-  
-  var response = SpreadsheetApp.getUi().alert(
-    'Selective Update Titles and Intros',
-    updateSummary,
-    SpreadsheetApp.getUi().ButtonSet.YES_NO
-  );
-  
-  if (response !== SpreadsheetApp.getUi().Button.YES) {
-    return;
-  }
-  
-  // Execute the batch update
+  summary += '\nContinue?';
+
+  var response = SpreadsheetApp.getUi().alert('Batch Update Titles', summary, SpreadsheetApp.getUi().ButtonSet.YES_NO);
+  if (response !== SpreadsheetApp.getUi().Button.YES) return;
+
+  // Execute
   var successCount = 0;
   var errorCount = 0;
-  var errors = [];
-  
+
   for (var i = 0; i < articlesToUpdate.length; i++) {
     var article = articlesToUpdate[i];
-    
     try {
-      Logger.log('Processing article ' + (i + 1) + ' of ' + articlesToUpdate.length + ' (Row ' + article.row + ')');
-      
-      // Create a mock event object to reuse the existing function
       var mockEvent = {
         range: sheet.getRange(article.row, 8),
-        value: 'Update Title and Intro'
+        value: 'Update Title'
       };
-      
-      // Store the current status
-      var currentStatus = sheet.getRange(article.row, 8).getValue();
-      
-      // Call the existing update function
-      updateTitleAndIntro(mockEvent);
-      
-      // Check if update was successful by checking the new status
+      updateTitle(mockEvent);
+
       var newStatus = sheet.getRange(article.row, 8).getValue();
-      
-      if (newStatus === 'Title/Intro Updated') {
+      if (newStatus === 'Title Updated') {
         successCount++;
-        
-        // Log what was updated for this article
-        var updatedFields = [];
-        if (article.hasTitle) updatedFields.push('Title');
-        if (article.hasSubheading) updatedFields.push('Subheading');
-        if (article.hasContent) updatedFields.push('Content');
-        
-        Logger.log('Successfully updated: ' + updatedFields.join(', ') + ' for row ' + article.row);
       } else {
         errorCount++;
-        errors.push({
-          row: article.row,
-          error: 'Update failed - check logs'
-        });
-        // Restore the original status
-        sheet.getRange(article.row, 8).setValue(currentStatus);
       }
-      
-      // Add a delay to avoid overwhelming the WordPress API
-      Utilities.sleep(1000); // 1 second delay between updates
-      
+
+      Utilities.sleep(1000); // 1 second delay between API calls
     } catch (error) {
       errorCount++;
-      errors.push({
-        row: article.row,
-        error: error.message
-      });
       Logger.log('Error updating row ' + article.row + ': ' + error.message);
-      // Make sure to reset status on error
-      sheet.getRange(article.row, 8).setValue('New H1 & Intro Ready');
+      sheet.getRange(article.row, 8).setValue('New Title Ready');
     }
   }
-  
-  // Force save
+
   SpreadsheetApp.flush();
-  
-  // Show results
-  var resultMessage = 'Selective Batch Update Complete!\n\n';
-  resultMessage += '✅ Successfully updated: ' + successCount + ' articles\n';
-  
+
+  var resultMessage = 'Batch Title Update Complete!\n\n';
+  resultMessage += 'Updated: ' + successCount + ' articles\n';
   if (errorCount > 0) {
-    resultMessage += '❌ Errors: ' + errorCount + ' articles\n\n';
-    resultMessage += 'Failed articles:\n';
-    for (var j = 0; j < Math.min(errors.length, 5); j++) {
-      resultMessage += '• Row ' + errors[j].row + ': ' + errors[j].error + '\n';
-    }
-    if (errors.length > 5) {
-      resultMessage += '... and ' + (errors.length - 5) + ' more errors (check logs)\n';
-    }
-  } else {
-    resultMessage += '\n🎉 All articles updated successfully!\n';
-    resultMessage += 'Only filled fields were updated - empty fields left unchanged!';
+    resultMessage += 'Errors: ' + errorCount + ' articles (check logs)\n';
   }
-  
-  SpreadsheetApp.getUi().alert('Selective Update Results', resultMessage, SpreadsheetApp.getUi().ButtonSet.OK);
-  
-  Logger.log('Selective batch update completed - Success: ' + successCount + ', Errors: ' + errorCount);
+
+  SpreadsheetApp.getUi().alert('Results', resultMessage, SpreadsheetApp.getUi().ButtonSet.OK);
 }
 
-// Helper function to add line breaks every 2 sentences - FIXED VERSION
-function addLineBreaksEveryTwoSentences(text) {
-  // Match sentences ending with ., !, or ?
-  var sentences = text.match(/[^.!?]+[.!?]+/g);
-  
-  if (!sentences) return text;
-  
-  var result = '';
-  for (var i = 0; i < sentences.length; i++) {
-    result += sentences[i].trim();
-    
-    // Add HTML line breaks after every 2 sentences (except for the last sentence)
-    if ((i + 1) % 2 === 0 && i < sentences.length - 1) {
-      result += '<br><br>';  // Changed from '\n\n' to '<br><br>'
-    } else if (i < sentences.length - 1) {
-      result += ' ';
-    }
-  }
-  
-  return result;
-}
-
-// Selective update function - FIXED VERSION
-function updateFirstSlideContentSelective(content, newSubheading, newContent) {
-  try {
-    // First, let's check if content has the slideshow blocks
-    if (!content.includes('wp:clmsn/slideshow-item')) {
-      Logger.log('No wp:clmsn/slideshow-item found in content');
-      return null;
-    }
-    
-    // Pattern to match the entire first slideshow item block
-    var firstSlidePattern = /<!-- wp:clmsn\/slideshow-item\s+({[^}]+})\s*-->([\s\S]*?)<!-- \/wp:clmsn\/slideshow-item -->/;
-    
-    var match = content.match(firstSlidePattern);
-    
-    if (!match) {
-      Logger.log('Primary regex did not match slideshow pattern');
-      return null;
-    }
-    
-    Logger.log('Found slideshow match');
-    
-    try {
-      // Extract and parse the JSON attributes
-      var jsonString = match[1];
-      var attributes = JSON.parse(jsonString);
-      
-      // Update slideTitle in attributes only if newSubheading is provided
-      if (newSubheading !== null) {
-        attributes.slideTitle = escapeQuotes(newSubheading);
-      }
-      
-      // Update the HTML content within the block
-      var blockContent = match[2];
-      
-      // Update the h3 tag only if newSubheading is provided
-      if (newSubheading !== null) {
-        blockContent = blockContent.replace(/<h3>[\s\S]*?<\/h3>/, '<h3>' + escapeQuotes(newSubheading) + '</h3>');
-      }
-      
-      // Update ALL p tags only if newContent is provided - FIXED: removed ? to make it greedy
-      if (newContent !== null) {
-        blockContent = blockContent.replace(/<p>[\s\S]*<\/p>/, '<p>' + escapeQuotes(newContent) + '</p>');
-      }
-      
-      // Rebuild the complete block with updated attributes
-      var updatedFirstSlide = '<!-- wp:clmsn/slideshow-item ' + JSON.stringify(attributes) + ' -->' + 
-                             blockContent + 
-                             '<!-- /wp:clmsn/slideshow-item -->';
-      
-      // Replace only the first slide in the content
-      var updatedContent = content.replace(match[0], updatedFirstSlide);
-      
-      Logger.log('Successfully updated first slide selectively');
-      return updatedContent;
-      
-    } catch (jsonError) {
-      Logger.log('Error parsing slide attributes: ' + jsonError.message);
-      return null;
-    }
-    
-  } catch (error) {
-    Logger.log('Error updating first slide content selectively: ' + error.message);
-    Logger.log('Error stack: ' + error.stack);
-    return null;
-  }
-}
-
-// Helper function to escape quotes for HTML
-function escapeQuotes(str) {
-  if (typeof str !== 'string') {
-    str = String(str || ''); // Convert to string or use an empty string if undefined/null
-  }
-  return str.replace(/"/g, '&quot;');
-}
 ///// BATCH IMAGE METADATA
 ///// BATCH IMAGE METADATA
 ///// BATCH IMAGE METADATA
@@ -9272,11 +8631,12 @@ function batchTransferToAleksReview() {
     if (status === 'Final WP Review - Jamie') {
       var articleData = {
         row: i + 2, // Actual row number in sheet
-        columnB: sourceData[i][1],  // Column B
-        title: sourceData[i][2],    // Column C
-        wpUrl: sourceData[i][4],    // Column E
-        columnI: sourceData[i][8],  // Column I
-        columnK: sourceData[i][10]  // Column K
+        columnB: sourceData[i][1],  // Column B (Drafter)
+        title: sourceData[i][2],    // Column C (Title)
+        wpUrl: sourceData[i][4],    // Column E (WP URL)
+        articleType: sourceData[i][7], // Column H (Article Type)
+        baseTopic: sourceData[i][8],   // Column I (Original Topic → Base Topic)
+        articleSummary: sourceData[i][10] // Column K (Topic & Summary → Article Summary)
       };
       
       // Validate that we have the required data
@@ -9350,16 +8710,18 @@ function batchTransferToAleksReview() {
       
       // Transfer the data
       // Article Status Tracker → WP Editing Tracker
-      // B → A
-      // C → C  
-      // E → D
-      // I → M
-      // K → I
-      targetSheet.getRange(targetRow, 1).setValue(article.columnB);    // B → A
-      targetSheet.getRange(targetRow, 3).setValue(article.title);      // C → C
-      targetSheet.getRange(targetRow, 4).setValue(article.wpUrl);      // E → D
-      targetSheet.getRange(targetRow, 9).setValue(article.columnK);    // K → I
-      targetSheet.getRange(targetRow, 13).setValue(article.columnI);   // I → M
+      // B → A (Drafter)
+      // C → C (Raw Title)
+      // E → D (WP Draft URL)
+      // H → B (Article Type)
+      // I → J (Base Topic)
+      // K → K (Article Summary)
+      targetSheet.getRange(targetRow, 1).setValue(article.columnB);         // B → A
+      targetSheet.getRange(targetRow, 2).setValue(article.articleType);     // H → B
+      targetSheet.getRange(targetRow, 3).setValue(article.title);           // C → C
+      targetSheet.getRange(targetRow, 4).setValue(article.wpUrl);           // E → D
+      targetSheet.getRange(targetRow, 10).setValue(article.baseTopic);      // I → J
+      targetSheet.getRange(targetRow, 11).setValue(article.articleSummary); // K → K
       // Status column (H) left blank
       
       // Mark as DONE in Article Status Tracker (Column G)
@@ -11172,9 +10534,7 @@ function onOpen() {
   // Create menu for WP Editing Tracker
   ui.createMenu('      **Editing')
     .addSeparator()
-    .addItem('🫳🏻 Get Intro & Subheadings', 'getIntroSubheading')
-    .addSeparator()
-    .addItem('📝 Update All H1/Slide1', 'batchUpdateTitlesAndIntros')
+    .addItem('📝 Update All Titles', 'batchUpdateTitles')
     .addSeparator()
     .addItem('✅ Schedule ALL', 'batchSchedulePosts')
     .addItem('🚀 Batch Set/Schedule', 'batchSetAndSchedule')
@@ -12170,9 +11530,7 @@ function onStatusEdit(e) {
   var row = e.range.getRow();
   
   if (sheet.getName() === 'Article Status Tracker' && column === 7) { // Column G
-    if (e.value === "Transfer WP URL") {
-      transferToAleksReview(e);
-    } else if (e.value === "Uploader Transfer") {
+    if (e.value === "Uploader Transfer") {
       processUploaderTransfer(e);
     }
   }
