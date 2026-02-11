@@ -11635,19 +11635,6 @@ function onEdit(e) {
         }
       }
     }
-    // Topic List - Column B set to "Travel Feature" → D gets "N/A" (centered)
-    else if (sheet.getName() === 'Topic List' && column === 2 && row >= 2 && e.value === 'Travel Feature') {
-      var cell = sheet.getRange(row, 4);
-      cell.setValue('N/A');
-      cell.setHorizontalAlignment('center');
-    }
-    // Topic List - Column E (Outline) filled in → F changes to "Ready for Drafting"
-    else if (sheet.getName() === 'Topic List' && column === 5 && row >= 2) {
-      var outlineValue = e.range.getValue();
-      if (outlineValue && outlineValue.toString().trim() !== '') {
-        sheet.getRange(row, 6).setValue('Ready for Drafting');
-      }
-    }
     else {
       Logger.log('No handler found for this sheet/column combination');
     }
