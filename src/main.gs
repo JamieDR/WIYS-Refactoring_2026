@@ -11325,6 +11325,7 @@ function splitter() {
  * onTopicListEdit - Standalone installable trigger for Topic List sheet.
  * - Column B → "Travel Feature": sets Column E (Place to Visit) to "N/A" (centered)
  * - Column F (Outline) filled in: sets Column G (Status) to "Outline Ready"
+ * - If B, C, D, E, F all empty: clears Column G (Status)
  */
 function onTopicListEdit(e) {
   if (!e || !e.range) return;
@@ -11354,6 +11355,15 @@ function onTopicListEdit(e) {
       sheet.getRange(row, 7).setValue('Outline Ready');
     } else {
       sheet.getRange(row, 7).setValue('Topic Set');
+    }
+  }
+
+  // If B, C, D, E, F are all empty → clear G (Status)
+  if (column >= 2 && column <= 6) {
+    var values = sheet.getRange(row, 2, 1, 5).getValues()[0]; // B through F
+    var allEmpty = values.every(function(v) { return v === '' || v === null; });
+    if (allEmpty) {
+      sheet.getRange(row, 7).clearContent();
     }
   }
 }
