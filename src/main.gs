@@ -10549,23 +10549,9 @@ function onOpen() {
 
 
   ui.createMenu('      **Prep for Upload' + lockStatus)
-    .addItem('🗄️ Create New Rows for Articles', 'batchProcessUploaderTransfers')
-    .addItem('📚 Paste All Content', 'batchPasteArticleSections')
-    .addItem('📸 Get All Image Metadata', 'batchGetImageMetadata')
-    .addItem('🐶 Fetch All Image File Names', 'batchFetchImageFileNames')
-    .addSeparator()
-    .addSeparator()
-    .addSeparator()
-    .addSeparator()
-    .addItem('🆙 Upload All to WordPress', 'batchUploadToWordPress') 
-    .addSeparator()
-    .addSeparator()
-    .addSeparator()
-    .addSeparator()
-    .addItem('🏵️ Delete All Uploaded', 'batchDeleteSuccessfulUploads')
-    .addSeparator()
-    .addItem('⛔ Stop All Batch Operations', 'stopAllBatchOperations')
-    .addItem('🔓 Force Unlock Sheet', 'forceUnlockUploaderSheet')
+    .addItem('🗄️ Create New Rows', 'batchCreateNewRows')
+    .addItem('📚 Paste Content', 'batchPasteContent')
+    .addItem('🏵️ Delete Successful Uploads', 'batchDeleteUploaded')
     .addToUi();
      
 }
@@ -11802,5 +11788,912 @@ function getCategoryFromTitleAndTags(title, tags) {
   if (/culture|art|music|festival|theater|gallery|tradition/.test(text)) return 'Culture';
   
   return 'Travel';
+}
+
+
+/**
+ * ============================================================================
+ * CHUNKED BATCH PROCESSOR FRAMEWORK
+ * ============================================================================
+ * Shared infrastructure for batch operations that may exceed the 6-minute
+ * GAS execution limit. Processes articles in timed chunks with:
+ * - State persistence (PropertiesService) for crash recovery
+ * - Auto-continuation via time triggers between chunks
+ * - Exponential backoff for API retries
+ * - Multi-select workspace picker (one, several, or all)
+ *
+ * Used by: batchCreateNewRows, batchPasteContent, batchDeleteUploaded
+ * ============================================================================
+ */
+
+var BATCH_CONFIG = {
+  MAX_RUNTIME_MS: 270000,                // 4.5 minutes (of 6 min limit)
+  ARTICLE_DELAY_MS: 8000,                // 8 seconds between articles
+  RETRY_DELAYS_MS: [10000, 30000, 60000], // Exponential backoff: 10s, 30s, 60s
+  MAX_RETRIES: 3,
+  CONTINUE_DELAY_MINUTES: 1,             // 1 minute gap between chunks
+  WORKSPACES: ['JAMIE', 'CHARL', 'LARA', 'NAINTARA', 'KARL', 'MARIE']
+};
+
+
+/**
+ * Shows a workspace picker dialog. Supports:
+ * - Single selection: "3" → LARA
+ * - Multi-select: "135" → JAMIE, LARA, KARL
+ * - All workspaces: "0"
+ * Returns array of workspace name strings, or null if cancelled.
+ */
+function selectWorkspaces(operationTitle) {
+  var ui = SpreadsheetApp.getUi();
+  var workspaceList = '0. ALL WORKSPACES\n';
+  for (var i = 0; i < BATCH_CONFIG.WORKSPACES.length; i++) {
+    workspaceList += (i + 1) + '. ' + BATCH_CONFIG.WORKSPACES[i] + '\n';
+  }
+
+  var response = ui.prompt(
+    operationTitle,
+    'Select workspaces:\n\n' + workspaceList + '\n' +
+    'Enter: single number, multiple (e.g. "135"), or 0 for all:',
+    ui.ButtonSet.OK_CANCEL
+  );
+
+  if (response.getSelectedButton() !== ui.Button.OK) return null;
+
+  var input = response.getResponseText().trim();
+
+  if (input === '0') {
+    return BATCH_CONFIG.WORKSPACES.slice(); // Copy of all
+  }
+
+  // Parse multi-select (e.g., "135" → workspaces 1, 3, 5)
+  var selected = [];
+  for (var i = 0; i < input.length; i++) {
+    var num = parseInt(input[i]);
+    if (num >= 1 && num <= BATCH_CONFIG.WORKSPACES.length) {
+      var name = BATCH_CONFIG.WORKSPACES[num - 1];
+      if (selected.indexOf(name) === -1) { // No duplicates
+        selected.push(name);
+      }
+    }
+  }
+
+  if (selected.length === 0) {
+    ui.alert('Invalid selection. Please try again.');
+    return null;
+  }
+
+  return selected;
+}
+
+
+/**
+ * Save batch state to PropertiesService.
+ * Handles chunking for large article lists (9KB per-property limit).
+ */
+function saveBatchState(key, state) {
+  var props = PropertiesService.getScriptProperties();
+  var json = JSON.stringify(state);
+
+  var CHUNK_SIZE = 8000;
+  var chunks = Math.ceil(json.length / CHUNK_SIZE);
+
+  props.setProperty(key + '_chunks', chunks.toString());
+  for (var i = 0; i < chunks; i++) {
+    props.setProperty(key + '_' + i, json.substring(i * CHUNK_SIZE, (i + 1) * CHUNK_SIZE));
+  }
+}
+
+
+/**
+ * Load batch state from PropertiesService.
+ * Returns the state object, or null if no saved state exists.
+ */
+function loadBatchState(key) {
+  var props = PropertiesService.getScriptProperties();
+  var chunksStr = props.getProperty(key + '_chunks');
+  if (!chunksStr) return null;
+
+  var chunks = parseInt(chunksStr);
+  var json = '';
+  for (var i = 0; i < chunks; i++) {
+    var chunk = props.getProperty(key + '_' + i);
+    if (!chunk) return null;
+    json += chunk;
+  }
+
+  try {
+    return JSON.parse(json);
+  } catch (e) {
+    return null;
+  }
+}
+
+
+/**
+ * Clear batch state from PropertiesService.
+ */
+function clearBatchState(key) {
+  var props = PropertiesService.getScriptProperties();
+  var chunksStr = props.getProperty(key + '_chunks');
+  if (chunksStr) {
+    var chunks = parseInt(chunksStr);
+    for (var i = 0; i < chunks; i++) {
+      props.deleteProperty(key + '_' + i);
+    }
+    props.deleteProperty(key + '_chunks');
+  }
+}
+
+
+/**
+ * Schedule a time trigger to continue batch processing after a delay.
+ * Cleans up any existing triggers for the same function first.
+ */
+function scheduleBatchContinuation(functionName) {
+  cleanupBatchTrigger(functionName);
+
+  ScriptApp.newTrigger(functionName)
+    .timeBased()
+    .after(BATCH_CONFIG.CONTINUE_DELAY_MINUTES * 60 * 1000)
+    .create();
+
+  Logger.log('Scheduled continuation: ' + functionName + ' in ' + BATCH_CONFIG.CONTINUE_DELAY_MINUTES + ' min');
+}
+
+
+/**
+ * Remove all time triggers for a given function name.
+ */
+function cleanupBatchTrigger(functionName) {
+  var triggers = ScriptApp.getProjectTriggers();
+  for (var i = 0; i < triggers.length; i++) {
+    if (triggers[i].getHandlerFunction() === functionName) {
+      ScriptApp.deleteTrigger(triggers[i]);
+    }
+  }
+}
+
+
+/**
+ * Check if we still have time to process another article.
+ */
+function hasTimeRemaining(startTime) {
+  return (new Date().getTime() - startTime) < BATCH_CONFIG.MAX_RUNTIME_MS;
+}
+
+
+/**
+ * Retry a function with exponential backoff.
+ * Delays: 10s → 30s → 60s between retries.
+ */
+function retryWithBackoff(fn) {
+  var lastError;
+  for (var attempt = 0; attempt <= BATCH_CONFIG.MAX_RETRIES; attempt++) {
+    try {
+      return fn();
+    } catch (error) {
+      lastError = error;
+      if (attempt < BATCH_CONFIG.MAX_RETRIES) {
+        var delay = BATCH_CONFIG.RETRY_DELAYS_MS[attempt] || 60000;
+        Logger.log('Retry ' + (attempt + 1) + '/' + BATCH_CONFIG.MAX_RETRIES +
+                   ' after ' + (delay / 1000) + 's: ' + error.message);
+        Utilities.sleep(delay);
+      }
+    }
+  }
+  throw lastError;
+}
+
+
+/**
+ * Refresh the uploader lock timestamp to prevent it from expiring
+ * during long multi-chunk operations.
+ */
+function refreshUploaderLock(operationType) {
+  var props = PropertiesService.getScriptProperties();
+  props.setProperty('UPLOADER_SHEET_LOCKED', operationType);
+  props.setProperty('UPLOADER_LOCK_TIME', new Date().getTime().toString());
+}
+
+
+/**
+ * ============================================================================
+ * CREATE NEW ROWS — Chunked batch processor
+ * ============================================================================
+ * Ports python/batch_article_processor.py to GAS.
+ * Scans AST for "Not Available Yet" articles, creates Uploader rows + Drive folders.
+ * Calls existing processNewArticleComplete() per article (no duplication).
+ * ============================================================================
+ */
+
+function batchCreateNewRows() {
+  var operationType = 'Create New Rows';
+
+  if (!checkUploaderLock(operationType)) return;
+
+  try {
+    // Step 1: Select workspaces
+    var selectedWorkspaces = selectWorkspaces('Create New Article Rows');
+    if (!selectedWorkspaces) {
+      unlockUploaderSheet(operationType);
+      return;
+    }
+
+    // Step 2: Scan AST for "Not Available Yet" articles in selected workspaces
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var statusSheet = ss.getSheetByName(CONFIG.SHEETS.ARTICLE_STATUS_TRACKER);
+
+    var allArticles = [];
+    for (var w = 0; w < selectedWorkspaces.length; w++) {
+      var workspaceName = selectedWorkspaces[w];
+      var articles = getArticlesForUploaderTransfer(statusSheet, workspaceName);
+      for (var a = 0; a < articles.length; a++) {
+        articles[a].workspace = workspaceName;
+      }
+      allArticles = allArticles.concat(articles);
+    }
+
+    if (allArticles.length === 0) {
+      SpreadsheetApp.getUi().alert('No articles found with "Not Available Yet" status for selected workspaces.');
+      unlockUploaderSheet(operationType);
+      return;
+    }
+
+    // Step 3: Show plan
+    var planMessage = 'CREATE NEW ROWS\n\n';
+    planMessage += 'Workspaces: ' + selectedWorkspaces.join(', ') + '\n';
+    planMessage += 'Total articles: ' + allArticles.length + '\n\n';
+
+    var byWorkspace = {};
+    for (var i = 0; i < allArticles.length; i++) {
+      var ws = allArticles[i].workspace;
+      if (!byWorkspace[ws]) byWorkspace[ws] = [];
+      byWorkspace[ws].push(allArticles[i]);
+    }
+    for (var ws in byWorkspace) {
+      planMessage += ws + ': ' + byWorkspace[ws].length + ' articles\n';
+      for (var j = 0; j < Math.min(byWorkspace[ws].length, 5); j++) {
+        planMessage += '  - ' + byWorkspace[ws][j].title + '\n';
+      }
+      if (byWorkspace[ws].length > 5) {
+        planMessage += '  ... and ' + (byWorkspace[ws].length - 5) + ' more\n';
+      }
+    }
+
+    planMessage += '\n8s delay between articles.\nAuto-continues if over 4.5 min.\nProceed?';
+
+    var response = SpreadsheetApp.getUi().alert('Create New Rows', planMessage, SpreadsheetApp.getUi().ButtonSet.YES_NO);
+    if (response !== SpreadsheetApp.getUi().Button.YES) {
+      unlockUploaderSheet(operationType);
+      return;
+    }
+
+    // Step 4: Start chunked processing
+    var state = {
+      articles: allArticles,
+      currentIndex: 0,
+      processed: 0,
+      errors: 0,
+      duplicates: 0,
+      errorDetails: []
+    };
+
+    processCreateNewRowsChunk(state);
+
+  } catch (error) {
+    Logger.log('Error in batchCreateNewRows: ' + error.message);
+    unlockUploaderSheet(operationType);
+    SpreadsheetApp.getUi().alert('Error: ' + error.message);
+  }
+}
+
+
+/**
+ * Process one chunk of Create New Rows articles.
+ * Runs for up to 4.5 minutes, then saves state and schedules continuation.
+ */
+function processCreateNewRowsChunk(state) {
+  var startTime = new Date().getTime();
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var statusSheet = ss.getSheetByName(CONFIG.SHEETS.ARTICLE_STATUS_TRACKER);
+  var isContinuation = state.currentIndex > 0;
+
+  if (isContinuation) {
+    refreshUploaderLock('Create New Rows');
+    ss.toast('Continuing Create New Rows... (' + state.currentIndex + '/' + state.articles.length + ')',
+             'Auto-Continue', 5);
+  }
+
+  while (state.currentIndex < state.articles.length) {
+    // Check time before processing next article
+    if (!hasTimeRemaining(startTime)) {
+      saveBatchState('CREATE_NEW_ROWS', state);
+      scheduleBatchContinuation('continueBatchCreateNewRows');
+
+      var progress = state.currentIndex + '/' + state.articles.length;
+      ss.toast('Pausing at ' + progress + '. Will auto-continue in 1 minute.',
+               'Time Limit Reached', 10);
+      Logger.log('Chunk complete at ' + progress + '. Scheduling continuation.');
+      return; // Exit without unlocking — continuation will handle it
+    }
+
+    var article = state.articles[state.currentIndex];
+
+    try {
+      retryWithBackoff(function() {
+        processNewArticleComplete(statusSheet, article.row, article.title, article.workspace);
+      });
+
+      // Check what status was set by processNewArticleComplete
+      var newStatus = statusSheet.getRange(article.row, 7).getValue();
+      if (newStatus === 'DUPLICATE FOUND!') {
+        state.duplicates++;
+        Logger.log('Duplicate: ' + article.title);
+      } else if (newStatus === 'Row Created') {
+        state.processed++;
+        Logger.log('Created: ' + article.title);
+      } else {
+        state.errors++;
+        state.errorDetails.push(article.title + ': ' + newStatus);
+        Logger.log('Unexpected status for ' + article.title + ': ' + newStatus);
+      }
+
+    } catch (error) {
+      state.errors++;
+      state.errorDetails.push(article.title + ': ' + error.message);
+      Logger.log('Error processing ' + article.title + ': ' + error.message);
+
+      try {
+        statusSheet.getRange(article.row, 7).setValue('Error: ' + error.message);
+      } catch (e) { /* best effort */ }
+    }
+
+    state.currentIndex++;
+
+    // Save progress after each article (crash recovery)
+    saveBatchState('CREATE_NEW_ROWS', state);
+
+    // Delay between articles (skip on last one)
+    if (state.currentIndex < state.articles.length) {
+      Utilities.sleep(BATCH_CONFIG.ARTICLE_DELAY_MS);
+    }
+
+    SpreadsheetApp.flush();
+  }
+
+  // All articles processed
+  finishBatchCreateNewRows(state);
+}
+
+
+/**
+ * Auto-continuation entry point for Create New Rows.
+ * Called by time trigger when a chunk runs out of time.
+ */
+function continueBatchCreateNewRows() {
+  cleanupBatchTrigger('continueBatchCreateNewRows');
+
+  // Check if we've been stopped (lock cleared by Stop All)
+  var currentLock = isUploaderSheetLocked();
+  if (!currentLock) {
+    clearBatchState('CREATE_NEW_ROWS');
+    Logger.log('Create New Rows was stopped by user (lock cleared).');
+    return;
+  }
+
+  var state = loadBatchState('CREATE_NEW_ROWS');
+  if (!state) {
+    Logger.log('No saved state found for Create New Rows. Nothing to continue.');
+    unlockUploaderSheet('Create New Rows');
+    return;
+  }
+
+  if (state.currentIndex >= state.articles.length) {
+    finishBatchCreateNewRows(state);
+    return;
+  }
+
+  processCreateNewRowsChunk(state);
+}
+
+
+/**
+ * Finish Create New Rows — show results, clean up state and lock.
+ */
+function finishBatchCreateNewRows(state) {
+  clearBatchState('CREATE_NEW_ROWS');
+  cleanupBatchTrigger('continueBatchCreateNewRows');
+
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var message = 'CREATE NEW ROWS COMPLETE\n\n';
+  message += 'Created: ' + state.processed + '\n';
+  message += 'Duplicates: ' + state.duplicates + '\n';
+  message += 'Errors: ' + state.errors + '\n';
+
+  if (state.errorDetails.length > 0) {
+    message += '\nError details:\n';
+    for (var i = 0; i < Math.min(state.errorDetails.length, 10); i++) {
+      message += '- ' + state.errorDetails[i] + '\n';
+    }
+  }
+
+  // Try UI alert (works if user-initiated), fall back to toast (trigger context)
+  try {
+    SpreadsheetApp.getUi().alert('Create New Rows Complete', message, SpreadsheetApp.getUi().ButtonSet.OK);
+  } catch (e) {
+    ss.toast(message, 'Create New Rows Complete', 30);
+  }
+
+  Logger.log(message);
+  unlockUploaderSheet('Create New Rows');
+}
+
+
+/**
+ * ============================================================================
+ * PASTE CONTENT — Chunked batch processor
+ * ============================================================================
+ * Ports python/batch_paste_sections.py to GAS.
+ * Finds articles with "Row Created" or "GDrive Folder is Ready" status,
+ * parses their Google Docs, and pastes sections into the Uploader sheet.
+ * Calls existing pasteArticleSections() per article (no duplication).
+ * Re-scans each chunk for fresh row numbers (pasting inserts/deletes rows).
+ * Processes bottom-to-top so row shifts don't affect remaining articles.
+ * ============================================================================
+ */
+
+function batchPasteContent() {
+  var operationType = 'Paste Content';
+
+  if (!checkUploaderLock(operationType)) return;
+
+  try {
+    // Step 1: Select workspaces
+    var selectedWorkspaces = selectWorkspaces('Paste Article Content');
+    if (!selectedWorkspaces) {
+      unlockUploaderSheet(operationType);
+      return;
+    }
+
+    // Step 2: Scan Uploader for articles needing paste
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var uploaderSheet = ss.getSheetByName(CONFIG.SHEETS.UPLOADER);
+
+    var allArticles = [];
+    for (var w = 0; w < selectedWorkspaces.length; w++) {
+      var workspace = findWorkspaceBoundaries(uploaderSheet, selectedWorkspaces[w]);
+      if (workspace) {
+        var articles = getArticlesInWorkspace(uploaderSheet, workspace, 'PASTE');
+        allArticles = allArticles.concat(articles);
+      }
+    }
+
+    if (allArticles.length === 0) {
+      SpreadsheetApp.getUi().alert('No articles found needing content paste in selected workspaces.\n\n' +
+        'Articles must have:\n' +
+        '• Status: "_", blank, or "GDrive Folder is Ready" in column L\n' +
+        '• A Google Doc URL in Article Status Tracker');
+      unlockUploaderSheet(operationType);
+      return;
+    }
+
+    // Step 3: Show plan
+    var planMessage = 'PASTE ARTICLE CONTENT\n\n';
+    planMessage += 'Workspaces: ' + selectedWorkspaces.join(', ') + '\n';
+    planMessage += 'Total articles: ' + allArticles.length + '\n\n';
+
+    for (var i = 0; i < Math.min(allArticles.length, 8); i++) {
+      planMessage += '  - ' + allArticles[i].title + '\n';
+    }
+    if (allArticles.length > 8) {
+      planMessage += '  ... and ' + (allArticles.length - 8) + ' more\n';
+    }
+
+    planMessage += '\n8s delay between articles.\nAuto-continues if over 4.5 min.\nProcesses bottom-to-top for safety.\nProceed?';
+
+    var response = SpreadsheetApp.getUi().alert('Paste Content', planMessage, SpreadsheetApp.getUi().ButtonSet.YES_NO);
+    if (response !== SpreadsheetApp.getUi().Button.YES) {
+      unlockUploaderSheet(operationType);
+      return;
+    }
+
+    // Step 4: Start chunked processing
+    var state = {
+      selectedWorkspaces: selectedWorkspaces,
+      processed: 0,
+      errors: 0,
+      errorDetails: []
+    };
+
+    processPasteContentChunk(state);
+
+  } catch (error) {
+    Logger.log('Error in batchPasteContent: ' + error.message);
+    unlockUploaderSheet(operationType);
+    SpreadsheetApp.getUi().alert('Error: ' + error.message);
+  }
+}
+
+
+/**
+ * Process one chunk of Paste Content articles.
+ * Re-scans for fresh row numbers each chunk (pasting changes row counts).
+ * Processes bottom-to-top so row shifts from pasting don't affect remaining articles.
+ */
+function processPasteContentChunk(state) {
+  var startTime = new Date().getTime();
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var uploaderSheet = ss.getSheetByName(CONFIG.SHEETS.UPLOADER);
+  var statusSheet = ss.getSheetByName(CONFIG.SHEETS.ARTICLE_STATUS_TRACKER);
+  var isContinuation = (state.processed + state.errors) > 0;
+
+  if (isContinuation) {
+    refreshUploaderLock('Paste Content');
+    ss.toast('Continuing Paste Content... (Processed: ' + state.processed + ', Errors: ' + state.errors + ')',
+             'Auto-Continue', 5);
+  }
+
+  // Re-scan for articles that still need pasting (fresh row numbers)
+  var allArticles = [];
+  for (var w = 0; w < state.selectedWorkspaces.length; w++) {
+    var workspace = findWorkspaceBoundaries(uploaderSheet, state.selectedWorkspaces[w]);
+    if (workspace) {
+      var articles = getArticlesInWorkspace(uploaderSheet, workspace, 'PASTE');
+      allArticles = allArticles.concat(articles);
+    }
+  }
+
+  if (allArticles.length === 0) {
+    finishBatchPasteContent(state);
+    return;
+  }
+
+  // Sort bottom-to-top (descending row number) — pasting may insert/delete
+  // rows within an article's content area, so processing bottom-first ensures
+  // articles above haven't shifted yet when we get to them.
+  allArticles.sort(function(a, b) { return b.row - a.row; });
+
+  // Load AST data once for status updates
+  var statusData = statusSheet.getRange('C:G').getValues();
+
+  for (var i = 0; i < allArticles.length; i++) {
+    // Check time before processing next article
+    if (!hasTimeRemaining(startTime)) {
+      saveBatchState('PASTE_CONTENT', state);
+      scheduleBatchContinuation('continueBatchPasteContent');
+
+      ss.toast('Pausing Paste Content. Will auto-continue in 1 minute. (Processed: ' + state.processed + ')',
+               'Time Limit Reached', 10);
+      Logger.log('Paste Content chunk complete. Scheduling continuation.');
+      return; // Exit without unlocking
+    }
+
+    var article = allArticles[i];
+
+    try {
+      // Create mock event for the existing single-row paste function
+      var mockEvent = {
+        range: uploaderSheet.getRange(article.row, 12),
+        value: CONFIG.TRIGGERS.PASTE_ARTICLE_SECTIONS
+      };
+
+      retryWithBackoff(function() {
+        pasteArticleSections(mockEvent);
+      });
+
+      // Check result
+      var newStatus = uploaderSheet.getRange(article.row, 12).getValue();
+      if (newStatus === CONFIG.STATUS.SECTIONS_PASTED_SUCCESSFULLY) {
+        state.processed++;
+        Logger.log('Pasted: ' + article.title);
+
+        // Update AST status to "Pasted" (matches Python behavior)
+        var articleInfo = findArticleInStatusTracker(statusData, article.title);
+        if (articleInfo.found) {
+          statusSheet.getRange(articleInfo.row, 7).setValue('Pasted');
+        }
+      } else {
+        state.errors++;
+        state.errorDetails.push(article.title + ': ' + newStatus);
+        Logger.log('Failed paste: ' + article.title + ' - ' + newStatus);
+      }
+
+    } catch (error) {
+      state.errors++;
+      state.errorDetails.push(article.title + ': ' + error.message);
+      Logger.log('Error pasting ' + article.title + ': ' + error.message);
+    }
+
+    // Save progress after each article (crash recovery)
+    saveBatchState('PASTE_CONTENT', state);
+
+    // Delay between articles (skip on last one)
+    if (i < allArticles.length - 1) {
+      Utilities.sleep(BATCH_CONFIG.ARTICLE_DELAY_MS);
+    }
+
+    SpreadsheetApp.flush();
+  }
+
+  // All articles in this chunk processed
+  finishBatchPasteContent(state);
+}
+
+
+/**
+ * Auto-continuation entry point for Paste Content.
+ */
+function continueBatchPasteContent() {
+  cleanupBatchTrigger('continueBatchPasteContent');
+
+  var currentLock = isUploaderSheetLocked();
+  if (!currentLock) {
+    clearBatchState('PASTE_CONTENT');
+    Logger.log('Paste Content was stopped by user (lock cleared).');
+    return;
+  }
+
+  var state = loadBatchState('PASTE_CONTENT');
+  if (!state) {
+    Logger.log('No saved state found for Paste Content.');
+    unlockUploaderSheet('Paste Content');
+    return;
+  }
+
+  processPasteContentChunk(state);
+}
+
+
+/**
+ * Finish Paste Content — show results, clean up state and lock.
+ */
+function finishBatchPasteContent(state) {
+  clearBatchState('PASTE_CONTENT');
+  cleanupBatchTrigger('continueBatchPasteContent');
+
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var message = 'PASTE CONTENT COMPLETE\n\n';
+  message += 'Pasted: ' + state.processed + '\n';
+  message += 'Errors: ' + state.errors + '\n';
+
+  if (state.errorDetails.length > 0) {
+    message += '\nError details:\n';
+    for (var i = 0; i < Math.min(state.errorDetails.length, 10); i++) {
+      message += '- ' + state.errorDetails[i] + '\n';
+    }
+  }
+
+  try {
+    SpreadsheetApp.getUi().alert('Paste Content Complete', message, SpreadsheetApp.getUi().ButtonSet.OK);
+  } catch (e) {
+    ss.toast(message, 'Paste Content Complete', 30);
+  }
+
+  Logger.log(message);
+  unlockUploaderSheet('Paste Content');
+}
+
+
+/**
+ * ============================================================================
+ * DELETE SUCCESSFUL UPLOADS — Chunked batch processor
+ * ============================================================================
+ * Ports python/delete_successful_uploads.py to GAS.
+ * Finds articles with "Successful WP Upload" status and deletes their rows.
+ * Re-scans each chunk for fresh row numbers (deletion shifts everything).
+ * Deletes bottom-to-top so row numbers above stay valid.
+ * ============================================================================
+ */
+
+function batchDeleteUploaded() {
+  var operationType = 'Delete Successful Uploads';
+
+  if (!checkUploaderLock(operationType)) return;
+
+  try {
+    // Step 1: Select workspaces
+    var selectedWorkspaces = selectWorkspaces('Delete Successful Uploads');
+    if (!selectedWorkspaces) {
+      unlockUploaderSheet(operationType);
+      return;
+    }
+
+    // Step 2: Scan Uploader for articles to delete
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var uploaderSheet = ss.getSheetByName(CONFIG.SHEETS.UPLOADER);
+
+    var allArticles = [];
+    for (var w = 0; w < selectedWorkspaces.length; w++) {
+      var workspace = findWorkspaceBoundaries(uploaderSheet, selectedWorkspaces[w]);
+      if (workspace) {
+        var articles = getArticlesInWorkspace(uploaderSheet, workspace, 'DELETE');
+        allArticles = allArticles.concat(articles);
+      }
+    }
+
+    if (allArticles.length === 0) {
+      SpreadsheetApp.getUi().alert('No articles found with "Successful WP Upload" status in selected workspaces.');
+      unlockUploaderSheet(operationType);
+      return;
+    }
+
+    // Calculate total rows to remove
+    var totalRows = 0;
+    for (var i = 0; i < allArticles.length; i++) {
+      totalRows += allArticles[i].rowsToDelete;
+    }
+
+    // Step 3: Show plan
+    var planMessage = 'DELETE SUCCESSFUL UPLOADS\n\n';
+    planMessage += 'Workspaces: ' + selectedWorkspaces.join(', ') + '\n';
+    planMessage += 'Articles to delete: ' + allArticles.length + '\n';
+    planMessage += 'Total rows to remove: ' + totalRows + '\n\n';
+
+    for (var i = 0; i < Math.min(allArticles.length, 8); i++) {
+      planMessage += '  - ' + allArticles[i].title + ' (' + allArticles[i].rowsToDelete + ' rows)\n';
+    }
+    if (allArticles.length > 8) {
+      planMessage += '  ... and ' + (allArticles.length - 8) + ' more\n';
+    }
+
+    planMessage += '\nWARNING: This cannot be undone!\nDeletes bottom-up for safety.\nAuto-continues if over 4.5 min.\nProceed?';
+
+    var response = SpreadsheetApp.getUi().alert('Delete Uploads', planMessage, SpreadsheetApp.getUi().ButtonSet.YES_NO);
+    if (response !== SpreadsheetApp.getUi().Button.YES) {
+      unlockUploaderSheet(operationType);
+      return;
+    }
+
+    // Step 4: Start chunked processing
+    var state = {
+      selectedWorkspaces: selectedWorkspaces,
+      deleted: 0,
+      errors: 0,
+      errorDetails: []
+    };
+
+    processDeleteUploadedChunk(state);
+
+  } catch (error) {
+    Logger.log('Error in batchDeleteUploaded: ' + error.message);
+    unlockUploaderSheet(operationType);
+    SpreadsheetApp.getUi().alert('Error: ' + error.message);
+  }
+}
+
+
+/**
+ * Process one chunk of Delete Successful Uploads.
+ * Re-scans each chunk for fresh row numbers (deletions shift everything).
+ * Deletes bottom-to-top so remaining articles above keep their row numbers.
+ */
+function processDeleteUploadedChunk(state) {
+  var startTime = new Date().getTime();
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var uploaderSheet = ss.getSheetByName(CONFIG.SHEETS.UPLOADER);
+  var isContinuation = (state.deleted + state.errors) > 0;
+
+  if (isContinuation) {
+    refreshUploaderLock('Delete Successful Uploads');
+    ss.toast('Continuing Delete Uploads... (Deleted: ' + state.deleted + ')',
+             'Auto-Continue', 5);
+  }
+
+  // Re-scan for articles to delete (fresh row numbers after previous deletions)
+  var allArticles = [];
+  for (var w = 0; w < state.selectedWorkspaces.length; w++) {
+    var workspace = findWorkspaceBoundaries(uploaderSheet, state.selectedWorkspaces[w]);
+    if (workspace) {
+      var articles = getArticlesInWorkspace(uploaderSheet, workspace, 'DELETE');
+      allArticles = allArticles.concat(articles);
+    }
+  }
+
+  if (allArticles.length === 0) {
+    finishBatchDeleteUploaded(state);
+    return;
+  }
+
+  // Sort bottom-to-top (CRITICAL — deleting lower rows first preserves upper row numbers)
+  allArticles.sort(function(a, b) { return b.row - a.row; });
+
+  for (var i = 0; i < allArticles.length; i++) {
+    // Check time before processing next article
+    if (!hasTimeRemaining(startTime)) {
+      saveBatchState('DELETE_UPLOADED', state);
+      scheduleBatchContinuation('continueBatchDeleteUploaded');
+
+      ss.toast('Pausing deletion. Will auto-continue in 1 minute. (Deleted: ' + state.deleted + ')',
+               'Time Limit Reached', 10);
+      Logger.log('Delete chunk complete. Scheduling continuation.');
+      return; // Exit without unlocking
+    }
+
+    var article = allArticles[i];
+
+    try {
+      // Verify status hasn't changed since scan
+      var currentStatus = uploaderSheet.getRange(article.row, 12).getValue();
+      if (currentStatus === 'Successful WP Upload') {
+        uploaderSheet.deleteRows(article.row, article.rowsToDelete);
+        state.deleted++;
+        Logger.log('Deleted: ' + article.title + ' (' + article.rowsToDelete + ' rows)');
+      } else {
+        Logger.log('Skipped: ' + article.title + ' (status changed to: ' + currentStatus + ')');
+      }
+
+    } catch (error) {
+      state.errors++;
+      state.errorDetails.push(article.title + ': ' + error.message);
+      Logger.log('Error deleting ' + article.title + ': ' + error.message);
+    }
+
+    // Save progress after each article
+    saveBatchState('DELETE_UPLOADED', state);
+
+    // Delay between articles (skip on last one)
+    if (i < allArticles.length - 1) {
+      Utilities.sleep(BATCH_CONFIG.ARTICLE_DELAY_MS);
+    }
+
+    SpreadsheetApp.flush();
+  }
+
+  // All articles in this chunk processed
+  finishBatchDeleteUploaded(state);
+}
+
+
+/**
+ * Auto-continuation entry point for Delete Successful Uploads.
+ */
+function continueBatchDeleteUploaded() {
+  cleanupBatchTrigger('continueBatchDeleteUploaded');
+
+  var currentLock = isUploaderSheetLocked();
+  if (!currentLock) {
+    clearBatchState('DELETE_UPLOADED');
+    Logger.log('Delete Uploads was stopped by user (lock cleared).');
+    return;
+  }
+
+  var state = loadBatchState('DELETE_UPLOADED');
+  if (!state) {
+    Logger.log('No saved state found for Delete Uploads.');
+    unlockUploaderSheet('Delete Successful Uploads');
+    return;
+  }
+
+  processDeleteUploadedChunk(state);
+}
+
+
+/**
+ * Finish Delete Successful Uploads — show results, clean up state and lock.
+ */
+function finishBatchDeleteUploaded(state) {
+  clearBatchState('DELETE_UPLOADED');
+  cleanupBatchTrigger('continueBatchDeleteUploaded');
+
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var message = 'DELETE SUCCESSFUL UPLOADS COMPLETE\n\n';
+  message += 'Deleted: ' + state.deleted + '\n';
+  message += 'Errors: ' + state.errors + '\n';
+
+  if (state.errorDetails.length > 0) {
+    message += '\nError details:\n';
+    for (var i = 0; i < Math.min(state.errorDetails.length, 10); i++) {
+      message += '- ' + state.errorDetails[i] + '\n';
+    }
+  }
+
+  try {
+    SpreadsheetApp.getUi().alert('Delete Complete', message, SpreadsheetApp.getUi().ButtonSet.OK);
+  } catch (e) {
+    ss.toast(message, 'Delete Complete', 30);
+  }
+
+  Logger.log(message);
+  unlockUploaderSheet('Delete Successful Uploads');
 }
 
