@@ -11803,7 +11803,7 @@ var BATCH_CONFIG = {
   MAX_RUNTIME_MS: 270000,                // 4.5 minutes (of 6 min limit)
   OPERATION_DELAY_MS: 2000,              // 2 seconds between Sheets operations
   FOLDER_DELAY_MS: 3000,                 // 3 seconds between Drive folder operations
-  WORKSPACE_DELAY_MS: 10000,             // 10 seconds cooldown between workspaces
+  WORKSPACE_DELAY_MS: 30000,             // 30 seconds cooldown between workspaces
   ARTICLE_DELAY_MS: 2000,               // 2 seconds between article processing (Paste Content / Delete)
   RETRY_DELAYS_MS: [5000, 10000, 20000], // Exponential backoff: 5s, 10s, 20s
   MAX_RETRIES: 3,
@@ -12086,6 +12086,73 @@ function findPersonEndRowFast(allColA, personRow) {
   }
   Logger.log('END ROW not found for person in row ' + personRow);
   return null;
+}
+
+
+/**
+ * Fast article scanner for Paste Content batch processor.
+ * Reads columns A and L in bulk (2 API calls total), then finds all
+ * paste-eligible articles across selected workspaces in memory.
+ * Replaces the slow findWorkspaceBoundaries + getArticlesInWorkspace chain
+ * which made hundreds of cell-by-cell API calls with merge checks.
+ */
+function findPasteArticlesFast(uploaderSheet, selectedWorkspaces, rowCreatedTitles, statusData) {
+  var lastRow = uploaderSheet.getLastRow();
+  var colA = uploaderSheet.getRange(1, 1, lastRow, 1).getValues();
+  var colL = uploaderSheet.getRange(1, 12, lastRow, 1).getValues();
+
+  var allArticles = [];
+
+  for (var w = 0; w < selectedWorkspaces.length; w++) {
+    var workspaceName = selectedWorkspaces[w];
+    var upperName = workspaceName.toUpperCase();
+    var inWorkspace = false;
+
+    for (var i = 0; i < colA.length; i++) {
+      var val = colA[i][0] ? colA[i][0].toString() : '';
+      if (!val) continue;
+
+      var upper = val.toUpperCase().trim();
+
+      if (!inWorkspace) {
+        if (upper.indexOf(upperName) !== -1 && upper.indexOf('END ROW') === -1) {
+          inWorkspace = true;
+        }
+        continue;
+      }
+
+      // Inside workspace — check for boundaries
+      if (upper.indexOf('END ROW') !== -1) break;
+      var isOther = false;
+      for (var ww = 0; ww < ALL_UPLOADER_WORKSPACES.length; ww++) {
+        if (upper === ALL_UPLOADER_WORKSPACES[ww].toUpperCase()) { isOther = true; break; }
+      }
+      if (isOther) break;
+
+      // Check if this is a paste-eligible article:
+      // 1) Title matches a "Row Created" entry in AST
+      // 2) Uploader column L has an allowed status (blank, _, or GDrive Folder is Ready)
+      var title = val.trim();
+      if (!rowCreatedTitles[title.toLowerCase()]) continue;
+
+      var status = colL[i][0] ? colL[i][0].toString().trim() : '';
+      if (status !== '' && status !== '_' && status !== 'GDrive Folder is Ready') continue;
+
+      var articleInfo = findArticleInStatusTracker(statusData, title);
+      if (articleInfo.found && articleInfo.docUrl) {
+        allArticles.push({
+          title: title,
+          row: i + 1,
+          status: status,
+          workspace: workspaceName,
+          docUrl: articleInfo.docUrl,
+          statusTrackerRow: articleInfo.row
+        });
+      }
+    }
+  }
+
+  return allArticles;
 }
 
 
@@ -12628,9 +12695,10 @@ function finishBatchCreateNewRows(state) {
  * PASTE CONTENT — Chunked batch processor
  * ============================================================================
  * Ports python/batch_paste_sections.py to GAS.
- * Finds articles with "Row Created" or "GDrive Folder is Ready" status,
+ * Finds articles with "Row Created" status in AST + allowed Uploader status,
  * parses their Google Docs, and pastes sections into the Uploader sheet.
  * Calls existing pasteArticleSections() per article (no duplication).
+ * Uses bulk column A+L reads for fast scanning (no cell-by-cell merge checks).
  * Re-scans each chunk for fresh row numbers (pasting inserts/deletes rows).
  * Processes bottom-to-top so row shifts don't affect remaining articles.
  * ============================================================================
@@ -12649,34 +12717,20 @@ function batchPasteContent() {
       return;
     }
 
-    // Step 2: Scan for articles needing paste
-    // Matches Python logic: only articles with "Row Created" in AST column G
+    // Step 2: Fast scan for articles needing paste (bulk read columns A + L)
     var ss = SpreadsheetApp.getActiveSpreadsheet();
     var uploaderSheet = ss.getSheetByName(CONFIG.SHEETS.UPLOADER);
     var statusSheet = ss.getSheetByName(CONFIG.SHEETS.ARTICLE_STATUS_TRACKER);
 
-    // Build lookup of "Row Created" titles from AST (matches Python's get_articles_ready_for_paste)
     var rowCreatedTitles = buildRowCreatedLookup(statusSheet);
-
-    var allArticles = [];
-    for (var w = 0; w < selectedWorkspaces.length; w++) {
-      var workspace = findWorkspaceBoundaries(uploaderSheet, selectedWorkspaces[w]);
-      if (workspace) {
-        var articles = getArticlesInWorkspace(uploaderSheet, workspace, 'PASTE');
-        // Filter: only articles that are "Row Created" in AST (matching Python behavior)
-        for (var a = 0; a < articles.length; a++) {
-          if (rowCreatedTitles[articles[a].title.toLowerCase()]) {
-            allArticles.push(articles[a]);
-          }
-        }
-      }
-    }
+    var statusData = statusSheet.getRange('C:G').getValues();
+    var allArticles = findPasteArticlesFast(uploaderSheet, selectedWorkspaces, rowCreatedTitles, statusData);
 
     if (allArticles.length === 0) {
       SpreadsheetApp.getUi().alert('No articles found needing content paste in selected workspaces.\n\n' +
         'Articles must have:\n' +
-        '• "Row Created" status in AST column G\n' +
-        '• A Google Doc URL in Article Status Tracker');
+        '- "Row Created" status in AST column G\n' +
+        '- A Google Doc URL in Article Status Tracker');
       unlockUploaderSheet(operationType);
       return;
     }
@@ -12693,7 +12747,7 @@ function batchPasteContent() {
       planMessage += '  ... and ' + (allArticles.length - 8) + ' more\n';
     }
 
-    planMessage += '\n8s delay between articles.\nAuto-continues if over 4.5 min.\nProcesses bottom-to-top for safety.\nProceed?';
+    planMessage += '\nAuto-continues if over 4.5 min.\nProcesses bottom-to-top for safety.\nProceed?';
 
     var response = SpreadsheetApp.getUi().alert('Paste Content', planMessage, SpreadsheetApp.getUi().ButtonSet.YES_NO);
     if (response !== SpreadsheetApp.getUi().Button.YES) {
@@ -12701,9 +12755,10 @@ function batchPasteContent() {
       return;
     }
 
-    // Step 4: Start chunked processing
+    // Step 4: Start chunked processing (pass pre-scanned articles to avoid double scan)
     var state = {
       selectedWorkspaces: selectedWorkspaces,
+      preScannedArticles: allArticles,
       processed: 0,
       errors: 0,
       errorDetails: []
@@ -12737,21 +12792,17 @@ function processPasteContentChunk(state) {
              'Auto-Continue', 5);
   }
 
-  // Re-scan for articles that still need pasting (fresh row numbers)
-  // Only include articles with "Row Created" in AST (matching Python behavior)
-  var rowCreatedTitles = buildRowCreatedLookup(statusSheet);
+  // Use pre-scanned articles on first run, fast re-scan on continuation
+  // (Re-scan needed because pasting inserts/deletes rows, shifting row numbers)
+  var statusData = statusSheet.getRange('C:G').getValues();
+  var allArticles;
 
-  var allArticles = [];
-  for (var w = 0; w < state.selectedWorkspaces.length; w++) {
-    var workspace = findWorkspaceBoundaries(uploaderSheet, state.selectedWorkspaces[w]);
-    if (workspace) {
-      var articles = getArticlesInWorkspace(uploaderSheet, workspace, 'PASTE');
-      for (var a = 0; a < articles.length; a++) {
-        if (rowCreatedTitles[articles[a].title.toLowerCase()]) {
-          allArticles.push(articles[a]);
-        }
-      }
-    }
+  if (state.preScannedArticles && state.preScannedArticles.length > 0) {
+    allArticles = state.preScannedArticles;
+    delete state.preScannedArticles; // Don't re-use stale row numbers on next chunk
+  } else {
+    var rowCreatedTitles = buildRowCreatedLookup(statusSheet);
+    allArticles = findPasteArticlesFast(uploaderSheet, state.selectedWorkspaces, rowCreatedTitles, statusData);
   }
 
   if (allArticles.length === 0) {
@@ -12763,9 +12814,6 @@ function processPasteContentChunk(state) {
   // rows within an article's content area, so processing bottom-first ensures
   // articles above haven't shifted yet when we get to them.
   allArticles.sort(function(a, b) { return b.row - a.row; });
-
-  // Load AST data once for status updates
-  var statusData = statusSheet.getRange('C:G').getValues();
 
   for (var i = 0; i < allArticles.length; i++) {
     // Check time before processing next article
