@@ -11290,39 +11290,28 @@ function splitter() {
     }
   }
 
-  // Write to column C (as hyperlink if URL found), set Article Type (B) and Status (F)
+  // Write title to C, URL to D, set Article Type (B) and Status (G)
   for (var i = 0; i < lines.length; i++) {
     var line = lines[i].trim();
     var row = startRow + i;
     var httpIndex = line.lastIndexOf('http');
 
     if (httpIndex > 0) {
-      // Line has both title and URL — use Rich Text for clean formatting
+      // Line has both title and URL
       var title = line.substring(0, httpIndex).replace(/[\s:\-–—]+$/, '').trim();
       var url = line.substring(httpIndex).trim();
-      var richText = SpreadsheetApp.newRichTextValue()
-        .setText(title)
-        .setLinkUrl(url)
-        .build();
-      var cell = sheet.getRange(row, 3);
-      cell.setRichTextValue(richText);
-      cell.setFontColor('#000000');
+      sheet.getRange(row, 3).setValue(title);                   // C: Topic
+      sheet.getRange(row, 4).setValue(url);                     // D: URL
     } else if (httpIndex === 0) {
       // Line is just a URL
-      var richText = SpreadsheetApp.newRichTextValue()
-        .setText(line)
-        .setLinkUrl(line)
-        .build();
-      var cell = sheet.getRange(row, 3);
-      cell.setRichTextValue(richText);
-      cell.setFontColor('#000000');
+      sheet.getRange(row, 4).setValue(line);                    // D: URL
     } else {
       // Line is just a title, no URL
-      sheet.getRange(row, 3).setValue(line);
+      sheet.getRange(row, 3).setValue(line);                    // C: Topic
     }
 
-    sheet.getRange(row, 2).setValue('Current News');           // B: Article Type
-    sheet.getRange(row, 6).setValue('Topic Set');              // F: Status
+    sheet.getRange(row, 2).setValue('Current News');             // B: Article Type
+    sheet.getRange(row, 7).setValue('Topic Set');                // G: Status
   }
 
   // Clear the input cell
@@ -11334,8 +11323,8 @@ function splitter() {
 
 /**
  * onTopicListEdit - Standalone installable trigger for Topic List sheet.
- * - Column B → "Travel Feature": sets Column D to "N/A" (centered)
- * - Column E (Outline) filled in: sets Column F to "Outline Ready"
+ * - Column B → "Travel Feature": sets Column E (Place to Visit) to "N/A" (centered)
+ * - Column F (Outline) filled in: sets Column G (Status) to "Outline Ready"
  */
 function onTopicListEdit(e) {
   if (!e || !e.range) return;
@@ -11347,22 +11336,24 @@ function onTopicListEdit(e) {
   var row = e.range.getRow();
   if (row < 2) return;
 
+  // Column B (Article Type) → Travel Feature sets E (Place to Visit) to "N/A"
   if (column === 2) {
     if (e.value === 'Travel Feature') {
-      var cell = sheet.getRange(row, 4);
+      var cell = sheet.getRange(row, 5);
       cell.setValue('N/A');
       cell.setHorizontalAlignment('center');
     } else {
-      sheet.getRange(row, 4).clearContent();
+      sheet.getRange(row, 5).clearContent();
     }
   }
 
-  if (column === 5) {
+  // Column F (Outline) filled/cleared → update G (Status)
+  if (column === 6) {
     var outlineValue = e.range.getValue();
     if (outlineValue && outlineValue.toString().trim() !== '') {
-      sheet.getRange(row, 6).setValue('Outline Ready');
+      sheet.getRange(row, 7).setValue('Outline Ready');
     } else {
-      sheet.getRange(row, 6).setValue('Topic Set');
+      sheet.getRange(row, 7).setValue('Topic Set');
     }
   }
 }
