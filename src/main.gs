@@ -11156,6 +11156,9 @@ function onOpen() {
 
   ui.createMenu('      **Drafting')
     .addItem('Transfer to Enhanced Drafter', 'transferToEnhancedDrafter')
+    .addItem('Transfer Drafts to Article Tracker', 'transferDraftsToArticleTracker')
+    .addSeparator()
+    .addItem('Batch Create GDocs', 'batchCreateGDocs')
     .addSeparator()
     .addItem('Delete Done', 'deleteDoneRows')
     .addToUi();
@@ -11486,6 +11489,216 @@ function transferToEnhancedDrafter() {
   }
 
   ui.alert('Done!', rowsToTransfer.length + ' row(s) transferred to Enhanced Drafter.', ui.ButtonSet.OK);
+}
+
+
+/**
+ * ============================================================================
+ * TRANSFER DRAFTS TO ARTICLE TRACKER
+ * ============================================================================
+ * Transfers "Ready for Transfer" rows from Enhanced Drafter to Article Status Tracker.
+ *
+ * Enhanced Drafter → Article Status Tracker mapping:
+ *   G (State)          → A
+ *   H (Title)          → C
+ *   K (Doc URL)        → D
+ *   "Not Available Yet" → G
+ *   B (Original Topic) → I
+ *   J (Tags)           → J
+ *   Topic & Summary    → K
+ *   L (Status)         → set to "DONE"
+ */
+function transferDraftsToArticleTracker() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var edSheet = ss.getSheetByName('Enhanced Drafter');
+  var astSheet = ss.getSheetByName('Article Status Tracker');
+  var ui = SpreadsheetApp.getUi();
+
+  if (!edSheet || !astSheet) {
+    ui.alert('Error', 'Could not find Enhanced Drafter or Article Status Tracker sheet.', ui.ButtonSet.OK);
+    return;
+  }
+
+  // Find rows with "Ready for Transfer" in column L (12)
+  var lastRow = edSheet.getLastRow();
+  if (lastRow < 2) {
+    ui.alert('Nothing to transfer', 'No data in Enhanced Drafter.', ui.ButtonSet.OK);
+    return;
+  }
+
+  var data = edSheet.getRange(2, 1, lastRow - 1, 12).getValues(); // A through L
+  var rowsToTransfer = [];
+
+  for (var i = 0; i < data.length; i++) {
+    if (data[i][11] === 'Ready for Transfer') { // L (index 11)
+      var title = data[i][7]; // H (index 7)
+      if (!title || title.toString().trim() === '') continue;
+
+      var rawInput = data[i][4] || ''; // E (index 4)
+      var topicSummary = extractTopicSummary(title, rawInput);
+
+      rowsToTransfer.push({
+        sourceRow: i + 2,
+        state: data[i][6],           // G
+        title: title,                 // H
+        docUrl: data[i][10],          // K
+        originalTopic: data[i][1],    // B
+        tags: data[i][9],             // J
+        topicSummary: topicSummary
+      });
+    }
+  }
+
+  if (rowsToTransfer.length === 0) {
+    ui.alert('Nothing to transfer', 'No rows with "Ready for Transfer" status.', ui.ButtonSet.OK);
+    return;
+  }
+
+  // Confirm
+  var confirm = ui.alert('Transfer Drafts',
+    rowsToTransfer.length + ' row(s) ready to transfer to Article Status Tracker.\n\nProceed?',
+    ui.ButtonSet.YES_NO);
+  if (confirm !== ui.Button.YES) return;
+
+  // Find last row in Article Status Tracker
+  var startRow = Math.max(2, astSheet.getLastRow() + 1);
+
+  var transferred = 0;
+  var errors = 0;
+
+  for (var j = 0; j < rowsToTransfer.length; j++) {
+    var item = rowsToTransfer[j];
+    var destRow = startRow + j;
+
+    try {
+      astSheet.getRange(destRow, 1).setValue(item.state);              // → A
+      astSheet.getRange(destRow, 3).setValue(item.title);              // → C
+      astSheet.getRange(destRow, 4).setValue(item.docUrl);             // → D
+      astSheet.getRange(destRow, 7).setValue('Not Available Yet');      // → G
+      astSheet.getRange(destRow, 9).setValue(item.originalTopic);      // → I
+      astSheet.getRange(destRow, 10).setValue(item.tags);              // → J
+      astSheet.getRange(destRow, 11).setValue(item.topicSummary);      // → K
+
+      // Mark as DONE in Enhanced Drafter
+      edSheet.getRange(item.sourceRow, 12).setValue('DONE');           // L
+      transferred++;
+    } catch (error) {
+      Logger.log('Error transferring row ' + item.sourceRow + ': ' + error.message);
+      errors++;
+    }
+  }
+
+  var message = transferred + ' row(s) transferred to Article Status Tracker.';
+  if (errors > 0) message += '\n' + errors + ' error(s) — check Logs.';
+  ui.alert('Done!', message, ui.ButtonSet.OK);
+}
+
+
+/**
+ * Extracts title + intro summary from raw input for the Topic & Summary column.
+ * Returns "TOPIC: title" or "TOPIC: title\nSUMMARY: intro"
+ */
+function extractTopicSummary(title, rawInput) {
+  if (!rawInput || rawInput.toString().trim() === '') {
+    return 'TOPIC: ' + title;
+  }
+
+  var lines = rawInput.toString().split('\n');
+  var foundH1 = false;
+  var inIntro = false;
+  var introLines = [];
+
+  for (var i = 0; i < lines.length; i++) {
+    var line = lines[i];
+
+    // Found the H1 (title line)
+    if (line.indexOf('# ') === 0 && line.indexOf('## ') !== 0) {
+      foundH1 = true;
+      continue;
+    }
+
+    if (foundH1) {
+      // Found an H2 (subheading)
+      if (line.indexOf('## ') === 0) {
+        if (inIntro) break; // End of intro section
+        inIntro = true;
+        continue;
+      } else if (inIntro && line.trim()) {
+        introLines.push(line.trim());
+      }
+    }
+  }
+
+  var intro = introLines.join(' ').trim();
+  if (intro) {
+    return 'TOPIC: ' + title + '\nSUMMARY: ' + intro;
+  }
+  return 'TOPIC: ' + title;
+}
+
+
+/**
+ * ============================================================================
+ * BATCH CREATE GDOCS
+ * ============================================================================
+ * Processes all "Raw Input Pasted" rows in Enhanced Drafter.
+ * Calls createGDocFromRawInput for each — parses raw input, creates a
+ * formatted Google Doc, and updates the row with parsed data + doc URL.
+ */
+function batchCreateGDocs() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName('Enhanced Drafter');
+  var ui = SpreadsheetApp.getUi();
+
+  if (!sheet) {
+    ui.alert('Error', 'Enhanced Drafter sheet not found.', ui.ButtonSet.OK);
+    return;
+  }
+
+  var lastRow = sheet.getLastRow();
+  if (lastRow < 6) {
+    ui.alert('Nothing to process', 'No data in Enhanced Drafter.', ui.ButtonSet.OK);
+    return;
+  }
+
+  // Find rows with "Raw Input Pasted" in column L (12)
+  var statuses = sheet.getRange(6, 12, lastRow - 5, 1).getValues();
+  var rowsToProcess = [];
+  for (var i = 0; i < statuses.length; i++) {
+    if (statuses[i][0] === 'Raw Input Pasted') {
+      rowsToProcess.push(i + 6);
+    }
+  }
+
+  if (rowsToProcess.length === 0) {
+    ui.alert('Nothing to process', 'No rows with "Raw Input Pasted" status.', ui.ButtonSet.OK);
+    return;
+  }
+
+  var confirm = ui.alert('Batch Create GDocs',
+    rowsToProcess.length + ' row(s) with raw input found.\n\nCreate GDocs for all?',
+    ui.ButtonSet.YES_NO);
+  if (confirm !== ui.Button.YES) return;
+
+  var created = 0;
+  var errors = 0;
+
+  for (var j = 0; j < rowsToProcess.length; j++) {
+    var row = rowsToProcess[j];
+    var statusBefore = sheet.getRange(row, 12).getValue();
+    createGDocFromRawInput(sheet, row);
+    var statusAfter = sheet.getRange(row, 12).getValue();
+
+    if (statusAfter === 'Ready for Transfer') {
+      created++;
+    } else {
+      errors++;
+    }
+  }
+
+  var message = created + ' GDoc(s) created successfully.';
+  if (errors > 0) message += '\n' + errors + ' row(s) failed — check Logs.';
+  ui.alert('Done!', message, ui.ButtonSet.OK);
 }
 
 
