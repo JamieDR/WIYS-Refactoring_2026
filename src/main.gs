@@ -11313,6 +11313,8 @@ function splitter() {
     }
 
     sheet.getRange(row, 2).setValue('Current News');             // B: Article Type
+    sheet.getRange(row, 4).setBackground('#ffffff');             // D: white
+    sheet.getRange(row, 5).setBackground('#ffe5ef');             // E: light pink
     sheet.getRange(row, 7).setValue('Topic Set');                // G: Status
   }
 
@@ -11343,16 +11345,16 @@ function onTopicListEdit(e) {
   if (column === 2) {
     if (e.value === 'Travel Feature') {
       sheet.getRange(row, 3).setBackground('#d9ead3');                                                   // C: light green
-      sheet.getRange(row, 4).setValue('N/A').setHorizontalAlignment('center').setBackground('#d9d9d9');  // D: URL
-      sheet.getRange(row, 5).setValue('N/A').setHorizontalAlignment('center').setBackground('#d9d9d9');  // E: Place to Visit
+      sheet.getRange(row, 4).setValue('N/A').setHorizontalAlignment('center').setBackground('#d9d9d9');  // D: grey
+      sheet.getRange(row, 5).setValue('N/A').setHorizontalAlignment('center').setBackground('#d9d9d9');  // E: grey
     } else if (e.value === 'Current News') {
       sheet.getRange(row, 3).setBackground('#dce8f8');                                                   // C: light blue
-      sheet.getRange(row, 4).clearContent().setBackground(null);
-      sheet.getRange(row, 5).clearContent().setBackground(null);
+      sheet.getRange(row, 4).clearContent().setBackground('#ffffff');                                    // D: white
+      sheet.getRange(row, 5).clearContent().setBackground('#ffe5ef');                                    // E: light pink
     } else {
       sheet.getRange(row, 3).setBackground(null);
-      sheet.getRange(row, 4).clearContent().setBackground(null);
-      sheet.getRange(row, 5).clearContent().setBackground(null);
+      sheet.getRange(row, 4).clearContent().setBackground('#ffffff');                                    // D: white
+      sheet.getRange(row, 5).clearContent().setBackground('#ffe5ef');                                    // E: light pink
     }
   }
 
