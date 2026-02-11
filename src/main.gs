@@ -11338,68 +11338,74 @@ function onTopicListEdit(e) {
   if (sheet.getName() !== 'Topic List') return;
 
   var column = e.range.getColumn();
-  var row = e.range.getRow();
-  if (row < 2) return;
+  var startRow = e.range.getRow();
+  var numRows = e.range.getNumRows();
+  if (startRow < 2) { startRow = 2; numRows = numRows - (2 - e.range.getRow()); }
+  if (numRows <= 0) return;
 
-  // Column B (Article Type) → Travel Feature sets E (Place to Visit) to "N/A"
-  if (column === 2) {
-    if (e.value === 'Travel Feature') {
-      sheet.getRange(row, 3).setBackground('#d9ead3');                                                   // C: light green
-      sheet.getRange(row, 4).setValue('N/A').setHorizontalAlignment('center').setBackground('#d9d9d9');  // D: grey
-      sheet.getRange(row, 5).setValue('N/A').setHorizontalAlignment('center').setBackground('#d9d9d9');  // E: grey
-    } else if (e.value === 'Current News') {
-      sheet.getRange(row, 3).setBackground('#c9daf8');                                                   // C: light blue
-      sheet.getRange(row, 4).clearContent().setBackground('#ffffff');                                    // D: white
-      sheet.getRange(row, 5).clearContent().setBackground('#ffe5ef');                                    // E: light pink
-    } else {
-      sheet.getRange(row, 3).setBackground(null);
-      sheet.getRange(row, 4).clearContent().setBackground('#ffffff');                                    // D: white
-      sheet.getRange(row, 5).clearContent().setBackground('#ffe5ef');                                    // E: light pink
-    }
-  }
+  for (var i = 0; i < numRows; i++) {
+    var row = startRow + i;
 
-  // Column C (Topic) deleted on Travel Feature → revert D and E to defaults
-  if (column === 3) {
-    var topicValue = e.range.getValue();
-    if (!topicValue || topicValue.toString().trim() === '') {
-      var articleType = sheet.getRange(row, 2).getValue();
-      if (articleType === 'Travel Feature') {
-        sheet.getRange(row, 4).clearContent().setBackground('#ffffff');   // D: white
-        sheet.getRange(row, 5).clearContent().setBackground('#ffe5ef');   // E: light pink
-        sheet.getRange(row, 7).clearContent();                            // G: clear status
+    // Column B (Article Type) changed
+    if (column === 2) {
+      var bValue = sheet.getRange(row, 2).getValue();
+      if (bValue === 'Travel Feature') {
+        sheet.getRange(row, 3).setBackground('#d9ead3');                                                   // C: light green
+        sheet.getRange(row, 4).setValue('N/A').setHorizontalAlignment('center').setBackground('#d9d9d9');  // D: grey
+        sheet.getRange(row, 5).setValue('N/A').setHorizontalAlignment('center').setBackground('#d9d9d9');  // E: grey
+      } else if (bValue === 'Current News') {
+        sheet.getRange(row, 3).setBackground('#c9daf8');                                                   // C: light blue
+        sheet.getRange(row, 4).clearContent().setBackground('#ffffff');                                    // D: white
+        sheet.getRange(row, 5).clearContent().setBackground('#ffe5ef');                                    // E: light pink
+      } else {
+        sheet.getRange(row, 3).setBackground(null);
+        sheet.getRange(row, 4).clearContent().setBackground('#ffffff');                                    // D: white
+        sheet.getRange(row, 5).clearContent().setBackground('#ffe5ef');                                    // E: light pink
       }
     }
-  }
 
-  // Column F (Outline) filled/cleared → update G (Status)
-  if (column === 6) {
-    var outlineValue = e.range.getValue();
-    if (outlineValue && outlineValue.toString().trim() !== '') {
-      sheet.getRange(row, 7).setValue('Outline Ready');
-    } else {
-      sheet.getRange(row, 7).setValue('Topic Set');
+    // Column C (Topic) deleted on Travel Feature → revert D and E to defaults
+    if (column === 3) {
+      var topicValue = sheet.getRange(row, 3).getValue();
+      if (!topicValue || topicValue.toString().trim() === '') {
+        var articleType = sheet.getRange(row, 2).getValue();
+        if (articleType === 'Travel Feature') {
+          sheet.getRange(row, 4).clearContent().setBackground('#ffffff');   // D: white
+          sheet.getRange(row, 5).clearContent().setBackground('#ffe5ef');   // E: light pink
+          sheet.getRange(row, 7).clearContent();                            // G: clear status
+        }
+      }
     }
-  }
 
-  // Travel Feature: set Status to "Topic Set" when B, C, D, E are all filled
-  // Current News: already handled by splitter setting "Topic Set" on split
-  if (column >= 2 && column <= 5) {
-    var articleType = sheet.getRange(row, 2).getValue();
-    if (articleType === 'Travel Feature') {
-      var vals = sheet.getRange(row, 2, 1, 4).getValues()[0]; // B, C, D, E
-      var allFilled = vals.every(function(v) { return v !== '' && v !== null; });
-      if (allFilled) {
+    // Column F (Outline) filled/cleared → update G (Status)
+    if (column === 6) {
+      var outlineValue = sheet.getRange(row, 6).getValue();
+      if (outlineValue && outlineValue.toString().trim() !== '') {
+        sheet.getRange(row, 7).setValue('Outline Ready');
+      } else {
         sheet.getRange(row, 7).setValue('Topic Set');
       }
     }
-  }
 
-  // If B, C, D, E, F are all empty → clear G (Status)
-  if (column >= 2 && column <= 6) {
-    var values = sheet.getRange(row, 2, 1, 5).getValues()[0]; // B through F
-    var allEmpty = values.every(function(v) { return v === '' || v === null; });
-    if (allEmpty) {
-      sheet.getRange(row, 7).clearContent();
+    // Travel Feature: set Status to "Topic Set" when B, C, D, E are all filled
+    if (column >= 2 && column <= 5) {
+      var type = sheet.getRange(row, 2).getValue();
+      if (type === 'Travel Feature') {
+        var vals = sheet.getRange(row, 2, 1, 4).getValues()[0]; // B, C, D, E
+        var allFilled = vals.every(function(v) { return v !== '' && v !== null; });
+        if (allFilled) {
+          sheet.getRange(row, 7).setValue('Topic Set');
+        }
+      }
+    }
+
+    // If B, C, D, E, F are all empty → clear G (Status)
+    if (column >= 2 && column <= 6) {
+      var values = sheet.getRange(row, 2, 1, 5).getValues()[0]; // B through F
+      var allEmpty = values.every(function(v) { return v === '' || v === null; });
+      if (allEmpty) {
+        sheet.getRange(row, 7).clearContent();
+      }
     }
   }
 }
