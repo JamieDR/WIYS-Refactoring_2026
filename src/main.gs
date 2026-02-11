@@ -15980,25 +15980,25 @@ function onEnhancedDrafterEdit(e) {
 function createGDocFromRawInput(sheet, row) {
   var rawInput = sheet.getRange(row, 5).getValue();
   if (!rawInput) {
-    sheet.getRange(row, 12).setValue('Error: No raw input in column E');
+    Logger.log('Row ' + row + ': No raw input in column E');
+    sheet.getRange(row, 12).setValue('Raw Input Pasted');
     return;
   }
-
-  sheet.getRange(row, 12).setValue('Creating GDoc...');
-  SpreadsheetApp.flush();
 
   try {
     var parsed = parseEnhancedDrafterInput(rawInput);
 
     if (!parsed.title) {
-      sheet.getRange(row, 12).setValue('Error: No title (H1) found in raw input');
+      Logger.log('Row ' + row + ': No title (H1) found in raw input');
+      sheet.getRange(row, 12).setValue('Raw Input Pasted');
       return;
     }
 
     var docUrl = createFormattedGDoc(parsed.title, parsed.body);
 
     if (!docUrl) {
-      sheet.getRange(row, 12).setValue('Error: Failed to create GDoc');
+      Logger.log('Row ' + row + ': Failed to create GDoc');
+      sheet.getRange(row, 12).setValue('Raw Input Pasted');
       return;
     }
 
@@ -16014,7 +16014,7 @@ function createGDocFromRawInput(sheet, row) {
 
   } catch (error) {
     Logger.log('Error creating GDoc for row ' + row + ': ' + error.message);
-    sheet.getRange(row, 12).setValue('Error: ' + error.message);
+    sheet.getRange(row, 12).setValue('Raw Input Pasted');
   }
 }
 
