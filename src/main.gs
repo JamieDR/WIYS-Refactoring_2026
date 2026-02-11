@@ -11320,38 +11320,6 @@ function splitter() {
 }
 
 
-/**
- * onTopicListEdit - Standalone installable trigger for the Topic List sheet.
- * Handles automatic updates when cells are edited:
- *   - Column B set to "Travel Feature" → Column D gets "N/A" (centered)
- *   - Column E (Outline) filled in → Column F changes to "Ready for Drafting"
- */
-function onTopicListEdit(e) {
-  if (!e || !e.range) return;
-
-  var sheet = e.range.getSheet();
-  if (sheet.getName() !== 'Topic List') return;
-
-  var column = e.range.getColumn();
-  var row = e.range.getRow();
-  if (row < 2) return;  // Skip header row
-
-  // Column B (Article Type) changed to "Travel Feature" → set D to "N/A"
-  if (column === 2 && e.value === 'Travel Feature') {
-    var cell = sheet.getRange(row, 4);
-    cell.setValue('N/A');
-    cell.setHorizontalAlignment('center');
-  }
-
-  // Column E (Outline) edited and not empty → set F to "Ready for Drafting"
-  if (column === 5) {
-    var outlineValue = e.range.getValue();
-    if (outlineValue && outlineValue.toString().trim() !== '') {
-      sheet.getRange(row, 6).setValue('Ready for Drafting');
-    }
-  }
-}
-
 
 /**
  * ============================================================================
@@ -11665,6 +11633,19 @@ function onEdit(e) {
             sheet.getRange(currentRow, 12).setValue("");
           }
         }
+      }
+    }
+    // Topic List - Column B set to "Travel Feature" → D gets "N/A" (centered)
+    else if (sheet.getName() === 'Topic List' && column === 2 && row >= 2 && e.value === 'Travel Feature') {
+      var cell = sheet.getRange(row, 4);
+      cell.setValue('N/A');
+      cell.setHorizontalAlignment('center');
+    }
+    // Topic List - Column E (Outline) filled in → F changes to "Ready for Drafting"
+    else if (sheet.getName() === 'Topic List' && column === 5 && row >= 2) {
+      var outlineValue = e.range.getValue();
+      if (outlineValue && outlineValue.toString().trim() !== '') {
+        sheet.getRange(row, 6).setValue('Ready for Drafting');
       }
     }
     else {
