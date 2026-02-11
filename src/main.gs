@@ -11808,8 +11808,9 @@ function getCategoryFromTitleAndTags(title, tags) {
 
 var BATCH_CONFIG = {
   MAX_RUNTIME_MS: 270000,                // 4.5 minutes (of 6 min limit)
-  ARTICLE_DELAY_MS: 8000,                // 8 seconds between articles
-  RETRY_DELAYS_MS: [10000, 30000, 60000], // Exponential backoff: 10s, 30s, 60s
+  OPERATION_DELAY_MS: 7000,              // 7 seconds between major operations (matches Python OPERATION_DELAY)
+  ARTICLE_DELAY_MS: 7000,               // Alias for OPERATION_DELAY_MS (used by Paste Content / Delete)
+  RETRY_DELAYS_MS: [10000, 20000, 40000], // Exponential backoff: 10s, 20s, 40s (matches Python RETRY_DELAYS)
   MAX_RETRIES: 3,
   CONTINUE_DELAY_MINUTES: 1,             // 1 minute gap between chunks
   WORKSPACES: ['JAMIE', 'CHARL', 'LARA', 'NAINTARA', 'KARL', 'MARIE']
@@ -12014,6 +12015,55 @@ function refreshUploaderLock(operationType) {
 
 
 /**
+ * Get all existing article titles in a workspace by scanning column A text.
+ * Faithful port of Python's get_existing_titles_in_workspace.
+ * Uses plain text matching (NOT merge detection) — matches Python exactly.
+ *
+ * Note: ALL_UPLOADER_WORKSPACES includes SHAYNE for boundary detection,
+ * even though SHAYNE is not in BATCH_CONFIG.WORKSPACES for processing.
+ */
+var ALL_UPLOADER_WORKSPACES = ['JAMIE', 'CHARL', 'LARA', 'SHAYNE', 'NAINTARA', 'KARL', 'MARIE'];
+
+function getExistingWorkspaceTitles(uploaderSheet, workspaceName) {
+  var data = uploaderSheet.getRange('A:A').getValues();
+  var existingTitles = [];
+  var inWorkspace = false;
+
+  for (var i = 0; i < data.length; i++) {
+    var cellValue = data[i][0] ? data[i][0].toString() : '';
+    if (!cellValue) continue;
+
+    var upper = cellValue.toUpperCase();
+
+    // Check if this is a workspace header (contains name, not END ROW)
+    if (upper.indexOf(workspaceName.toUpperCase()) !== -1 && upper.indexOf('END ROW') === -1) {
+      inWorkspace = true;
+      continue;
+    }
+
+    // Check if we've reached END ROW or another workspace
+    if (inWorkspace) {
+      if (upper.indexOf('END ROW') !== -1) break;
+
+      var isAnotherWorkspace = false;
+      for (var w = 0; w < ALL_UPLOADER_WORKSPACES.length; w++) {
+        if (upper.indexOf(ALL_UPLOADER_WORKSPACES[w].toUpperCase()) !== -1) {
+          isAnotherWorkspace = true;
+          break;
+        }
+      }
+      if (isAnotherWorkspace) break;
+
+      // This is an article title
+      existingTitles.push(cellValue.trim());
+    }
+  }
+
+  return existingTitles;
+}
+
+
+/**
  * ============================================================================
  * CREATE NEW ROWS — Chunked batch processor
  * ============================================================================
@@ -12021,11 +12071,12 @@ function refreshUploaderLock(operationType) {
  * Processes each workspace through phases: SCAN → FOLDERS → INSERT → VERIFY
  *
  * Key behaviors matching Python:
- * - Duplicate checking is workspace-scoped (not whole sheet)
- * - Drive folders created one at a time with delay
- * - Rows batch-inserted at once per workspace (not one-by-one)
+ * - Duplicate checking via plain text scan of column A (not merge detection)
+ * - Drive folders created one at a time with 7s delay
+ * - Rows batch-inserted, formatted via 2D arrays (not individual API calls)
+ * - 7s delays between insert → format → values → dropdowns (matches Python)
  * - Each article verified after insertion
- * - Failed articles get "Retry Row" + error context in column H
+ * - Failed articles get "Retry Row" + red background + error in column E
  * - Only verified articles marked "Row Created" in AST
  * ============================================================================
  */
@@ -12150,9 +12201,13 @@ function processCreateNewRowsChunk(state) {
         continue;
       }
 
-      // Workspace-scoped duplicate check (matching Python exactly)
-      var existingTitles = getExistingTitlesLightning(uploaderSheet, workspaceName);
-      var titleMap = createTitleHashMap(existingTitles);
+      // Workspace-scoped duplicate check — plain text scan of column A
+      // (matching Python's get_existing_titles_in_workspace exactly)
+      var existingTitles = getExistingWorkspaceTitles(uploaderSheet, workspaceName);
+      var titleMap = {};
+      for (var t = 0; t < existingTitles.length; t++) {
+        if (existingTitles[t]) titleMap[existingTitles[t].toLowerCase()] = true;
+      }
 
       state.currentArticles = [];
       var duplicateCount = 0;
@@ -12185,9 +12240,9 @@ function processCreateNewRowsChunk(state) {
     }
 
     // ── PHASE: FOLDERS ───────────────────────────────────────────
-    // Create Drive folders one at a time with delay between each.
+    // Create Drive folders one at a time with 7s delay between each.
     // Matches Python's create_drive_folder loop. Failed folders get
-    // "Retry Row" status + error context in column H.
+    // "Retry Row" + error in column E + light red background on E & G.
     if (state.phase === 'FOLDERS') {
       Logger.log('FOLDERS: ' + workspaceName + ' (' + state.currentFolderIndex + '/' + state.currentArticles.length + ')');
 
@@ -12212,15 +12267,17 @@ function processCreateNewRowsChunk(state) {
             state.articlesWithFolders.push(article);
             Logger.log('Folder: ' + article.title);
           } else {
-            // Match Python: mark_article_failed with "Retry Row" + error context
+            // Match Python: mark_article_failed — "Retry Row" + error + red background
             statusSheet.getRange(article.row, 7).setValue('Retry Row');
             statusSheet.getRange(article.row, 5).setValue('Folder creation returned no URL');
+            statusSheet.getRange(article.row, 5, 1, 3).setBackground('#FFCCCC'); // Light red on E, F, G
             state.stats.errors++;
             state.stats.errorDetails.push(article.title + ': Folder creation returned no URL');
           }
         } catch (error) {
           statusSheet.getRange(article.row, 7).setValue('Retry Row');
           statusSheet.getRange(article.row, 5).setValue('Folder error: ' + error.message.substring(0, 80));
+          statusSheet.getRange(article.row, 5, 1, 3).setBackground('#FFCCCC'); // Light red on E, F, G
           state.stats.errors++;
           state.stats.errorDetails.push(article.title + ': ' + error.message);
         }
@@ -12228,9 +12285,9 @@ function processCreateNewRowsChunk(state) {
         state.currentFolderIndex++;
         saveBatchState('CREATE_NEW_ROWS', state);
 
-        // Delay between folder creations (matching Python's self.delay())
+        // 7s delay between folder creations (matching Python's self.delay())
         if (state.currentFolderIndex < state.currentArticles.length) {
-          Utilities.sleep(BATCH_CONFIG.ARTICLE_DELAY_MS);
+          Utilities.sleep(BATCH_CONFIG.OPERATION_DELAY_MS);
         }
         SpreadsheetApp.flush();
       }
@@ -12246,9 +12303,10 @@ function processCreateNewRowsChunk(state) {
     }
 
     // ── PHASE: INSERT ────────────────────────────────────────────
-    // Batch insert all rows at once, then format and populate.
-    // Matches Python's insert_article_rows (batch insert + batch format
-    // + batch values + copy dropdowns — all in one operation).
+    // Batch insert all rows, then format via 2D arrays, then write
+    // values via 2D array, then copy dropdowns. Uses 7s delays between
+    // sub-steps matching Python's insert_article_rows exactly.
+    // All formatting applied via bulk array operations (not individual calls).
     if (state.phase === 'INSERT') {
       if (!hasTimeRemaining(startTime)) {
         saveBatchState('CREATE_NEW_ROWS', state);
@@ -12265,85 +12323,125 @@ function processCreateNewRowsChunk(state) {
         var endRow = findPersonEndRow(uploaderSheet, personRow);
         if (!endRow) throw new Error('END ROW not found for ' + workspaceName);
 
-        // Batch insert all rows at once (matching Python's insert_dimension)
+        // Step 1: Batch insert all rows at once (matching Python's insert_dimension)
         var totalRows = state.articlesWithFolders.length * 2;
         uploaderSheet.insertRowsBefore(endRow, totalRows);
+        SpreadsheetApp.flush();
+        Logger.log('Inserted ' + totalRows + ' rows');
+        Utilities.sleep(BATCH_CONFIG.OPERATION_DELAY_MS); // 7s delay (matches Python)
 
-        // Format and populate each article (matching Python's formatting requests)
+        // Step 2: Build 2D arrays for all formatting (matching Python's batch formatting)
+        var numCols = Math.max(uploaderSheet.getLastColumn(), 13);
+        var backgrounds = [];
+        var fontColors = [];
+        var fontWeights = [];
+        var fontSizes = [];
+        var hAligns = [];
+        var vAligns = [];
+        var wraps = [];
+
         for (var i = 0; i < state.articlesWithFolders.length; i++) {
           var art = state.articlesWithFolders[i];
-          var titleRow = endRow + (i * 2);
-          var contentRow = titleRow + 1;
-          art.titleRow = titleRow; // Store for verification
+          art.titleRow = endRow + (i * 2);
 
-          // TITLE ROW: merge A-K, black bg, white bold text, centered
-          var titleRange = uploaderSheet.getRange(titleRow, 1, 1, 11);
-          titleRange.merge();
-          titleRange.setValue(art.title);
-          titleRange.setBackground(CONFIG.COLORS.BLACK);
-          titleRange.setFontColor(CONFIG.COLORS.WHITE);
-          titleRange.setFontSize(11);
-          titleRange.setFontWeight('bold');
-          titleRange.setHorizontalAlignment('center');
-          titleRange.setVerticalAlignment('middle');
-
-          // TITLE ROW: Column L — dropdown + dark gray bg + white text
-          var dropdownCell = uploaderSheet.getRange(titleRow, 12);
-          uploaderSheet.getRange(2, 12).copyTo(dropdownCell, SpreadsheetApp.CopyPasteType.PASTE_DATA_VALIDATION, false);
-          dropdownCell.setValue(CONFIG.STATUS.GDRIVE_FOLDER_READY);
-          dropdownCell.setBackground('#333333');
-          dropdownCell.setFontColor(CONFIG.COLORS.WHITE);
-          dropdownCell.setHorizontalAlignment('center');
-
-          // TITLE ROW: Column M — folder URL
-          if (art.folderUrl) {
-            uploaderSheet.getRange(titleRow, 13).setValue(art.folderUrl);
+          // --- TITLE ROW formatting arrays ---
+          var tBg = [], tFc = [], tFw = [], tFs = [], tHa = [], tVa = [], tWr = [];
+          for (var c = 0; c < numCols; c++) {
+            if (c < 11) { // A-K: black bg, white bold 11pt, center/middle
+              tBg.push('#000000'); tFc.push('#FFFFFF'); tFw.push('bold'); tFs.push(11);
+              tHa.push('center'); tVa.push('middle');
+            } else if (c === 11) { // L: dark gray bg, white text, center
+              tBg.push('#333333'); tFc.push('#FFFFFF'); tFw.push('normal'); tFs.push(10);
+              tHa.push('center'); tVa.push('bottom');
+            } else { // M+: white bg, defaults
+              tBg.push('#FFFFFF'); tFc.push('#000000'); tFw.push('normal'); tFs.push(10);
+              tHa.push('left'); tVa.push('bottom');
+            }
+            tWr.push(SpreadsheetApp.WrapStrategy.CLIP);
           }
+          backgrounds.push(tBg); fontColors.push(tFc); fontWeights.push(tFw);
+          fontSizes.push(tFs); hAligns.push(tHa); vAligns.push(tVa); wraps.push(tWr);
 
-          // TITLE ROW: Column M+ — white bg
-          if (uploaderSheet.getLastColumn() > 12) {
-            uploaderSheet.getRange(titleRow, 13, 1, uploaderSheet.getLastColumn() - 12)
-              .clearFormat().setBackground(CONFIG.COLORS.WHITE);
+          // --- CONTENT ROW formatting arrays ---
+          // Base: white bg, black text, normal, size 10 (matching Python exactly)
+          var cBg = [], cFc = [], cFw = [], cFs = [], cHa = [], cVa = [], cWr = [];
+          for (var c = 0; c < numCols; c++) {
+            cBg.push('#FFFFFF'); cFc.push('#000000'); cFw.push('normal'); cFs.push(10);
+            cHa.push('left'); cVa.push('bottom');
+            cWr.push(SpreadsheetApp.WrapStrategy.CLIP);
+
+            // Column-specific overrides (matching Python formatting)
+            if (c === 3) { // D: pink bg, center
+              cBg[c] = CONFIG.COLORS.LIGHT_PINK; cHa[c] = 'center';
+            } else if (c === 7 || c === 8 || c === 9) { // H, I, J: center
+              cHa[c] = 'center';
+            } else if (c === 11) { // L: gray bg
+              cBg[c] = '#CCCCCC';
+            }
           }
-
-          // CONTENT ROW: clip wrap on entire row
-          uploaderSheet.getRange(contentRow, 1, 1, uploaderSheet.getLastColumn())
-            .setWrapStrategy(SpreadsheetApp.WrapStrategy.CLIP);
-
-          // CONTENT ROW: A-K white bg
-          uploaderSheet.getRange(contentRow, 1, 1, 11)
-            .clearFormat().setBackground(CONFIG.COLORS.WHITE)
-            .setWrapStrategy(SpreadsheetApp.WrapStrategy.CLIP);
-
-          // CONTENT ROW: Column D — pink bg, center
-          uploaderSheet.getRange(contentRow, 4)
-            .setHorizontalAlignment('center')
-            .setBackground(CONFIG.COLORS.LIGHT_PINK);
-
-          // CONTENT ROW: Columns H, I, J — center
-          uploaderSheet.getRange(contentRow, 8).setHorizontalAlignment('center');
-          uploaderSheet.getRange(contentRow, 9).setHorizontalAlignment('center');
-          uploaderSheet.getRange(contentRow, 10).setHorizontalAlignment('center');
-
-          // CONTENT ROW: Column L — gray bg, clear dropdown
-          uploaderSheet.getRange(contentRow, 12).clearFormat().setBackground('#CCCCCC');
-
-          // CONTENT ROW: Column M+ — white bg
-          if (uploaderSheet.getLastColumn() > 12) {
-            uploaderSheet.getRange(contentRow, 13, 1, uploaderSheet.getLastColumn() - 12)
-              .clearFormat().setBackground(CONFIG.COLORS.WHITE);
-          }
+          backgrounds.push(cBg); fontColors.push(cFc); fontWeights.push(cFw);
+          fontSizes.push(cFs); hAligns.push(cHa); vAligns.push(cVa); wraps.push(cWr);
         }
 
+        // Apply ALL formatting in bulk (one call per property, not per cell)
+        var fullRange = uploaderSheet.getRange(endRow, 1, totalRows, numCols);
+        fullRange.setBackgrounds(backgrounds);
+        fullRange.setFontColors(fontColors);
+        fullRange.setFontWeights(fontWeights);
+        fullRange.setFontSizes(fontSizes);
+        fullRange.setHorizontalAlignments(hAligns);
+        fullRange.setVerticalAlignments(vAligns);
+        fullRange.setWrapStrategies(wraps);
         SpreadsheetApp.flush();
-        Logger.log('Inserted and formatted ' + state.articlesWithFolders.length + ' articles');
+        Logger.log('Applied formatting for ' + state.articlesWithFolders.length + ' articles');
+        Utilities.sleep(BATCH_CONFIG.OPERATION_DELAY_MS); // 7s delay (matches Python)
+
+        // Step 3: Build 2D value array and write ALL values at once
+        var values = [];
+        for (var i = 0; i < state.articlesWithFolders.length; i++) {
+          var art = state.articlesWithFolders[i];
+
+          // Title row values: title in A, status in L, folder URL in M
+          var titleVals = [];
+          for (var c = 0; c < numCols; c++) {
+            if (c === 0) titleVals.push(art.title);
+            else if (c === 11) titleVals.push(CONFIG.STATUS.GDRIVE_FOLDER_READY);
+            else if (c === 12) titleVals.push(art.folderUrl || '');
+            else titleVals.push('');
+          }
+          values.push(titleVals);
+
+          // Content row values: all empty
+          var contentVals = [];
+          for (var c = 0; c < numCols; c++) contentVals.push('');
+          values.push(contentVals);
+        }
+
+        fullRange.setValues(values);
+        SpreadsheetApp.flush();
+        Logger.log('Wrote values for ' + state.articlesWithFolders.length + ' articles');
+        Utilities.sleep(BATCH_CONFIG.OPERATION_DELAY_MS); // 7s delay (matches Python)
+
+        // Step 4: Merge title rows A-K and copy dropdown validations
+        // (These require per-article calls — can't batch merges or validation copies)
+        for (var i = 0; i < state.articlesWithFolders.length; i++) {
+          var titleRow = endRow + (i * 2);
+          uploaderSheet.getRange(titleRow, 1, 1, 11).merge();
+          uploaderSheet.getRange(2, 12).copyTo(
+            uploaderSheet.getRange(titleRow, 12),
+            SpreadsheetApp.CopyPasteType.PASTE_DATA_VALIDATION, false
+          );
+        }
+        SpreadsheetApp.flush();
+        Logger.log('Merged title rows and copied dropdowns');
 
       } catch (error) {
-        // Batch insert failed — mark all as error (matching Python behavior)
+        // Batch insert failed — mark all as error with red background
         Logger.log('Insert failed for ' + workspaceName + ': ' + error.message);
         for (var i = 0; i < state.articlesWithFolders.length; i++) {
           statusSheet.getRange(state.articlesWithFolders[i].row, 7).setValue('Retry Row');
           statusSheet.getRange(state.articlesWithFolders[i].row, 5).setValue('Row insert failed: ' + error.message.substring(0, 80));
+          statusSheet.getRange(state.articlesWithFolders[i].row, 5, 1, 3).setBackground('#FFCCCC');
           state.stats.errors++;
         }
         state.articlesWithFolders = []; // Nothing to verify
@@ -12388,6 +12486,7 @@ function processCreateNewRowsChunk(state) {
             : !actualUrl ? 'Folder URL missing in column M' : 'Unknown verification error';
           statusSheet.getRange(art.row, 7).setValue('Retry Row');
           statusSheet.getRange(art.row, 5).setValue('Verify failed: ' + verifyReason);
+          statusSheet.getRange(art.row, 5, 1, 3).setBackground('#FFCCCC'); // Light red on E, F, G
           state.stats.errors++;
           state.stats.errorDetails.push(art.title + ': ' + verifyReason);
           Logger.log('Verify failed: ' + art.title +
@@ -12416,9 +12515,9 @@ function processCreateNewRowsChunk(state) {
       state.phase = 'SCAN';
       saveBatchState('CREATE_NEW_ROWS', state);
 
-      // Delay between workspaces (matching Python's delay between workspaces)
+      // 7s delay between workspaces (matching Python's delay between workspaces)
       if (state.currentWorkspaceIndex < state.workspaces.length) {
-        Utilities.sleep(BATCH_CONFIG.ARTICLE_DELAY_MS);
+        Utilities.sleep(BATCH_CONFIG.OPERATION_DELAY_MS);
       }
     }
   }
