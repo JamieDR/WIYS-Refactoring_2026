@@ -11150,10 +11150,13 @@ function onOpen() {
   var currentLock = isUploaderSheetLocked();
   var lockStatus = currentLock ? ' (🔒 LOCKED)' : '';
   
-   ui.createMenu('Splitter')
+   ui.createMenu('      **Splitter')
     .addItem('Split Input', 'splitter')
     .addToUi();
 
+  ui.createMenu('      **Drafting')
+    .addItem('Transfer to Enhanced Drafter', 'transferToEnhancedDrafter')
+    .addToUi();
 
   // Create menu for WP Editing Tracker
   ui.createMenu('      *Editing')
@@ -11408,6 +11411,83 @@ function onTopicListEdit(e) {
       }
     }
   }
+}
+
+
+/**
+ * ============================================================================
+ * TRANSFER TO ENHANCED DRAFTER
+ * ============================================================================
+ * Transfers rows with "Outline Ready" status from Topic List to Enhanced Drafter.
+ *
+ * Topic List → Enhanced Drafter mapping:
+ *   C (Topic)          → B
+ *   B (Article Type)   → C
+ *   E (Place to Visit) → D
+ *   F (Outline)        → F
+ *   Enhanced Drafter L → "Ready for Drafting"
+ *   Topic List G       → "Done"
+ */
+function transferToEnhancedDrafter() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var topicSheet = ss.getSheetByName('Topic List');
+  var drafterSheet = ss.getSheetByName('Enhanced Drafter');
+  var ui = SpreadsheetApp.getUi();
+
+  if (!topicSheet || !drafterSheet) {
+    ui.alert('Error', 'Could not find Topic List or Enhanced Drafter sheet.', ui.ButtonSet.OK);
+    return;
+  }
+
+  // Find rows with "Outline Ready" in Topic List column G (7)
+  var lastRow = topicSheet.getLastRow();
+  if (lastRow < 2) {
+    ui.alert('Nothing to transfer', 'No rows found in Topic List.', ui.ButtonSet.OK);
+    return;
+  }
+
+  var data = topicSheet.getRange(2, 2, lastRow - 1, 6).getValues(); // B through G
+  var rowsToTransfer = [];
+  for (var i = 0; i < data.length; i++) {
+    if (data[i][5] === 'Outline Ready') { // Column G (index 5 in B-G range)
+      rowsToTransfer.push({
+        sourceRow: i + 2,
+        articleType: data[i][0],   // B
+        topic: data[i][1],         // C
+        placeToVisit: data[i][3],  // E
+        outline: data[i][4]        // F
+      });
+    }
+  }
+
+  if (rowsToTransfer.length === 0) {
+    ui.alert('Nothing to transfer', 'No rows with "Outline Ready" status found.', ui.ButtonSet.OK);
+    return;
+  }
+
+  // Find first empty row in Enhanced Drafter (data starts at row 5)
+  var drafterLastRow = drafterSheet.getLastRow();
+  var startRow = 5;
+  if (drafterLastRow >= 5) {
+    startRow = drafterLastRow + 1;
+  }
+
+  // Transfer each row
+  for (var j = 0; j < rowsToTransfer.length; j++) {
+    var item = rowsToTransfer[j];
+    var destRow = startRow + j;
+
+    drafterSheet.getRange(destRow, 2).setValue(item.topic);         // → B
+    drafterSheet.getRange(destRow, 3).setValue(item.articleType);   // → C
+    drafterSheet.getRange(destRow, 4).setValue(item.placeToVisit); // → D
+    drafterSheet.getRange(destRow, 6).setValue(item.outline);       // → F
+    drafterSheet.getRange(destRow, 12).setValue('Ready for Drafting'); // → L (Status)
+
+    // Mark as Done in Topic List
+    topicSheet.getRange(item.sourceRow, 7).setValue('Done');        // G (Status)
+  }
+
+  ui.alert('Done!', rowsToTransfer.length + ' row(s) transferred to Enhanced Drafter.', ui.ButtonSet.OK);
 }
 
 
