@@ -3016,11 +3016,11 @@ function uploadToWordPress(e) {
   // Get featured image
   var featuredImageId = (updatedSlides.length > 0 && updatedSlides[0].imageId) ? updatedSlides[0].imageId : 0;
   
-  // NEW: Create slideshow content with dynamic related articles
+  // Create slideshow content with dynamic related articles
   var slideshowContent = createSlideshowContent(updatedSlides, relatedArticles);
-  
+
   var postPayload = {
-    title: articleTitle,
+    title: cleanForDisplay(articleTitle),
     status: CONFIG.WP_POST_STATUS.DRAFT,
     content: slideshowContent,
     categories: [stateCategoryId],
@@ -3072,6 +3072,58 @@ function uploadToWordPress(e) {
     }
     
     Logger.log("WordPress draft created: " + wordpressUrlDraft);
+
+    // POST-UPLOAD: Correct punctuation with Claude (non-critical — if this fails, the post is still uploaded fine)
+    try {
+      var punctApiKey = PropertiesService.getScriptProperties().getProperty('CLAUDE_API_KEY');
+      if (punctApiKey && responseData.id) {
+        var corrected = correctPunctuationWithClaude(articleTitle, updatedSlides, punctApiKey);
+        var updatePayload = {};
+
+        // Only update title if Claude returned a different version
+        if (corrected.title && corrected.title !== articleTitle) {
+          updatePayload.title = cleanForDisplay(corrected.title);
+          Logger.log('Punctuation: title corrected to: ' + corrected.title);
+        }
+
+        // Update subheadings in existing content via safe string replacement
+        if (corrected.subheadings) {
+          var updatedContent = slideshowContent;
+          var contentChanged = false;
+          for (var si = 0; si < updatedSlides.length; si++) {
+            var oldSub = cleanForDisplay(updatedSlides[si].subheading || '');
+            var newSub = cleanForDisplay(corrected.subheadings[si] || '');
+            if (newSub && newSub !== oldSub && oldSub) {
+              updatedContent = updatedContent.split(oldSub).join(newSub);
+              contentChanged = true;
+              Logger.log('Punctuation: subheading ' + (si + 1) + ' corrected');
+            }
+          }
+          if (contentChanged) {
+            updatePayload.content = updatedContent;
+          }
+        }
+
+        // Only call WordPress API if there are actual changes
+        if (Object.keys(updatePayload).length > 0) {
+          var updateOptions = {
+            method: "post",
+            contentType: "application/json",
+            headers: {
+              Authorization: "Basic " + Utilities.base64Encode(username + ":" + applicationPassword)
+            },
+            payload: JSON.stringify(updatePayload)
+          };
+          UrlFetchApp.fetch(wordpressUrl + '/' + responseData.id, updateOptions);
+          Logger.log('✅ Post updated with punctuation corrections');
+        } else {
+          Logger.log('Punctuation check: no corrections needed');
+        }
+      }
+    } catch (punctError) {
+      // Non-critical — the post is already uploaded successfully
+      Logger.log('⚠️ Punctuation correction skipped (post still uploaded OK): ' + (punctError.message || punctError));
+    }
 
   } catch (error) {
     var errorMsg = error && error.message ? error.message : (error ? error.toString() : 'Unknown error');
@@ -3705,25 +3757,33 @@ function createSlideshowContent(slides, relatedArticles) {
       slideContent = aiParts[0].trim(); // Only keep content before AI disclaimer
     }
     
-    // Format the clean content with intelligent line breaks (NO AI disclaimer added here)
-    var formattedContent = formatContentWithLineBreaks(slideContent);
-    
-    // Escape the main content
-    var escapedContent = escapeQuotes(formattedContent);
-    
+    // Clean all text: decode HTML entities so no &quot; etc. appear on the page
+    var cleanSubheading = cleanForDisplay(slide.subheading || '');
+    var cleanContent = cleanForDisplay(slideContent);
+    var cleanAltText = cleanForDisplay(slide.altText || '');
+    var cleanCopyright = cleanForDisplay(slide.copyright || '');
+    var cleanLicenseId = cleanForDisplay(slide.licenseId || '');
+    var cleanLicensorName = cleanForDisplay(slide.licensorName || '');
+
+    // Format the clean content with intelligent line breaks
+    var formattedContent = formatContentWithLineBreaks(cleanContent);
+
     // Build the slide HTML
+    // JSON.stringify handles escaping for block attributes
+    // escapeQuotes only used for HTML attributes (inside "...")
+    // Display text (h3, p) uses clean decoded text — no escaping needed
     var slideHtml = `<!-- wp:clmsn/slideshow-item ${JSON.stringify({
-      slideTitle: slide.subheading ? escapeQuotes(slide.subheading) : '',
+      slideTitle: cleanSubheading,
       slideImageId: slide.imageId || 0,
-      slideAltText: slide.altText ? escapeQuotes(slide.altText) : '',
-      slideImageCredit: slide.copyright ? escapeQuotes(slide.copyright) : '',
-      licenseId: slide.licenseId ? escapeQuotes(slide.licenseId) : '',
-      licensorName: slide.licensorName ? escapeQuotes(slide.licensorName) : ''
+      slideAltText: cleanAltText,
+      slideImageCredit: cleanCopyright,
+      licenseId: cleanLicenseId,
+      licensorName: cleanLicensorName
     })} -->
-    <div class="wp-block-clmsn-slideshow-item slideshow-item" data-image-id="${slide.imageId || 0}" data-alt-text="${escapeQuotes(slide.altText || '')}">
-      <h3>${escapeQuotes(slide.subheading)}</h3>
+    <div class="wp-block-clmsn-slideshow-item slideshow-item" data-image-id="${slide.imageId || 0}" data-alt-text="${escapeQuotes(cleanAltText)}">
+      <h3>${cleanSubheading}</h3>
       <!-- wp:paragraph {"placeholder":"Enter slide content here..."} -->
-      <p>${escapedContent}</p>
+      <p>${formattedContent}</p>
       <!-- /wp:paragraph -->`;
 
     // Add AI disclaimer as completely separate paragraph block for last slide
@@ -4147,6 +4207,111 @@ function escapeQuotes(str) {
   return str.replace(/"/g, '&quot;');
 }
 
+
+/**
+ * Decode HTML entities for display text (inside tags like <h3>, <p>).
+ * Does NOT strip HTML tags — only decodes encoded characters.
+ */
+function cleanForDisplay(text) {
+  if (!text) return '';
+  if (typeof text !== 'string') text = String(text);
+  return text
+    .replace(/&quot;/g, '"')
+    .replace(/&#8217;/g, "\u2019")
+    .replace(/&#8216;/g, "\u2018")
+    .replace(/&#8220;/g, "\u201C")
+    .replace(/&#8221;/g, "\u201D")
+    .replace(/&#8211;/g, "\u2013")
+    .replace(/&#8212;/g, "\u2014")
+    .replace(/&#8230;/g, "\u2026")
+    .replace(/&rsquo;/g, "\u2019")
+    .replace(/&lsquo;/g, "\u2018")
+    .replace(/&rdquo;/g, "\u201D")
+    .replace(/&ldquo;/g, "\u201C")
+    .replace(/&ndash;/g, "\u2013")
+    .replace(/&mdash;/g, "\u2014")
+    .replace(/&hellip;/g, "\u2026")
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&');
+}
+
+
+/**
+ * Call Claude API to correct punctuation in article title and slide subheadings.
+ * Conservative — only fixes punctuation/capitalization, never changes wording.
+ * Handles abbreviations (U.S., Rep., Gov., Dr., Mt., St., etc.) properly.
+ * @param {string} title - Article title
+ * @param {Array} slides - Array of slide objects with .subheading property
+ * @param {string} apiKey - Anthropic API key
+ * @returns {Object} {title: string|null, subheadings: string[]|null}
+ */
+function correctPunctuationWithClaude(title, slides, apiKey) {
+  var subheadings = [];
+  for (var i = 0; i < slides.length; i++) {
+    subheadings.push(cleanForDisplay(slides[i].subheading || ''));
+  }
+
+  var prompt = 'Fix ONLY punctuation and capitalization in the article title and subheadings below. ' +
+    'Do NOT change any wording, meaning, or content.\n\n' +
+    'RULES:\n' +
+    '- Periods in abbreviations are NOT sentence endings: U.S., Rep., Gov., Dr., Mr., Mrs., ' +
+    'St., Mt., Jr., Sr., Inc., Corp., Ltd., Ave., Blvd., Dept., Gen., Sgt., Lt., Col., etc.\n' +
+    '- Use proper Title Case for the article title\n' +
+    '- Use proper capitalization for subheadings (sentence case or title case, match the original style)\n' +
+    '- Fix missing or incorrect punctuation marks\n' +
+    '- Decode any HTML entities (&amp; &quot; &#8217; etc.) to their actual characters\n' +
+    '- If a title or subheading is already correct, return it unchanged\n' +
+    '- Return ONLY valid JSON, no explanation\n\n' +
+    'Title: ' + cleanForDisplay(title) + '\n\n' +
+    'Subheadings:\n';
+
+  for (var j = 0; j < subheadings.length; j++) {
+    prompt += (j + 1) + '. ' + subheadings[j] + '\n';
+  }
+
+  prompt += '\nReturn as JSON: {"title": "corrected title", "subheadings": ["sub 1", "sub 2", ...]}';
+
+  try {
+    var response = UrlFetchApp.fetch('https://api.anthropic.com/v1/messages', {
+      method: 'post',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01'
+      },
+      payload: JSON.stringify({
+        model: 'claude-opus-4-6',
+        max_tokens: 1000,
+        messages: [{ role: 'user', content: prompt }]
+      }),
+      muteHttpExceptions: true
+    });
+
+    var responseCode = response.getResponseCode();
+    if (responseCode !== 200) {
+      Logger.log('Punctuation API error (' + responseCode + '): ' + response.getContentText());
+      return { title: null, subheadings: null };
+    }
+
+    var result = JSON.parse(response.getContentText());
+    if (result.content && result.content[0]) {
+      var text = result.content[0].text.trim();
+      var jsonMatch = text.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        var parsed = JSON.parse(jsonMatch[0]);
+        return {
+          title: parsed.title || null,
+          subheadings: parsed.subheadings || null
+        };
+      }
+    }
+    Logger.log('Punctuation API: unexpected response format');
+    return { title: null, subheadings: null };
+  } catch (e) {
+    Logger.log('Punctuation correction error: ' + e.message);
+    return { title: null, subheadings: null };
+  }
+}
 
 
 
