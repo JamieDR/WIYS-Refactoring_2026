@@ -6,9 +6,17 @@ Captured end of Session 4 (Feb 12, 2026). Pick these up next session.
 
 ## 1. Fix slow boundary-finding in Delete Successful Uploads
 **Sheet:** Uploader (AST)
-**Problem:** `findWorkspaceBoundaries()` is scanning row by row even after workspace is selected. Took 90+ seconds just to find JAMIE's boundaries, scanning through TESTER, END ROW, CHARL, LARA, NAINTARA etc. before even starting work.
-**Fix needed:** Bulk-read all of column A in one `getValues()` call, then search the array in memory to find the start/end rows for the chosen workspace. Same pattern used in the optimized Create New Rows.
-**Note:** The optimized delete function was reverted — the old (slow but working) version is currently live. Needs a fresh rewrite with this fix.
+**Problem:** Three compounding issues:
+- `findWorkspaceBoundaries()` scans row by row (~1m45s per scan for JAMIE at row 713)
+- It re-scans boundaries **for every single delete** (because row numbers shift after deleteRows)
+- It also re-scans the workspace each time to find the next target
+- Result: 4 minutes of scanning to delete 1 of 3 articles. Would take 6+ minutes for 3 articles.
+**Fix needed:**
+1. Bulk-read all of column A in one `getValues()` call, find boundaries instantly in memory
+2. Find ALL delete targets in one pass (already does this, but then throws it away)
+3. Delete bottom-to-top from cached positions, adjusting row offsets in memory instead of re-scanning
+4. Should be: 1 bulk read → find boundaries → find targets → delete all in ~5 seconds total
+**Note:** The optimized delete function was reverted — the old (slow but working) version is currently live. Needs a fresh rewrite.
 
 ## 2. Edit blue background shade in Topic List sheet
 **Sheet:** Topic List
