@@ -10520,17 +10520,6 @@ function onOpen() {
     .addItem('✉️ Create Newsletters', 'createNewsletters')
     .addToUi();
 
-  ui.createMenu('      **Drafting')
-    .addItem('✂️ Split Topic/URL', 'splitter')
-    .addItem('📋 Transfer to Enhanced Drafter', 'transferToEnhancedDrafter')
-    .addSeparator()
-    .addItem('📄 Batch Create GDocs', 'batchCreateGDocs')
-    .addSeparator()
-    .addItem('📊 Send to Article Status Tracker', 'transferDraftsToArticleTracker')
-    .addSeparator()
-    .addItem('🗑️ Delete Done', 'deleteDoneRows')
-    .addToUi();
-
   // Create menu for WP Editing Tracker
   ui.createMenu('      **Editing')
     .addSeparator()
@@ -10542,6 +10531,17 @@ function onOpen() {
     .addItem('💜 Get WP Drafts for Editing', 'batchTransferToAleksReview')
     .addSeparator()
     .addItem('🎉 Record Published/Scheduled', 'recordAllReady')
+    .addToUi();
+
+  ui.createMenu('      **Drafting')
+    .addItem('✂️ Split Topic/URL', 'splitter')
+    .addItem('📋 Transfer to Enhanced Drafter', 'transferToEnhancedDrafter')
+    .addSeparator()
+    .addItem('📄 Batch Create GDocs', 'batchCreateGDocs')
+    .addSeparator()
+    .addItem('📊 Send to Article Status Tracker', 'transferDraftsToArticleTracker')
+    .addSeparator()
+    .addItem('🗑️ Delete Done', 'deleteDoneRows')
     .addToUi();
 
 
