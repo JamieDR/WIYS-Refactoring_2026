@@ -11297,16 +11297,24 @@ function splitter() {
     var httpIndex = line.lastIndexOf('http');
 
     if (httpIndex > 0) {
-      // Line has both title and URL
+      // Line has both title and URL — use Rich Text for clean formatting
       var title = line.substring(0, httpIndex).replace(/[\s:\-–—]+$/, '').trim();
       var url = line.substring(httpIndex).trim();
+      var richText = SpreadsheetApp.newRichTextValue()
+        .setText(title)
+        .setLinkUrl(url)
+        .build();
       var cell = sheet.getRange(row, 3);
-      cell.setFormula('=HYPERLINK("' + url + '","' + title.replace(/"/g, '""') + '")');
+      cell.setRichTextValue(richText);
       cell.setFontColor('#000000');
     } else if (httpIndex === 0) {
       // Line is just a URL
+      var richText = SpreadsheetApp.newRichTextValue()
+        .setText(line)
+        .setLinkUrl(line)
+        .build();
       var cell = sheet.getRange(row, 3);
-      cell.setFormula('=HYPERLINK("' + line + '","' + line + '")');
+      cell.setRichTextValue(richText);
       cell.setFontColor('#000000');
     } else {
       // Line is just a title, no URL
