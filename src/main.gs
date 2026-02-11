@@ -11320,6 +11320,35 @@ function splitter() {
 }
 
 
+/**
+ * onTopicListEdit - Standalone installable trigger for Topic List sheet.
+ * - Column B → "Travel Feature": sets Column D to "N/A" (centered)
+ * - Column E (Outline) filled in: sets Column F to "Ready for Drafting"
+ */
+function onTopicListEdit(e) {
+  if (!e || !e.range) return;
+
+  var sheet = e.range.getSheet();
+  if (sheet.getName() !== 'Topic List') return;
+
+  var column = e.range.getColumn();
+  var row = e.range.getRow();
+  if (row < 2) return;
+
+  if (column === 2 && e.value === 'Travel Feature') {
+    var cell = sheet.getRange(row, 4);
+    cell.setValue('N/A');
+    cell.setHorizontalAlignment('center');
+  }
+
+  if (column === 5) {
+    var outlineValue = e.range.getValue();
+    if (outlineValue && outlineValue.toString().trim() !== '') {
+      sheet.getRange(row, 6).setValue('Ready for Drafting');
+    }
+  }
+}
+
 
 /**
  * ============================================================================
