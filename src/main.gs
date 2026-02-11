@@ -11347,16 +11347,22 @@ function onTopicListEdit(e) {
   var row = e.range.getRow();
   if (row < 2) return;
 
-  if (column === 2 && e.value === 'Travel Feature') {
-    var cell = sheet.getRange(row, 4);
-    cell.setValue('N/A');
-    cell.setHorizontalAlignment('center');
+  if (column === 2) {
+    if (e.value === 'Travel Feature') {
+      var cell = sheet.getRange(row, 4);
+      cell.setValue('N/A');
+      cell.setHorizontalAlignment('center');
+    } else {
+      sheet.getRange(row, 4).clearContent();
+    }
   }
 
   if (column === 5) {
     var outlineValue = e.range.getValue();
     if (outlineValue && outlineValue.toString().trim() !== '') {
       sheet.getRange(row, 6).setValue('Outline Ready');
+    } else {
+      sheet.getRange(row, 6).setValue('Topic Set');
     }
   }
 }
