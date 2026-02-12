@@ -72,8 +72,7 @@ const CONFIG = {
     SCHEDULE: 'Schedule',
     CHECK_WP_STATUS: 'Check WP Status',
     RECORD: 'Record',
-    UPDATE_TITLE: 'Update Title',
-    PULL_EDITED_TITLE: 'Pull Edited Title'
+    UPDATE_TITLE: 'Update Title'
   },
 
   // ===== COLUMN INDICES =====
@@ -4493,8 +4492,6 @@ function onWPTrackerEdit(e) {
       transferToProductionTracker(e);
     } else if (e.value === CONFIG.TRIGGERS.UPDATE_TITLE) {
       updateTitle(e);
-    } else if (e.value === CONFIG.TRIGGERS.PULL_EDITED_TITLE) {
-      pullEditedTitle(e);
     }
   }
 }
@@ -7409,49 +7406,6 @@ function updateTitle(e) {
 }
 
 
-/**
- * Pull the current WordPress title into column C (Raw Title).
- * Triggered by typing "Pull Edited Title" in column H.
- * Sets column H to "WP Title Pulled" when done.
- */
-function pullEditedTitle(e) {
-  var sheet = e.range.getSheet();
-  var row = e.range.getRow();
-
-  try {
-    var wpUrl = sheet.getRange(row, 4).getValue(); // Column D - WP URL
-    if (!wpUrl) {
-      sheet.getRange(row, 8).setValue('Error: No WP URL');
-      Logger.log('pullEditedTitle: Row ' + row + ' - No WordPress URL in column D');
-      return;
-    }
-
-    var postId = extractPostIdFromUrl(wpUrl);
-    if (!postId) {
-      sheet.getRange(row, 8).setValue('Error: Bad URL');
-      Logger.log('pullEditedTitle: Row ' + row + ' - Could not extract post ID from: ' + wpUrl);
-      return;
-    }
-
-    var post = getWordPressPost(postId);
-    if (!post || !post.title || !post.title.rendered) {
-      sheet.getRange(row, 8).setValue('Error: Post Not Found');
-      Logger.log('pullEditedTitle: Row ' + row + ' - Could not fetch post ' + postId);
-      return;
-    }
-
-    var title = cleanHtmlEntities(post.title.rendered);
-    sheet.getRange(row, 3).setValue(title); // Column C - Raw Title
-    sheet.getRange(row, 8).setValue('WP Title Pulled');
-    Logger.log('pullEditedTitle: Row ' + row + ' - Pulled title: ' + title);
-
-  } catch (error) {
-    Logger.log('Error in pullEditedTitle: ' + error.message);
-    sheet.getRange(row, 8).setValue('Error: ' + error.message);
-  }
-}
-
-
 // BATCH UPDATE TITLES
 function batchUpdateTitles() {
   var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(CONFIG.SHEETS.WP_EDITING_TRACKER);
@@ -7540,6 +7494,134 @@ function batchUpdateTitles() {
 
   SpreadsheetApp.getUi().alert('Results', resultMessage, SpreadsheetApp.getUi().ButtonSet.OK);
 }
+
+
+/**
+ * Batch pull current WordPress titles into column C (Raw Title).
+ * Reads all WP URLs from column D, fetches titles in batches of 100 per API call,
+ * and writes them into column C.
+ */
+function batchPullWordPressTitles() {
+  var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(CONFIG.SHEETS.WP_EDITING_TRACKER);
+  if (!sheet) {
+    SpreadsheetApp.getUi().alert('WP Editing Tracker sheet not found');
+    return;
+  }
+
+  var lastRow = sheet.getLastRow();
+  if (lastRow < 4) {
+    SpreadsheetApp.getUi().alert('No data found in WP Editing Tracker.');
+    return;
+  }
+
+  // Bulk read columns C and D
+  var colCValues = sheet.getRange(1, 3, lastRow, 1).getValues();
+  var colDValues = sheet.getRange(1, 4, lastRow, 1).getValues();
+
+  // Find all rows with WP URLs and extract post IDs
+  var rowsWithUrls = [];
+  var uniqueIds = [];
+  var seenIds = {};
+
+  for (var row = 4; row <= lastRow; row++) {
+    var url = colDValues[row - 1][0];
+    if (url && url.toString().trim() !== '') {
+      var postId = extractPostIdFromUrl(url.toString());
+      if (postId) {
+        rowsWithUrls.push({ row: row, postId: postId });
+        if (!seenIds[postId]) {
+          uniqueIds.push(postId);
+          seenIds[postId] = true;
+        }
+      }
+    }
+  }
+
+  if (rowsWithUrls.length === 0) {
+    SpreadsheetApp.getUi().alert('No WordPress URLs found in column D.');
+    return;
+  }
+
+  // Confirmation
+  var confirmResponse = SpreadsheetApp.getUi().alert(
+    'Pull WordPress Titles',
+    'Found ' + rowsWithUrls.length + ' rows with WordPress URLs (' + uniqueIds.length + ' unique posts).\n\n' +
+    'This will fetch the current title from WordPress and write it into column C (Raw Title) for each row.\n\n' +
+    'Continue?',
+    SpreadsheetApp.getUi().ButtonSet.YES_NO
+  );
+  if (confirmResponse !== SpreadsheetApp.getUi().Button.YES) return;
+
+  SpreadsheetApp.getActiveSpreadsheet().toast('Fetching titles from WordPress...', 'Please wait', 30);
+
+  // Fetch titles from WordPress in batches of 100
+  var username = CONFIG.WORDPRESS.USERNAME;
+  var appPassword = CONFIG.WORDPRESS.APP_PASSWORD;
+  var titleMap = {};
+
+  for (var batch = 0; batch < uniqueIds.length; batch += 100) {
+    var batchIds = uniqueIds.slice(batch, batch + 100);
+    var apiUrl = CONFIG.ENDPOINTS.WP_POSTS +
+      '?include=' + batchIds.join(',') +
+      '&per_page=100' +
+      '&_fields=id,title' +
+      '&status=draft,publish,future,pending,private';
+
+    var options = {
+      method: 'get',
+      headers: {
+        'Authorization': 'Basic ' + Utilities.base64Encode(username + ':' + appPassword)
+      },
+      muteHttpExceptions: true
+    };
+
+    try {
+      var response = UrlFetchApp.fetch(apiUrl, options);
+      if (response.getResponseCode() === CONFIG.HTTP_STATUS.OK) {
+        var posts = JSON.parse(response.getContentText());
+        for (var p = 0; p < posts.length; p++) {
+          titleMap[posts[p].id.toString()] = cleanHtmlEntities(posts[p].title.rendered);
+        }
+        Logger.log('Fetched batch ' + (batch / 100 + 1) + ': ' + posts.length + ' posts');
+      } else {
+        Logger.log('WordPress API error (batch ' + (batch / 100 + 1) + '): ' + response.getResponseCode());
+      }
+    } catch (error) {
+      Logger.log('Error fetching batch: ' + error.message);
+    }
+
+    if (batch + 100 < uniqueIds.length) {
+      Utilities.sleep(1000);
+    }
+  }
+
+  // Write titles into column C (bulk: update in memory, then write once)
+  var updated = 0;
+  var skipped = 0;
+
+  for (var i = 0; i < rowsWithUrls.length; i++) {
+    var title = titleMap[rowsWithUrls[i].postId];
+    if (title) {
+      colCValues[rowsWithUrls[i].row - 1][0] = title;
+      updated++;
+    } else {
+      skipped++;
+      Logger.log('No title found for post ID ' + rowsWithUrls[i].postId + ' (row ' + rowsWithUrls[i].row + ')');
+    }
+  }
+
+  sheet.getRange(1, 3, lastRow, 1).setValues(colCValues);
+  SpreadsheetApp.flush();
+
+  var message = 'Pull WordPress Titles Complete!\n\n';
+  message += 'Updated: ' + updated + ' rows\n';
+  if (skipped > 0) {
+    message += 'Skipped: ' + skipped + ' rows (post not found on WordPress)\n';
+  }
+
+  SpreadsheetApp.getUi().alert('Results', message, SpreadsheetApp.getUi().ButtonSet.OK);
+}
+
 
 ///// BATCH IMAGE METADATA
 ///// BATCH IMAGE METADATA
@@ -10564,6 +10646,7 @@ function onOpen() {
   ui.createMenu('      **Editing')
     .addSeparator()
     .addItem('📝 Update All Titles', 'batchUpdateTitles')
+    .addItem('📥 Pull WordPress Titles', 'batchPullWordPressTitles')
     .addSeparator()
     .addItem('✅ Schedule ALL', 'batchSchedulePosts')
     .addItem('🚀 Batch Set/Schedule', 'batchSetAndSchedule')
