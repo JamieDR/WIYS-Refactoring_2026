@@ -3882,9 +3882,21 @@ function formatContentWithLineBreaks(content) {
 
   // 1. Protect common abbreviations: Dr. Smith, St. Louis, Mt. Rushmore, etc.
   var abbreviations = [
-    'Mr', 'Mrs', 'Ms', 'Dr', 'St', 'Mt', 'Jr', 'Sr', 'vs', 'etc',
-    'Inc', 'Ltd', 'Ave', 'Blvd', 'Dept', 'Gov', 'Gen', 'Prof', 'Rev',
-    'Sen', 'Rep', 'Sgt', 'Capt', 'Maj', 'Col', 'Ft', 'approx'
+    // Titles and honorifics
+    'Mr', 'Mrs', 'Ms', 'Dr', 'Prof', 'Rev', 'Jr', 'Sr',
+    // Military/government ranks
+    'Gov', 'Gen', 'Sen', 'Rep', 'Sgt', 'Capt', 'Maj', 'Col', 'Lt', 'Cpl',
+    // Places and streets
+    'St', 'Mt', 'Ft', 'Ave', 'Blvd', 'Dept',
+    // Business
+    'Inc', 'Ltd', 'Corp', 'Co',
+    // State abbreviations (AP style)
+    'Calif', 'Fla', 'Ga', 'Ill', 'Mass', 'Conn', 'Ind', 'Mich', 'Minn',
+    'Miss', 'Mo', 'Nev', 'Okla', 'Ore', 'Pa', 'Tenn', 'Tex', 'Va',
+    'Wash', 'Wis', 'Ariz', 'Ark', 'Colo', 'Del', 'Kan', 'Ky', 'La',
+    'Md', 'Neb', 'Vt', 'Wyo', 'Ala',
+    // Other common abbreviations
+    'vs', 'etc', 'approx', 'est'
   ];
   abbreviations.forEach(function(abbr) {
     textToSplit = textToSplit.replace(new RegExp('\\b' + abbr + '\\.', 'g'), abbr + PLACEHOLDER);
@@ -4070,11 +4082,25 @@ function correctPunctuationWithClaude(title, slides, apiKey) {
 
   var prompt = 'Fix ONLY punctuation and capitalization in the article title and subheadings below. ' +
     'Do NOT change any wording, meaning, or content.\n\n' +
-    'RULES:\n' +
+    'CAPITALIZATION RULES — USE SENTENCE CASE:\n' +
+    '- Capitalize the first word of the title/subheading\n' +
+    '- Capitalize proper nouns: place names (California, Austin, North Carolina), people (Dr. Alan Baratz), ' +
+    'organizations (D-Wave, NASA), brand names, landmarks\n' +
+    '- Everything else is lowercase — verbs, adjectives, common nouns, prepositions, articles, conjunctions\n' +
+    '- Do NOT use Title Case. Do NOT capitalize every major word.\n\n' +
+    'SENTENCE CASE EXAMPLES:\n' +
+    '  WRONG: "Quantum Computing Company Leaves California for a Campus With Deep Tech Roots"\n' +
+    '  RIGHT: "Quantum computing company leaves California for a campus with deep tech roots"\n\n' +
+    '  WRONG: "The Best Small Towns To Visit In North Carolina"\n' +
+    '  RIGHT: "The best small towns to visit in North Carolina"\n\n' +
+    '  WRONG: "New Museum Opens Near The River In Downtown Austin"\n' +
+    '  RIGHT: "New museum opens near the river in downtown Austin"\n\n' +
+    '  WRONG: "Historic Fort Gets Major Renovation From Local Group"\n' +
+    '  RIGHT: "Historic fort gets major renovation from local group"\n\n' +
+    'PUNCTUATION RULES:\n' +
     '- Periods in abbreviations are NOT sentence endings: U.S., Rep., Gov., Dr., Mr., Mrs., ' +
-    'St., Mt., Jr., Sr., Inc., Corp., Ltd., Ave., Blvd., Dept., Gen., Sgt., Lt., Col., etc.\n' +
-    '- Use downstyle (sentence case) for the article title: capitalize ONLY the first word and proper nouns (place names, people, organizations, etc.)\n' +
-    '- Use downstyle (sentence case) for subheadings too: capitalize ONLY the first word and proper nouns\n' +
+    'St., Mt., Jr., Sr., Inc., Corp., Ltd., Ave., Blvd., Dept., Gen., Sgt., Lt., Col., ' +
+    'Calif., Fla., Ga., Ill., Mass., Conn., Ind., Mich., Minn., Ore., Pa., Tenn., Tex., Va., Wash., Wis., Ariz., Colo.\n' +
     '- Fix missing or incorrect punctuation marks\n' +
     '- Decode any HTML entities (&amp; &quot; &#8217; etc.) to their actual characters\n' +
     '- If a title or subheading is already correct, return it unchanged\n' +
