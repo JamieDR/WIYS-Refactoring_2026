@@ -3910,7 +3910,8 @@ function formatContentWithLineBreaks(content) {
   textToSplit = textToSplit.replace(/\bp\.m\./g, 'p' + PLACEHOLDER + 'm' + PLACEHOLDER);
 
   // 4. Protect decimal numbers: 2.5 million, 100.3 FM, etc.
-  textToSplit = textToSplit.replace(/(\d)\./g, '$1' + PLACEHOLDER);
+  // Only match digit.digit (actual decimals), NOT digit. at end of sentence (like "2026.")
+  textToSplit = textToSplit.replace(/(\d)\.(\d)/g, '$1' + PLACEHOLDER + '$2');
 
   // 5. Protect ellipsis: ... (three dots are not three sentence endings)
   textToSplit = textToSplit.replace(/\.\.\./g, PLACEHOLDER + PLACEHOLDER + PLACEHOLDER);
