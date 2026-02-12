@@ -3533,8 +3533,25 @@ function createSlideshowContent(slides, relatedArticles) {
     var cleanLicenseId = cleanForDisplay(slide.licenseId || '');
     var cleanLicensorName = cleanForDisplay(slide.licensorName || '');
 
-    // Format the clean content with intelligent line breaks
-    var formattedContent = formatContentWithLineBreaks(cleanContent);
+    // Split content into paragraph groups (returns array)
+    var contentParagraphs = formatContentWithLineBreaks(cleanContent);
+
+    // Build paragraph blocks — each paragraph gets its own valid wp:paragraph block
+    var paragraphBlocksHtml = '';
+    if (Array.isArray(contentParagraphs)) {
+      paragraphBlocksHtml = contentParagraphs.map(function(para) {
+        return `
+      <!-- wp:paragraph -->
+      <p>${para}</p>
+      <!-- /wp:paragraph -->`;
+      }).join('');
+    } else {
+      // Fallback: content was too short to split, came back as plain string
+      paragraphBlocksHtml = `
+      <!-- wp:paragraph {"placeholder":"Enter slide content here..."} -->
+      <p>${contentParagraphs}</p>
+      <!-- /wp:paragraph -->`;
+    }
 
     // Build the slide HTML
     // JSON.stringify handles escaping for block attributes
@@ -3549,10 +3566,7 @@ function createSlideshowContent(slides, relatedArticles) {
       licensorName: cleanLicensorName
     })} -->
     <div class="wp-block-clmsn-slideshow-item slideshow-item" data-image-id="${slide.imageId || 0}" data-alt-text="${escapeQuotes(cleanAltText)}">
-      <h3>${cleanSubheading}</h3>
-      <!-- wp:paragraph {"placeholder":"Enter slide content here..."} -->
-      <p>${formattedContent}</p>
-      <!-- /wp:paragraph -->`;
+      <h3>${cleanSubheading}</h3>${paragraphBlocksHtml}`;
 
     // Add AI disclaimer as completely separate paragraph block for last slide
     if (isLastSlide) {
@@ -3954,8 +3968,8 @@ function formatContentWithLineBreaks(content) {
     }
   }
   
-  // Join paragraphs with HTML line breaks
-  return paragraphs.join('<br><br>');
+  // Return array of paragraph strings (each becomes its own wp:paragraph block)
+  return paragraphs;
 }
 
 
