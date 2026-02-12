@@ -12931,6 +12931,120 @@ function finishBatchPasteContent(state) {
  * ============================================================================
  */
 
+
+/**
+ * Bulk-scan the Uploader sheet for articles to delete.
+ * Uses 3 API calls total instead of hundreds of row-by-row isPartOfMerge() calls.
+ *
+ * How it works:
+ *   1. Read all of column A in one call (titles, workspace names)
+ *   2. Read all of column L in one call (statuses)
+ *   3. Get all merged ranges in one call (to tell workspace headers from article titles)
+ *   4. Walk through the data in memory — no more API calls
+ *
+ * Returns array of {title, row, status, workspace, rowsToDelete} objects.
+ */
+function bulkScanForDeleteTargets(uploaderSheet, selectedWorkspaces) {
+  var lastRow = uploaderSheet.getLastRow();
+  if (lastRow < 2) return [];
+
+  // --- 3 API calls for the entire scan ---
+  var colAValues = uploaderSheet.getRange(1, 1, lastRow, 1).getValues();
+  var colLValues = uploaderSheet.getRange(1, 12, lastRow, 1).getValues();
+  var allMerges = uploaderSheet.getRange(1, 1, lastRow, 13).getMergedRanges();
+
+  // Build merge lookup: row number → merge width (only merges starting in column A)
+  var mergeWidths = {};
+  for (var i = 0; i < allMerges.length; i++) {
+    var merge = allMerges[i];
+    if (merge.getColumn() === 1) {
+      mergeWidths[merge.getRow()] = merge.getNumColumns();
+    }
+  }
+
+  // Uppercase versions of selected workspace names for matching
+  var selectedUpper = [];
+  for (var i = 0; i < selectedWorkspaces.length; i++) {
+    selectedUpper.push(selectedWorkspaces[i].toUpperCase());
+  }
+
+  // Single pass: find workspace boundaries using 13-column merges
+  var workspaces = [];
+  var currentWs = null;
+
+  for (var row = 1; row <= lastRow; row++) {
+    if (mergeWidths[row] === 13) {
+      var value = colAValues[row - 1][0];
+      if (!value) continue;
+      var valueStr = value.toString().trim().toUpperCase();
+
+      if (valueStr.includes('END ROW')) {
+        // Close current workspace
+        if (currentWs) {
+          currentWs.endRow = row;
+          currentWs = null;
+        }
+      } else {
+        // Any new workspace header closes the previous one
+        if (currentWs) {
+          currentWs.endRow = row;
+          currentWs = null;
+        }
+        // Check if this is a selected workspace
+        for (var w = 0; w < selectedUpper.length; w++) {
+          if (valueStr.includes(selectedUpper[w])) {
+            currentWs = {
+              personName: selectedWorkspaces[w],
+              startRow: row + 1,
+              endRow: lastRow
+            };
+            workspaces.push(currentWs);
+            break;
+          }
+        }
+      }
+    }
+  }
+
+  // Find delete targets: 11-column merges with "Successful WP Upload" in column L
+  var allArticles = [];
+
+  for (var wi = 0; wi < workspaces.length; wi++) {
+    var ws = workspaces[wi];
+
+    for (var row = ws.startRow; row < ws.endRow; row++) {
+      if (mergeWidths[row] === 11) {
+        var title = colAValues[row - 1][0];
+        var status = colLValues[row - 1][0];
+
+        if (title && status === 'Successful WP Upload') {
+          // Count rows this article spans (title + content rows until next merge)
+          var rowsToDelete = 1;
+          var checkRow = row + 1;
+          while (checkRow < ws.endRow && !mergeWidths[checkRow]) {
+            rowsToDelete++;
+            checkRow++;
+          }
+
+          allArticles.push({
+            title: title.toString().trim(),
+            row: row,
+            status: status.toString(),
+            workspace: ws.personName,
+            rowsToDelete: rowsToDelete
+          });
+
+          Logger.log('🗑️ DELETE TARGET: ' + title + ' (Row ' + row + ', ' + rowsToDelete + ' rows, ' + ws.personName + ')');
+        }
+      }
+    }
+  }
+
+  Logger.log('🔍 Bulk scan complete: ' + allArticles.length + ' articles to delete across ' + workspaces.length + ' workspaces');
+  return allArticles;
+}
+
+
 function batchDeleteUploaded() {
   var operationType = 'Delete Successful Uploads';
 
@@ -12948,14 +13062,7 @@ function batchDeleteUploaded() {
     var ss = SpreadsheetApp.getActiveSpreadsheet();
     var uploaderSheet = ss.getSheetByName(CONFIG.SHEETS.UPLOADER);
 
-    var allArticles = [];
-    for (var w = 0; w < selectedWorkspaces.length; w++) {
-      var workspace = findWorkspaceBoundaries(uploaderSheet, selectedWorkspaces[w]);
-      if (workspace) {
-        var articles = getArticlesInWorkspace(uploaderSheet, workspace, 'DELETE');
-        allArticles = allArticles.concat(articles);
-      }
-    }
+    var allArticles = bulkScanForDeleteTargets(uploaderSheet, selectedWorkspaces);
 
     if (allArticles.length === 0) {
       SpreadsheetApp.getUi().alert('No articles found with "Successful WP Upload" status in selected workspaces.');
@@ -13026,14 +13133,7 @@ function processDeleteUploadedChunk(state) {
   }
 
   // Re-scan for articles to delete (fresh row numbers after previous deletions)
-  var allArticles = [];
-  for (var w = 0; w < state.selectedWorkspaces.length; w++) {
-    var workspace = findWorkspaceBoundaries(uploaderSheet, state.selectedWorkspaces[w]);
-    if (workspace) {
-      var articles = getArticlesInWorkspace(uploaderSheet, workspace, 'DELETE');
-      allArticles = allArticles.concat(articles);
-    }
-  }
+  var allArticles = bulkScanForDeleteTargets(uploaderSheet, state.selectedWorkspaces);
 
   if (allArticles.length === 0) {
     finishBatchDeleteUploaded(state);
