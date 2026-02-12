@@ -7514,21 +7514,25 @@ function batchPullWordPressTitles() {
     return;
   }
 
-  // Bulk read columns C and D
+  // Bulk read columns C, D, and H
   var colCValues = sheet.getRange(1, 3, lastRow, 1).getValues();
   var colDValues = sheet.getRange(1, 4, lastRow, 1).getValues();
+  var colHValues = sheet.getRange(1, 8, lastRow, 1).getValues();
 
-  // Find all rows with WP URLs and extract post IDs
-  var rowsWithUrls = [];
+  // Find rows where column H = "Pull Edited Title" AND column D has a WP URL
+  var rowsToProcess = [];
   var uniqueIds = [];
   var seenIds = {};
 
   for (var row = 4; row <= lastRow; row++) {
+    var status = colHValues[row - 1][0];
+    if (status !== 'Pull Edited Title') continue;
+
     var url = colDValues[row - 1][0];
     if (url && url.toString().trim() !== '') {
       var postId = extractPostIdFromUrl(url.toString());
       if (postId) {
-        rowsWithUrls.push({ row: row, postId: postId });
+        rowsToProcess.push({ row: row, postId: postId });
         if (!seenIds[postId]) {
           uniqueIds.push(postId);
           seenIds[postId] = true;
@@ -7537,16 +7541,21 @@ function batchPullWordPressTitles() {
     }
   }
 
-  if (rowsWithUrls.length === 0) {
-    SpreadsheetApp.getUi().alert('No WordPress URLs found in column D.');
+  if (rowsToProcess.length === 0) {
+    SpreadsheetApp.getUi().alert(
+      'No Rows to Process',
+      'No rows found with "Pull Edited Title" in column H.\n\n' +
+      'Set column H to "Pull Edited Title" on the rows you want to update, then run this again.',
+      SpreadsheetApp.getUi().ButtonSet.OK
+    );
     return;
   }
 
   // Confirmation
   var confirmResponse = SpreadsheetApp.getUi().alert(
     'Pull WordPress Titles',
-    'Found ' + rowsWithUrls.length + ' rows with WordPress URLs (' + uniqueIds.length + ' unique posts).\n\n' +
-    'This will fetch the current title from WordPress and write it into column C (Raw Title) for each row.\n\n' +
+    'Found ' + rowsToProcess.length + ' rows with "Pull Edited Title" status.\n\n' +
+    'This will fetch the current title from WordPress and write it into column C (Raw Title).\n\n' +
     'Continue?',
     SpreadsheetApp.getUi().ButtonSet.YES_NO
   );
@@ -7595,22 +7604,26 @@ function batchPullWordPressTitles() {
     }
   }
 
-  // Write titles into column C (bulk: update in memory, then write once)
+  // Write titles into column C, update status in column H
   var updated = 0;
   var skipped = 0;
 
-  for (var i = 0; i < rowsWithUrls.length; i++) {
-    var title = titleMap[rowsWithUrls[i].postId];
+  for (var i = 0; i < rowsToProcess.length; i++) {
+    var title = titleMap[rowsToProcess[i].postId];
     if (title) {
-      colCValues[rowsWithUrls[i].row - 1][0] = title;
+      colCValues[rowsToProcess[i].row - 1][0] = title;
+      colHValues[rowsToProcess[i].row - 1][0] = 'WP Title Pulled';
       updated++;
     } else {
       skipped++;
-      Logger.log('No title found for post ID ' + rowsWithUrls[i].postId + ' (row ' + rowsWithUrls[i].row + ')');
+      colHValues[rowsToProcess[i].row - 1][0] = 'Error: Post Not Found';
+      Logger.log('No title found for post ID ' + rowsToProcess[i].postId + ' (row ' + rowsToProcess[i].row + ')');
     }
   }
 
+  // Bulk write columns C and H back
   sheet.getRange(1, 3, lastRow, 1).setValues(colCValues);
+  sheet.getRange(1, 8, lastRow, 1).setValues(colHValues);
   SpreadsheetApp.flush();
 
   var message = 'Pull WordPress Titles Complete!\n\n';
