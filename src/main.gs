@@ -4087,44 +4087,34 @@ function correctPunctuationWithClaude(title, slides, apiKey) {
     subheadings.push(cleanForDisplay(slides[i].subheading || ''));
   }
 
-  var prompt = 'Fix ONLY punctuation and capitalization in the article title and subheadings below. ' +
-    'Do NOT change any wording, meaning, or content.\n\n' +
-    'CAPITALIZATION — SENTENCE CASE:\n' +
-    '- Capitalize ONLY the first word and proper nouns (place names, people, organizations, landmarks)\n' +
-    '- Everything else lowercase — verbs, adjectives, common nouns, prepositions, articles\n' +
-    '- Do NOT use Title Case. Do NOT capitalize every major word.\n\n' +
-    'PERIOD RULES — THIS IS CRITICAL:\n' +
-    '- NEVER add a period at the end of a title or subheading. These are headlines, not sentences.\n' +
-    '- If a title or subheading already ends with a period, REMOVE it (unless it is part of an abbreviation like U.S. or Inc.).\n' +
-    '- KEEP periods inside abbreviations: U.S., Dr., Mr., Mrs., St., Mt., Jr., Sr., Inc., Corp., ' +
-    'Rep., Gov., Gen., Sgt., Lt., Col., Ave., Blvd., Dept., ' +
-    'Calif., Fla., Ga., Ill., Mass., Conn., Ind., Mich., Minn., Ore., Pa., Tenn., Tex., Va., Wash., Wis., Ariz., Colo., ' +
-    'a.m., p.m., D.C.\n' +
-    '- Do NOT add spaces around abbreviation periods (Dr. not Dr .)\n' +
-    '- Do NOT add a double period when an abbreviation ends a headline (U.S. not U.S..)\n\n' +
-    'OTHER PUNCTUATION:\n' +
-    '- Decode HTML entities (&amp; → &, &quot; → ", &#8217; → \', etc.)\n' +
-    '- If a title or subheading is already correct, return it unchanged\n\n' +
+  var prompt = 'Add missing apostrophes to the title and subheadings below. ' +
+    'Do NOT change anything else — no wording, no capitalization, no periods, no other punctuation.\n\n' +
+    'ONLY fix missing apostrophes in contractions and possessives:\n' +
+    '- Contractions: dont → don\'t, cant → can\'t, wont → won\'t, isnt → isn\'t, ' +
+    'doesnt → doesn\'t, didnt → didn\'t, wasnt → wasn\'t, werent → weren\'t, ' +
+    'couldnt → couldn\'t, shouldnt → shouldn\'t, wouldnt → wouldn\'t, ' +
+    'havent → haven\'t, hasnt → hasn\'t, thats → that\'s, whats → what\'s, ' +
+    'heres → here\'s, theres → there\'s, its (meaning "it is") → it\'s, ' +
+    'youre → you\'re, theyre → they\'re, weve → we\'ve, youve → you\'ve, ' +
+    'theyll → they\'ll, youll → you\'ll, well → we\'ll, lets (meaning "let us") → let\'s\n' +
+    '- Possessives: Californias → California\'s, Americas → America\'s, countrys → country\'s, ' +
+    'todays → today\'s, nations → nation\'s (when possessive, not plural)\n\n' +
+    'DO NOT CHANGE:\n' +
+    '- Capitalization (leave it exactly as-is)\n' +
+    '- Periods (do not add or remove any)\n' +
+    '- Any other wording or punctuation\n' +
+    '- Words that are already correct (e.g. "its" as possessive pronoun, "lets" as "allows")\n\n' +
     'EXAMPLES:\n' +
-    '  WRONG: "The Best Small Towns To Visit In North Carolina."\n' +
-    '  RIGHT: "The best small towns to visit in North Carolina"\n' +
-    '  (sentence case + remove trailing period)\n\n' +
-    '  WRONG: "New Museum Opens Near The River In Downtown Austin"\n' +
-    '  RIGHT: "New museum opens near the river in downtown Austin"\n' +
-    '  (sentence case, no period needed)\n\n' +
-    '  WRONG: "Company Moves From California To Washington D.C.."\n' +
-    '  RIGHT: "Company moves from California to Washington D.C."\n' +
-    '  (sentence case + abbreviation keeps its period, no extra period)\n\n' +
-    '  WRONG: "Dr . Smith Leads the U. S. Team."\n' +
-    '  RIGHT: "Dr. Smith leads the U.S. team"\n' +
-    '  (fix abbreviation spacing + sentence case + remove trailing period)\n\n' +
-    '  WRONG: "Historic fort along the St. Lawrence River gets new life."\n' +
-    '  RIGHT: "Historic fort along the St. Lawrence River gets new life"\n' +
-    '  (already sentence case, just remove trailing period)\n\n' +
-    '  WRONG: "A Tiny Town In Calif. Becomes a Top Destination"\n' +
-    '  RIGHT: "A tiny town in Calif. becomes a top destination"\n' +
-    '  (sentence case, keep abbreviation period, no trailing period)\n\n' +
-    '- Return ONLY valid JSON, no explanation\n\n' +
+    '  INPUT:  "Why Californias wine country doesnt look like it used to"\n' +
+    '  OUTPUT: "Why California\'s wine country doesn\'t look like it used to"\n\n' +
+    '  INPUT:  "Americas oldest town isnt where you think"\n' +
+    '  OUTPUT: "America\'s oldest town isn\'t where you think"\n\n' +
+    '  INPUT:  "Heres what makes this park worth the drive"\n' +
+    '  OUTPUT: "Here\'s what makes this park worth the drive"\n\n' +
+    '  INPUT:  "The best small towns to visit in North Carolina"\n' +
+    '  OUTPUT: "The best small towns to visit in North Carolina"\n' +
+    '  (no change needed — nothing is missing)\n\n' +
+    'Return ONLY valid JSON, no explanation.\n\n' +
     'Title: ' + cleanForDisplay(title) + '\n\n' +
     'Subheadings:\n';
 
