@@ -11450,6 +11450,7 @@ function createGDocFromRawInput(sheet, row) {
     sheet.getRange(row, 9).setValue(parsed.body);       // I: Body
     sheet.getRange(row, 10).setValue(parsed.tags);      // J: Tags
     sheet.getRange(row, 11).setValue(docUrl);            // K: Doc URL
+    SpreadsheetApp.flush(); // Force all writes to complete before setting status
     sheet.getRange(row, 12).setValue('Ready for Transfer'); // L: Status
 
     Logger.log('Created GDoc for row ' + row + ': ' + parsed.title);
@@ -11678,6 +11679,11 @@ function onEdit(e) {
     else if (sheet.getName() === CONFIG.SHEETS.WIYS_PRODUCTION_TRACKER && column === 6) {
       Logger.log('Calling onProductionTrackerEdit');
       onProductionTrackerEdit(e);
+    }
+    // Topic List - all column triggers (B through F affect status)
+    else if (sheet.getName() === 'Topic List') {
+      Logger.log('Calling onTopicListEdit');
+      onTopicListEdit(e);
     }
     // Enhanced Drafter - Column F (Claude Outline) edited (row 5+)
     else if (sheet.getName() === 'Enhanced Drafter' && column === 6) {
