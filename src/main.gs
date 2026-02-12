@@ -4098,9 +4098,20 @@ function correctPunctuationWithClaude(title, slides, apiKey) {
     '  WRONG: "Historic Fort Gets Major Renovation From Local Group"\n' +
     '  RIGHT: "Historic fort gets major renovation from local group"\n\n' +
     'PUNCTUATION RULES:\n' +
-    '- Periods in abbreviations are NOT sentence endings: U.S., Rep., Gov., Dr., Mr., Mrs., ' +
-    'St., Mt., Jr., Sr., Inc., Corp., Ltd., Ave., Blvd., Dept., Gen., Sgt., Lt., Col., ' +
-    'Calif., Fla., Ga., Ill., Mass., Conn., Ind., Mich., Minn., Ore., Pa., Tenn., Tex., Va., Wash., Wis., Ariz., Colo.\n' +
+    '- Periods in abbreviations must be kept — they are NOT sentence endings. ' +
+    'Do not remove them, do not add spaces, do not split words around them.\n' +
+    '- Common abbreviations: U.S., Rep., Gov., Dr., Mr., Mrs., St., Mt., Jr., Sr., ' +
+    'Inc., Corp., Ltd., Ave., Blvd., Dept., Gen., Sgt., Lt., Col., ' +
+    'Calif., Fla., Ga., Ill., Mass., Conn., Ind., Mich., Minn., Ore., Pa., Tenn., Tex., Va., Wash., Wis., Ariz., Colo.\n\n' +
+    'ABBREVIATION EXAMPLES:\n' +
+    '  WRONG: "CEO Dr . Alan Baratz said" (extra space after Dr)\n' +
+    '  RIGHT: "CEO Dr. Alan Baratz said"\n\n' +
+    '  WRONG: "D-Wave Quantum Inc . announced" (extra space after Inc)\n' +
+    '  RIGHT: "D-Wave Quantum Inc. announced"\n\n' +
+    '  WRONG: "from Palo Alto, Calif ., to Boca Raton" (space before period)\n' +
+    '  RIGHT: "from Palo Alto, Calif., to Boca Raton"\n\n' +
+    '  WRONG: "The U. S. economy" (spaces between letters)\n' +
+    '  RIGHT: "The U.S. economy"\n\n' +
     '- Fix missing or incorrect punctuation marks\n' +
     '- Decode any HTML entities (&amp; &quot; &#8217; etc.) to their actual characters\n' +
     '- If a title or subheading is already correct, return it unchanged\n' +
