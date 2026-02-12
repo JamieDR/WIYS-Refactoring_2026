@@ -72,7 +72,8 @@ const CONFIG = {
     SCHEDULE: 'Schedule',
     CHECK_WP_STATUS: 'Check WP Status',
     RECORD: 'Record',
-    UPDATE_TITLE: 'Update Title'
+    UPDATE_TITLE: 'Update Title',
+    PULL_EDITED_TITLE: 'Pull Edited Title'
   },
 
   // ===== COLUMN INDICES =====
@@ -4492,6 +4493,8 @@ function onWPTrackerEdit(e) {
       transferToProductionTracker(e);
     } else if (e.value === CONFIG.TRIGGERS.UPDATE_TITLE) {
       updateTitle(e);
+    } else if (e.value === CONFIG.TRIGGERS.PULL_EDITED_TITLE) {
+      pullEditedTitle(e);
     }
   }
 }
@@ -7404,6 +7407,50 @@ function updateTitle(e) {
     sheet.getRange(row, 8).setValue('New Title Ready');
   }
 }
+
+
+/**
+ * Pull the current WordPress title into column C (Raw Title).
+ * Triggered by typing "Pull Edited Title" in column H.
+ * Sets column H to "WP Title Pulled" when done.
+ */
+function pullEditedTitle(e) {
+  var sheet = e.range.getSheet();
+  var row = e.range.getRow();
+
+  try {
+    var wpUrl = sheet.getRange(row, 4).getValue(); // Column D - WP URL
+    if (!wpUrl) {
+      sheet.getRange(row, 8).setValue('Error: No WP URL');
+      Logger.log('pullEditedTitle: Row ' + row + ' - No WordPress URL in column D');
+      return;
+    }
+
+    var postId = extractPostIdFromUrl(wpUrl);
+    if (!postId) {
+      sheet.getRange(row, 8).setValue('Error: Bad URL');
+      Logger.log('pullEditedTitle: Row ' + row + ' - Could not extract post ID from: ' + wpUrl);
+      return;
+    }
+
+    var post = getWordPressPost(postId);
+    if (!post || !post.title || !post.title.rendered) {
+      sheet.getRange(row, 8).setValue('Error: Post Not Found');
+      Logger.log('pullEditedTitle: Row ' + row + ' - Could not fetch post ' + postId);
+      return;
+    }
+
+    var title = cleanHtmlEntities(post.title.rendered);
+    sheet.getRange(row, 3).setValue(title); // Column C - Raw Title
+    sheet.getRange(row, 8).setValue('WP Title Pulled');
+    Logger.log('pullEditedTitle: Row ' + row + ' - Pulled title: ' + title);
+
+  } catch (error) {
+    Logger.log('Error in pullEditedTitle: ' + error.message);
+    sheet.getRange(row, 8).setValue('Error: ' + error.message);
+  }
+}
+
 
 // BATCH UPDATE TITLES
 function batchUpdateTitles() {
