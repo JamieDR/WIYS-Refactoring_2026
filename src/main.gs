@@ -4089,47 +4089,41 @@ function correctPunctuationWithClaude(title, slides, apiKey) {
 
   var prompt = 'Fix ONLY punctuation and capitalization in the article title and subheadings below. ' +
     'Do NOT change any wording, meaning, or content.\n\n' +
-    'CAPITALIZATION RULES — USE SENTENCE CASE:\n' +
-    '- Capitalize the first word of the title/subheading\n' +
-    '- Capitalize proper nouns: place names (California, Austin, North Carolina), people (Dr. Alan Baratz), ' +
-    'organizations (D-Wave, NASA), brand names, landmarks\n' +
-    '- Everything else is lowercase — verbs, adjectives, common nouns, prepositions, articles, conjunctions\n' +
+    'CAPITALIZATION — SENTENCE CASE:\n' +
+    '- Capitalize ONLY the first word and proper nouns (place names, people, organizations, landmarks)\n' +
+    '- Everything else lowercase — verbs, adjectives, common nouns, prepositions, articles\n' +
     '- Do NOT use Title Case. Do NOT capitalize every major word.\n\n' +
-    'SENTENCE CASE EXAMPLES:\n' +
-    '  WRONG: "Quantum Computing Company Leaves California for a Campus With Deep Tech Roots"\n' +
-    '  RIGHT: "Quantum computing company leaves California for a campus with deep tech roots"\n\n' +
-    '  WRONG: "The Best Small Towns To Visit In North Carolina"\n' +
-    '  RIGHT: "The best small towns to visit in North Carolina"\n\n' +
+    'PERIOD RULES — THIS IS CRITICAL:\n' +
+    '- NEVER add a period at the end of a title or subheading. These are headlines, not sentences.\n' +
+    '- If a title or subheading already ends with a period, REMOVE it (unless it is part of an abbreviation like U.S. or Inc.).\n' +
+    '- KEEP periods inside abbreviations: U.S., Dr., Mr., Mrs., St., Mt., Jr., Sr., Inc., Corp., ' +
+    'Rep., Gov., Gen., Sgt., Lt., Col., Ave., Blvd., Dept., ' +
+    'Calif., Fla., Ga., Ill., Mass., Conn., Ind., Mich., Minn., Ore., Pa., Tenn., Tex., Va., Wash., Wis., Ariz., Colo., ' +
+    'a.m., p.m., D.C.\n' +
+    '- Do NOT add spaces around abbreviation periods (Dr. not Dr .)\n' +
+    '- Do NOT add a double period when an abbreviation ends a headline (U.S. not U.S..)\n\n' +
+    'OTHER PUNCTUATION:\n' +
+    '- Decode HTML entities (&amp; → &, &quot; → ", &#8217; → \', etc.)\n' +
+    '- If a title or subheading is already correct, return it unchanged\n\n' +
+    'EXAMPLES:\n' +
+    '  WRONG: "The Best Small Towns To Visit In North Carolina."\n' +
+    '  RIGHT: "The best small towns to visit in North Carolina"\n' +
+    '  (sentence case + remove trailing period)\n\n' +
     '  WRONG: "New Museum Opens Near The River In Downtown Austin"\n' +
-    '  RIGHT: "New museum opens near the river in downtown Austin"\n\n' +
-    '  WRONG: "Historic Fort Gets Major Renovation From Local Group"\n' +
-    '  RIGHT: "Historic fort gets major renovation from local group"\n\n' +
-    'PUNCTUATION RULES:\n' +
-    '- Periods in abbreviations must be kept — they are NOT sentence endings. ' +
-    'Do not remove them, do not add spaces, do not split words around them.\n' +
-    '- Common abbreviations: U.S., Rep., Gov., Dr., Mr., Mrs., St., Mt., Jr., Sr., ' +
-    'Inc., Corp., Ltd., Ave., Blvd., Dept., Gen., Sgt., Lt., Col., ' +
-    'Calif., Fla., Ga., Ill., Mass., Conn., Ind., Mich., Minn., Ore., Pa., Tenn., Tex., Va., Wash., Wis., Ariz., Colo.\n\n' +
-    'ABBREVIATION AND PUNCTUATION EXAMPLES:\n' +
-    '  WRONG: "CEO Dr . Alan Baratz said" (extra space in abbreviation)\n' +
-    '  RIGHT: "CEO Dr. Alan Baratz said"\n\n' +
-    '  WRONG: "D-Wave Quantum Inc . announced" (extra space in abbreviation)\n' +
-    '  RIGHT: "D-Wave Quantum Inc. announced"\n\n' +
-    '  WRONG: "from Palo Alto, Calif ., to Boca Raton, Fla ." (spaces around periods)\n' +
-    '  RIGHT: "from Palo Alto, Calif., to Boca Raton, Fla."\n\n' +
-    '  WRONG: "The U. S. economy" (spaces between initials)\n' +
-    '  RIGHT: "The U.S. economy"\n\n' +
-    '  WRONG: "in the U.S. , which" (space before comma after abbreviation)\n' +
-    '  RIGHT: "in the U.S., which"\n\n' +
-    '  WRONG: "based in Washington, D.C.." (double period at end of sentence)\n' +
-    '  RIGHT: "based in Washington, D.C."\n\n' +
-    '  WRONG: period outside closing quotation mark: ...call it "The Mineral City" .\n' +
-    '  RIGHT: period inside closing quotation mark: ...call it "The Mineral City."\n\n' +
-    '  WRONG: "at 4:30 p. m." (space in time abbreviation)\n' +
-    '  RIGHT: "at 4:30 p.m."\n\n' +
-    '- Fix missing or incorrect punctuation marks\n' +
-    '- Decode any HTML entities (&amp; &quot; &#8217; etc.) to their actual characters\n' +
-    '- If a title or subheading is already correct, return it unchanged\n' +
+    '  RIGHT: "New museum opens near the river in downtown Austin"\n' +
+    '  (sentence case, no period needed)\n\n' +
+    '  WRONG: "Company Moves From California To Washington D.C.."\n' +
+    '  RIGHT: "Company moves from California to Washington D.C."\n' +
+    '  (sentence case + abbreviation keeps its period, no extra period)\n\n' +
+    '  WRONG: "Dr . Smith Leads the U. S. Team."\n' +
+    '  RIGHT: "Dr. Smith leads the U.S. team"\n' +
+    '  (fix abbreviation spacing + sentence case + remove trailing period)\n\n' +
+    '  WRONG: "Historic fort along the St. Lawrence River gets new life."\n' +
+    '  RIGHT: "Historic fort along the St. Lawrence River gets new life"\n' +
+    '  (already sentence case, just remove trailing period)\n\n' +
+    '  WRONG: "A Tiny Town In Calif. Becomes a Top Destination"\n' +
+    '  RIGHT: "A tiny town in Calif. becomes a top destination"\n' +
+    '  (sentence case, keep abbreviation period, no trailing period)\n\n' +
     '- Return ONLY valid JSON, no explanation\n\n' +
     'Title: ' + cleanForDisplay(title) + '\n\n' +
     'Subheadings:\n';
