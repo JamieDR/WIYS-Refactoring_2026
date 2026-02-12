@@ -4024,8 +4024,8 @@ function correctPunctuationWithClaude(title, slides, apiKey) {
     'RULES:\n' +
     '- Periods in abbreviations are NOT sentence endings: U.S., Rep., Gov., Dr., Mr., Mrs., ' +
     'St., Mt., Jr., Sr., Inc., Corp., Ltd., Ave., Blvd., Dept., Gen., Sgt., Lt., Col., etc.\n' +
-    '- Use proper Title Case for the article title\n' +
-    '- Use proper capitalization for subheadings (sentence case or title case, match the original style)\n' +
+    '- Use downstyle (sentence case) for the article title: capitalize ONLY the first word and proper nouns (place names, people, organizations, etc.)\n' +
+    '- Use downstyle (sentence case) for subheadings too: capitalize ONLY the first word and proper nouns\n' +
     '- Fix missing or incorrect punctuation marks\n' +
     '- Decode any HTML entities (&amp; &quot; &#8217; etc.) to their actual characters\n' +
     '- If a title or subheading is already correct, return it unchanged\n' +
