@@ -11680,11 +11680,6 @@ function onEdit(e) {
       Logger.log('Calling onProductionTrackerEdit');
       onProductionTrackerEdit(e);
     }
-    // Topic List - all column triggers (B through F affect status)
-    else if (sheet.getName() === 'Topic List') {
-      Logger.log('Calling onTopicListEdit');
-      onTopicListEdit(e);
-    }
     // Enhanced Drafter - Column F (Claude Outline) edited (row 5+)
     else if (sheet.getName() === 'Enhanced Drafter' && column === 6) {
       for (var i = 0; i < numRows; i++) {
