@@ -3905,8 +3905,15 @@ function formatContentWithLineBreaks(content) {
   // 2. Protect single-letter abbreviations: U.S., D.C., A.M., P.M., J.K., etc.
   textToSplit = textToSplit.replace(/\b([A-Z])\./g, '$1' + PLACEHOLDER);
 
-  // 3. Protect decimal numbers: 2.5 million, 100.3 FM, etc.
+  // 3. Protect lowercase time abbreviations: a.m., p.m.
+  textToSplit = textToSplit.replace(/\ba\.m\./g, 'a' + PLACEHOLDER + 'm' + PLACEHOLDER);
+  textToSplit = textToSplit.replace(/\bp\.m\./g, 'p' + PLACEHOLDER + 'm' + PLACEHOLDER);
+
+  // 4. Protect decimal numbers: 2.5 million, 100.3 FM, etc.
   textToSplit = textToSplit.replace(/(\d)\./g, '$1' + PLACEHOLDER);
+
+  // 5. Protect ellipsis: ... (three dots are not three sentence endings)
+  textToSplit = textToSplit.replace(/\.\.\./g, PLACEHOLDER + PLACEHOLDER + PLACEHOLDER);
 
   // Split on real sentence endings, including any trailing closing quotes
   // The [""'\u201D\u2019]* captures closing quotation marks that belong with the sentence
@@ -4103,15 +4110,23 @@ function correctPunctuationWithClaude(title, slides, apiKey) {
     '- Common abbreviations: U.S., Rep., Gov., Dr., Mr., Mrs., St., Mt., Jr., Sr., ' +
     'Inc., Corp., Ltd., Ave., Blvd., Dept., Gen., Sgt., Lt., Col., ' +
     'Calif., Fla., Ga., Ill., Mass., Conn., Ind., Mich., Minn., Ore., Pa., Tenn., Tex., Va., Wash., Wis., Ariz., Colo.\n\n' +
-    'ABBREVIATION EXAMPLES:\n' +
-    '  WRONG: "CEO Dr . Alan Baratz said" (extra space after Dr)\n' +
+    'ABBREVIATION AND PUNCTUATION EXAMPLES:\n' +
+    '  WRONG: "CEO Dr . Alan Baratz said" (extra space in abbreviation)\n' +
     '  RIGHT: "CEO Dr. Alan Baratz said"\n\n' +
-    '  WRONG: "D-Wave Quantum Inc . announced" (extra space after Inc)\n' +
+    '  WRONG: "D-Wave Quantum Inc . announced" (extra space in abbreviation)\n' +
     '  RIGHT: "D-Wave Quantum Inc. announced"\n\n' +
-    '  WRONG: "from Palo Alto, Calif ., to Boca Raton" (space before period)\n' +
-    '  RIGHT: "from Palo Alto, Calif., to Boca Raton"\n\n' +
-    '  WRONG: "The U. S. economy" (spaces between letters)\n' +
+    '  WRONG: "from Palo Alto, Calif ., to Boca Raton, Fla ." (spaces around periods)\n' +
+    '  RIGHT: "from Palo Alto, Calif., to Boca Raton, Fla."\n\n' +
+    '  WRONG: "The U. S. economy" (spaces between initials)\n' +
     '  RIGHT: "The U.S. economy"\n\n' +
+    '  WRONG: "in the U.S. , which" (space before comma after abbreviation)\n' +
+    '  RIGHT: "in the U.S., which"\n\n' +
+    '  WRONG: "based in Washington, D.C.." (double period at end of sentence)\n' +
+    '  RIGHT: "based in Washington, D.C."\n\n' +
+    '  WRONG: period outside closing quotation mark: ...call it "The Mineral City" .\n' +
+    '  RIGHT: period inside closing quotation mark: ...call it "The Mineral City."\n\n' +
+    '  WRONG: "at 4:30 p. m." (space in time abbreviation)\n' +
+    '  RIGHT: "at 4:30 p.m."\n\n' +
     '- Fix missing or incorrect punctuation marks\n' +
     '- Decode any HTML entities (&amp; &quot; &#8217; etc.) to their actual characters\n' +
     '- If a title or subheading is already correct, return it unchanged\n' +
