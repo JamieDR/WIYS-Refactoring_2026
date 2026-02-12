@@ -3873,16 +3873,51 @@ function scoreAndSortArticles(articles, currentTagIds) {
 
 function formatContentWithLineBreaks(content) {
   if (!content || typeof content !== 'string') return content;
-  
-  // Split content into sentences
-  var sentences = content.match(/[^.!?]+[.!?]+/g);
-  
-  if (!sentences || sentences.length <= 1) return content;
-  
-  // Clean up sentences
-  sentences = sentences.map(function(sentence) {
-    return sentence.trim();
+
+  // --- Smart sentence splitting ---
+  // We temporarily replace periods that AREN'T real sentence endings
+  // with a placeholder, split on real endings, then restore them.
+  var textToSplit = content;
+  var PLACEHOLDER = '\uFFFD'; // Unicode replacement character (never appears in article text)
+
+  // 1. Protect common abbreviations: Dr. Smith, St. Louis, Mt. Rushmore, etc.
+  var abbreviations = [
+    'Mr', 'Mrs', 'Ms', 'Dr', 'St', 'Mt', 'Jr', 'Sr', 'vs', 'etc',
+    'Inc', 'Ltd', 'Ave', 'Blvd', 'Dept', 'Gov', 'Gen', 'Prof', 'Rev',
+    'Sen', 'Rep', 'Sgt', 'Capt', 'Maj', 'Col', 'Ft', 'approx'
+  ];
+  abbreviations.forEach(function(abbr) {
+    textToSplit = textToSplit.replace(new RegExp('\\b' + abbr + '\\.', 'g'), abbr + PLACEHOLDER);
   });
+
+  // 2. Protect single-letter abbreviations: U.S., D.C., A.M., P.M., J.K., etc.
+  textToSplit = textToSplit.replace(/\b([A-Z])\./g, '$1' + PLACEHOLDER);
+
+  // 3. Protect decimal numbers: 2.5 million, 100.3 FM, etc.
+  textToSplit = textToSplit.replace(/(\d)\./g, '$1' + PLACEHOLDER);
+
+  // Split on real sentence endings, including any trailing closing quotes
+  // The [""'\u201D\u2019]* captures closing quotation marks that belong with the sentence
+  var sentences = textToSplit.match(/[^.!?]+[.!?]+[""'\u201D\u2019]*/g);
+
+  if (!sentences || sentences.length <= 1) return content; // Return original unmodified
+
+  // Restore protected periods and clean up
+  sentences = sentences.map(function(sentence) {
+    return sentence.replace(/\uFFFD/g, '.').trim();
+  });
+
+  // Capture any trailing text after the last punctuation (rare, but just in case)
+  var matched = sentences.join('');
+  var originalNoPH = content; // Compare against original
+  if (matched.replace(/\s/g, '').length < originalNoPH.replace(/\s/g, '').length) {
+    var lastSentence = sentences[sentences.length - 1];
+    var lastIndex = content.lastIndexOf(lastSentence) + lastSentence.length;
+    var trailing = content.substring(lastIndex).trim();
+    if (trailing) {
+      sentences[sentences.length - 1] = lastSentence + ' ' + trailing;
+    }
+  }
   
   var paragraphs = [];
   var i = 0;
