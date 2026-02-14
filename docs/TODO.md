@@ -85,13 +85,20 @@ Organized easiest → hardest for quick wins first. Updated Feb 14, 2026.
 
 ## 11. Review Python image creation/auto-editing for social media post automation
 **Source:** Python batch scripts (on Jamie's PC, not yet in repo)
+**Platform:** Facebook
+**Runs in:** GAS (integrated into the spreadsheet system)
 **Difficulty:** Research first, then medium-hard to implement
-**What:** Jamie's Python scripts include image creation and auto-editing logic that follows a consistent template. Review that logic and explore how it could be repurposed to auto-create social media posts (e.g., for Facebook, Instagram, Pinterest, etc.).
+**What:** Jamie's Python scripts include image creation and auto-editing logic that follows a consistent template (with "+" overlay). Review that logic and explore how it could be repurposed to auto-create Facebook social media posts from existing article content.
+**Workflow concept:**
+- New columns on a sheet for social media post content (text, captions, etc.)
+- A Drive folder where Jamie uploads the images
+- Image URL gets put into the sheet
+- GAS function assembles the post from the sheet data
 **Steps:**
 1. Get the Python image scripts into the repo so we can review them
 2. Document the template/pattern they follow (image sizing, text overlay, branding, etc.)
-3. Identify which social platforms Jamie wants to target
-4. Design an automation that generates social media posts from existing article content using the same image logic
+3. Design the sheet columns needed (post text, image URL, status, etc.)
+4. Build GAS function that pulls content + image URL from sheet and creates the Facebook post
 **Why it's a good candidate:** Templated, repeatable process = exactly the kind of thing worth automating.
 
 ## 12. Improve batch progress notifications (toasts not visible enough)
