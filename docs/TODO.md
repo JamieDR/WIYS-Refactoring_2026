@@ -84,24 +84,30 @@ Organized easiest → hardest for quick wins first. Updated Feb 14, 2026.
 - In **column E**, number them appropriately (1, 2, 3, etc.)
 
 ## 11. Facebook social media post system (per-state, from scratch)
-**Platform:** Facebook
+**Platform:** Facebook (per-state pages — 50 total)
 **Runs in:** GAS (integrated into the spreadsheet system)
-**Scope:** 50 US states — needs organized folder tree + sheet design
-**Difficulty:** Large — new sheet, new Drive structure, new GAS functions, possibly Claude AI for caption generation
-**What:** Build a system to create Facebook social media posts for each US state, repurposing existing WIYS article content. Completely new format (not reusing image composer template).
-**Key components to design:**
-- **Drive folder tree** — organized by state (e.g., `Social Media / Alabama / ...`)
-- **Sheet tab** — columns for state, article source, caption, image URL, status, etc. Must be easy for the team to use
-- **Auto-repurpose** — take existing articles and generate social media captions (could use existing Claude AI integration)
-- **Image handling** — Jamie uploads images to Drive folder, URL goes into sheet
-- **Posting** — manual (no auto-posting). Sheet prepares everything, Jamie/team copies to Facebook
-**Open questions (need answers before designing):**
-1. One Facebook page for the whole site, or per-state pages?
-2. Roughly how many posts per state per week/month?
-3. Which articles get repurposed — all? Only new ones? Certain types?
-4. Who does the posting — just Jamie, or the team of 6?
-5. What does the social post format look like? (Image + caption? Link to article? Hashtags?)
-**Why it's a good candidate:** Templated, repeatable process across 50 states = high automation value.
+**Who posts:** Jamie only
+**Content sources:** Existing articles, new articles, and original social-only content
+**Post types:** Mixed — link shares, image posts, text posts (varies)
+**Difficulty:** Large — new sheet, new Drive structure, new GAS functions, Claude AI for captions, eventually FB API
+
+### Phase A: Content pipeline + manual posting (START HERE)
+Test with a few states first, then scale to all 50.
+1. **Drive folder tree** — `Social Media / [State Name] /` for images
+2. **New "Social Media" sheet tab** with columns:
+   - State (dropdown) | Post Type (dropdown) | Source Article URL | Caption | Image URL | Article Link | Status (Draft/Ready/Posted) | Date Posted | Notes
+3. **Claude AI caption generator** — GAS function takes an article URL, generates a Facebook caption
+4. **Workflow:** Jamie prepares content in sheet → manually posts to Facebook → marks "Posted"
+
+### Phase B: Facebook API automation (LATER)
+Once content pipeline is proven and working:
+1. Create Facebook App at developers.facebook.com (free)
+2. Generate Page Access Tokens for each state page (permanent tokens, one-time setup)
+3. Store tokens in GAS Script Properties
+4. GAS function reads "Ready" rows → posts via FB Graph API → marks "Posted"
+5. Uses `pages_manage_posts` permission (no full App Review needed for pages you admin)
+
+**Start small:** Pick 3-5 test states, build Phase A, prove the workflow, then scale + add API.
 
 ## 12. Improve batch progress notifications (toasts not visible enough)
 **Sheet:** Uploader (all Prep for Upload batch functions)
