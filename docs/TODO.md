@@ -42,7 +42,6 @@ Captured end of Session 4 (Feb 12, 2026). Pick these up next session.
 ## 6. Delete Done in Topic List — don't touch column A
 **Sheet:** Topic List
 **What:** When running "Delete Done" on the Topic List, leave column A alone (same principle as #3).
-**Also consider:** Moving Topic List working rows to start at **row 3 instead of row 2**, so the topic splitter row gets its own dedicated row and isn't mixed in with data rows.
 
 ## 7. Whitelist Bingbot in Cloudflare
 **System:** Cloudflare (free plan)
@@ -77,6 +76,11 @@ Captured end of Session 4 (Feb 12, 2026). Pick these up next session.
 **Sheet:** Uploader (all Prep for Upload batch functions)
 **Problem:** Toast notifications are too easy to miss — they're small, disappear after 10 seconds, and can't show pop-up dialogs when running from auto-continue triggers (GAS limitation).
 **Discuss:** Options include writing batch status to a dedicated cell on the sheet, or other approaches. Need to figure out the best solution before implementing.
+
+## 14. Move Topic List working rows to start at row 3
+**Sheet:** Topic List
+**What:** Currently data starts at row 2 (right after headers in row 1). The Topic Splitter row in column A gets mixed in with article data. Move working rows to start at row 3 so row 2 is reserved for the topic splitter and doesn't get caught up in data operations (Delete Done, sorting, etc.).
+**Affects:** Any function that reads/writes Topic List data — need to update all row references from row 2 to row 3.
 
 ## 10. Teach Jamie the optimization logic behind fast batch functions
 **Type:** Knowledge transfer / learning session
