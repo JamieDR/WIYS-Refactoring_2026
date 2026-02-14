@@ -68,6 +68,11 @@ Captured end of Session 4 (Feb 12, 2026). Pick these up next session.
 **What:** When pulling article titles into WET, some punctuation marks are showing up as HTML entities instead of the actual characters (e.g., `&amp;` instead of `&`, `&#8217;` instead of `'`, `&quot;` instead of `"`).
 **Fix needed:** Decode HTML entities in titles when transferring/pulling them into WET so they display as normal punctuation.
 
+## 12. Replace double quotes with single quotes in titles during upload
+**Sheet:** Uploader (auto-edit on upload)
+**What:** During the auto-edit of titles upon upload, change double quotation marks (`"`) to single quotes (`'`). MSN doesn't allow double quotes in titles, so they need to be converted before publishing.
+**Where:** In whatever function handles title cleanup/auto-editing before the WordPress upload.
+
 ## 10. Teach Jamie the optimization logic behind fast batch functions
 **Type:** Knowledge transfer / learning session
 **What:** Walk Jamie through WHY the new Prep for Upload batch functions are so much faster than the old Python versions. Key concepts to cover:
