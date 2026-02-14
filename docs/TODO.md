@@ -83,23 +83,25 @@ Organized easiest → hardest for quick wins first. Updated Feb 14, 2026.
 - **Mix them randomly** so different article types are spread out for the day's publishing
 - In **column E**, number them appropriately (1, 2, 3, etc.)
 
-## 11. Review Python image creation/auto-editing for social media post automation
-**Source:** Python batch scripts (on Jamie's PC, not yet in repo)
+## 11. Facebook social media post system (per-state, from scratch)
 **Platform:** Facebook
 **Runs in:** GAS (integrated into the spreadsheet system)
-**Difficulty:** Research first, then medium-hard to implement
-**What:** Jamie's Python scripts include image creation and auto-editing logic that follows a consistent template (with "+" overlay). Review that logic and explore how it could be repurposed to auto-create Facebook social media posts from existing article content.
-**Workflow concept:**
-- New columns on a sheet for social media post content (text, captions, etc.)
-- A Drive folder where Jamie uploads the images
-- Image URL gets put into the sheet
-- GAS function assembles the post from the sheet data
-**Steps:**
-1. Get the Python image scripts into the repo so we can review them
-2. Document the template/pattern they follow (image sizing, text overlay, branding, etc.)
-3. Design the sheet columns needed (post text, image URL, status, etc.)
-4. Build GAS function that pulls content + image URL from sheet and creates the Facebook post
-**Why it's a good candidate:** Templated, repeatable process = exactly the kind of thing worth automating.
+**Scope:** 50 US states — needs organized folder tree + sheet design
+**Difficulty:** Large — new sheet, new Drive structure, new GAS functions, possibly Claude AI for caption generation
+**What:** Build a system to create Facebook social media posts for each US state, repurposing existing WIYS article content. Completely new format (not reusing image composer template).
+**Key components to design:**
+- **Drive folder tree** — organized by state (e.g., `Social Media / Alabama / ...`)
+- **Sheet tab** — columns for state, article source, caption, image URL, status, etc. Must be easy for the team to use
+- **Auto-repurpose** — take existing articles and generate social media captions (could use existing Claude AI integration)
+- **Image handling** — Jamie uploads images to Drive folder, URL goes into sheet
+- **Posting** — manual (no auto-posting). Sheet prepares everything, Jamie/team copies to Facebook
+**Open questions (need answers before designing):**
+1. One Facebook page for the whole site, or per-state pages?
+2. Roughly how many posts per state per week/month?
+3. Which articles get repurposed — all? Only new ones? Certain types?
+4. Who does the posting — just Jamie, or the team of 6?
+5. What does the social post format look like? (Image + caption? Link to article? Hashtags?)
+**Why it's a good candidate:** Templated, repeatable process across 50 states = high automation value.
 
 ## 12. Improve batch progress notifications (toasts not visible enough)
 **Sheet:** Uploader (all Prep for Upload batch functions)
