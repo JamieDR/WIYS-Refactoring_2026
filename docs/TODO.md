@@ -63,6 +63,11 @@ Captured end of Session 4 (Feb 12, 2026). Pick these up next session.
 **Sheets:** Article Status Tracker (AST) → WP Editing Tracker (WET)
 **What:** When articles are transferred from AST to WET, the status in WET should automatically be set to "WordPress Draft" — instead of requiring manual status entry.
 
+## 11. Fix HTML-encoded punctuation in WP Editing Tracker titles
+**Sheet:** WP Editing Tracker (WET)
+**What:** When pulling article titles into WET, some punctuation marks are showing up as HTML entities instead of the actual characters (e.g., `&amp;` instead of `&`, `&#8217;` instead of `'`, `&quot;` instead of `"`).
+**Fix needed:** Decode HTML entities in titles when transferring/pulling them into WET so they display as normal punctuation.
+
 ## 10. Teach Jamie the optimization logic behind fast batch functions
 **Type:** Knowledge transfer / learning session
 **What:** Walk Jamie through WHY the new Prep for Upload batch functions are so much faster than the old Python versions. Key concepts to cover:
