@@ -73,6 +73,11 @@ Captured end of Session 4 (Feb 12, 2026). Pick these up next session.
 **What:** During the auto-edit of titles upon upload, change double quotation marks (`"`) to single quotes (`'`). MSN doesn't allow double quotes in titles, so they need to be converted before publishing.
 **Where:** In whatever function handles title cleanup/auto-editing before the WordPress upload.
 
+## 13. Improve batch progress notifications (toasts not visible enough)
+**Sheet:** Uploader (all Prep for Upload batch functions)
+**Problem:** Toast notifications are too easy to miss — they're small, disappear after 10 seconds, and can't show pop-up dialogs when running from auto-continue triggers (GAS limitation).
+**Discuss:** Options include writing batch status to a dedicated cell on the sheet, or other approaches. Need to figure out the best solution before implementing.
+
 ## 10. Teach Jamie the optimization logic behind fast batch functions
 **Type:** Knowledge transfer / learning session
 **What:** Walk Jamie through WHY the new Prep for Upload batch functions are so much faster than the old Python versions. Key concepts to cover:
