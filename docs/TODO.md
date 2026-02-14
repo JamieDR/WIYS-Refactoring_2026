@@ -83,7 +83,18 @@ Organized easiest → hardest for quick wins first. Updated Feb 14, 2026.
 - **Mix them randomly** so different article types are spread out for the day's publishing
 - In **column E**, number them appropriately (1, 2, 3, etc.)
 
-## 11. Improve batch progress notifications (toasts not visible enough)
+## 11. Review Python image creation/auto-editing for social media post automation
+**Source:** Python batch scripts (on Jamie's PC, not yet in repo)
+**Difficulty:** Research first, then medium-hard to implement
+**What:** Jamie's Python scripts include image creation and auto-editing logic that follows a consistent template. Review that logic and explore how it could be repurposed to auto-create social media posts (e.g., for Facebook, Instagram, Pinterest, etc.).
+**Steps:**
+1. Get the Python image scripts into the repo so we can review them
+2. Document the template/pattern they follow (image sizing, text overlay, branding, etc.)
+3. Identify which social platforms Jamie wants to target
+4. Design an automation that generates social media posts from existing article content using the same image logic
+**Why it's a good candidate:** Templated, repeatable process = exactly the kind of thing worth automating.
+
+## 12. Improve batch progress notifications (toasts not visible enough)
 **Sheet:** Uploader (all Prep for Upload batch functions)
 **Difficulty:** Medium-hard — needs discussion first, then changes across all batch functions
 **Problem:** Toast notifications are too easy to miss — they're small, disappear after 10 seconds, and can't show pop-up dialogs when running from auto-continue triggers (GAS limitation).
@@ -93,12 +104,12 @@ Organized easiest → hardest for quick wins first. Updated Feb 14, 2026.
 
 # Non-Code Tasks (Jamie to do in browser)
 
-## 12. Whitelist Bingbot in Cloudflare
+## 13. Whitelist Bingbot in Cloudflare
 **System:** Cloudflare (free plan)
 **What:** Cloudflare was blocking Bingbot, which hurts SEO (Bing can't crawl the site). Cloudflare temporarily disabled protection to fix it, but Jamie needs to add a proper whitelist rule.
 **How:** Add a user-agent or verified bot IP exception for Bingbot. Since all 5 custom rules are used on the free plan, this likely means editing an existing rule to include the exception.
 
-## 13. Re-enable Breeze caching plugin (with adjusted settings)
+## 14. Re-enable Breeze caching plugin (with adjusted settings)
 **System:** WordPress (Cloudways)
 **What:** Breeze plugin was causing images to not appear in articles. It was disabled to fix the issue. Likely cause: lazy loading or CDN URL rewriting breaking image paths.
 **Action needed:**
@@ -112,7 +123,7 @@ Organized easiest → hardest for quick wins first. Updated Feb 14, 2026.
 
 # Learning / Discussion
 
-## 14. Teach Jamie the optimization logic behind fast batch functions
+## 15. Teach Jamie the optimization logic behind fast batch functions
 **Type:** Knowledge transfer / learning session
 **What:** Walk Jamie through WHY the new Prep for Upload batch functions are so much faster than the old Python versions. Key concepts to cover:
 - Bulk reads (`getValues()` on entire columns = 1 API call vs cell-by-cell = hundreds of calls)
