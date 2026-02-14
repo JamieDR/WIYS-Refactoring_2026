@@ -44,6 +44,21 @@ Captured end of Session 4 (Feb 12, 2026). Pick these up next session.
 **What:** When running "Delete Done" on the Topic List, leave column A alone (same principle as #3).
 **Also consider:** Moving Topic List working rows to start at **row 3 instead of row 2**, so the topic splitter row gets its own dedicated row and isn't mixed in with data rows.
 
+## 7. Whitelist Bingbot in Cloudflare
+**System:** Cloudflare (free plan)
+**What:** Cloudflare was blocking Bingbot, which hurts SEO (Bing can't crawl the site). Cloudflare temporarily disabled protection to fix it, but Jamie needs to add a proper whitelist rule.
+**How:** Add a user-agent or verified bot IP exception for Bingbot. Since all 5 custom rules are used on the free plan, this likely means editing an existing rule to include the exception.
+
+## 8. Re-enable Breeze caching plugin (with adjusted settings)
+**System:** WordPress (Cloudways)
+**What:** Breeze plugin was causing images to not appear in articles. It was disabled to fix the issue. Likely cause: lazy loading or CDN URL rewriting breaking image paths.
+**Action needed:**
+- Re-enable Breeze
+- Disable lazy loading for images (or test with it off)
+- Check CDN URL rewriting settings
+- Verify images appear correctly after re-enabling
+**Why it matters:** Without caching, every visitor gets served directly from the server — slower page loads and more server load.
+
 ---
 
 *These were captured from Jamie's instructions. Each one needs discussion/approval before implementation.*
