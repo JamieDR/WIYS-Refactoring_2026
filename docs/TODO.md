@@ -59,6 +59,18 @@ Captured end of Session 4 (Feb 12, 2026). Pick these up next session.
 - Verify images appear correctly after re-enabling
 **Why it matters:** Without caching, every visitor gets served directly from the server — slower page loads and more server load.
 
+## 9. Auto-set status to "WordPress Draft" when transferring from AST to WET
+**Sheets:** Article Status Tracker (AST) → WP Editing Tracker (WET)
+**What:** When articles are transferred from AST to WET, the status in WET should automatically be set to "WordPress Draft" — instead of requiring manual status entry.
+
+## 10. Teach Jamie the optimization logic behind fast batch functions
+**Type:** Knowledge transfer / learning session
+**What:** Walk Jamie through WHY the new Prep for Upload batch functions are so much faster than the old Python versions. Key concepts to cover:
+- Bulk reads (`getValues()` on entire columns = 1 API call vs cell-by-cell = hundreds of calls)
+- `getFoldersByName()` (targeted Drive search) vs `getFolders()` (iterating every folder in parent)
+- Searching in memory (arrays) after bulk read vs reading from the sheet for each check
+- The general principle: minimize API calls, do work in memory, write results back in bulk
+
 ---
 
 *These were captured from Jamie's instructions. Each one needs discussion/approval before implementation.*
