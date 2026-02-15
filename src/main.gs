@@ -2698,12 +2698,14 @@ function uploadToWordPress(e) {
   var state = '';
   var folderUrl = '';
   var existingWpUrl = '';
+  var rawReferences = '';
   for (var i = 0; i < statusData.length; i++) {
     if (statusData[i][2] === articleTitle) {
       articleRowInStatus = i + 1;
       state = statusData[i][0];
       existingWpUrl = statusData[i][4]; // Column E - WordPress URL
       folderUrl = statusData[i][5];
+      rawReferences = statusData[i][12] || ''; // Column M - References (news articles)
       break;
     }
   }
@@ -2791,8 +2793,20 @@ function uploadToWordPress(e) {
   // Get featured image
   var featuredImageId = (updatedSlides.length > 0 && updatedSlides[0].imageId) ? updatedSlides[0].imageId : 0;
   
-  // Create slideshow content with dynamic related articles
-  var slideshowContent = createSlideshowContent(updatedSlides, relatedArticles);
+  // Create slideshow content with dynamic related articles and reference hyperlinks
+  var parsedReferences = parseReferences(rawReferences);
+  var slideshowContent = createSlideshowContent(updatedSlides, relatedArticles, parsedReferences);
+
+  // Check for unmatched references and log to sheet
+  var unmatchedRefs = [];
+  for (var ri = 0; ri < parsedReferences.length; ri++) {
+    if (slideshowContent.indexOf('>' + parsedReferences[ri].anchor + '</a>') === -1) {
+      unmatchedRefs.push((ri + 1) + '. ' + parsedReferences[ri].anchor);
+    }
+  }
+  if (unmatchedRefs.length > 0) {
+    Logger.log('⚠️ Unmatched references for "' + articleTitle + '": ' + unmatchedRefs.join(', '));
+  }
 
   var postPayload = {
     title: cleanForDisplay(articleTitle),
@@ -2832,6 +2846,16 @@ function uploadToWordPress(e) {
     Logger.log('✅ WordPress upload successful!');
     Logger.log('✅ Applied ' + tagIds.length + ' tags');
     Logger.log('✅ Added ' + relatedArticles.length + ' related 2025 articles to last slide');
+    if (parsedReferences.length > 0) {
+      Logger.log('✅ Applied ' + (parsedReferences.length - unmatchedRefs.length) + '/' + parsedReferences.length + ' reference hyperlinks');
+    }
+    // Flag unmatched references in AST NOTES column (L) so they're visible
+    if (unmatchedRefs.length > 0) {
+      var existingNotes = statusSheet.getRange(articleRowInStatus, 12).getValue() || '';
+      var refWarning = 'Unmatched refs: ' + unmatchedRefs.join(', ');
+      var newNotes = existingNotes ? existingNotes + ' | ' + refWarning : refWarning;
+      statusSheet.getRange(articleRowInStatus, 12).setValue(newNotes);
+    }
     
     // Handle featured image status
     if (featuredImageSuccess) {
@@ -3518,7 +3542,65 @@ function getFeedTypeIdByName(name) {
 
 
 
-function createSlideshowContent(slides, relatedArticles) {
+/**
+ * Parse raw references text (from AST column M) into structured array.
+ * Expected format: numbered lines with pipe-separated values:
+ *   1. context phrase | anchor text | URL
+ * @param {string} rawText - Raw references text from spreadsheet
+ * @returns {Array} Array of {context, anchor, url} objects
+ */
+function parseReferences(rawText) {
+  if (!rawText) return [];
+  var lines = rawText.toString().split('\n');
+  var refs = [];
+  for (var i = 0; i < lines.length; i++) {
+    var line = lines[i].trim();
+    if (!line) continue;
+    // Remove leading number and period: "1. " → ""
+    var cleaned = line.replace(/^\d+\.\s*/, '');
+    // Split by pipe: context | anchor | URL
+    var parts = cleaned.split('|');
+    if (parts.length >= 3) {
+      refs.push({
+        context: parts[0].trim(),
+        anchor: parts[1].trim(),
+        url: parts[parts.length - 1].trim()
+      });
+    }
+  }
+  return refs;
+}
+
+/**
+ * Apply reference hyperlinks to a paragraph of text.
+ * Uses the long context phrase to locate the correct position,
+ * then hyperlinks just the short anchor text within it.
+ * External URLs (not wheninyourstate.com) get rel="nofollow".
+ * @param {string} text - Paragraph text to process
+ * @param {Array} references - Array of {context, anchor, url} objects
+ * @returns {string} Text with anchor text replaced by <a> tags
+ */
+function applyReferencesToContent(text, references) {
+  if (!text || !references || references.length === 0) return text;
+  var result = text;
+  for (var i = 0; i < references.length; i++) {
+    var ref = references[i];
+    // Find where context phrase appears in this text
+    var contextIdx = result.indexOf(ref.context);
+    if (contextIdx === -1) continue;
+    // Find anchor text within the context region only
+    var anchorIdx = result.indexOf(ref.anchor, contextIdx);
+    if (anchorIdx === -1 || anchorIdx > contextIdx + ref.context.length) continue;
+    // Build hyperlink — nofollow for external URLs
+    var rel = ref.url.indexOf('wheninyourstate.com') === -1 ? ' rel="nofollow"' : '';
+    var link = '<a href="' + ref.url + '"' + rel + '>' + ref.anchor + '</a>';
+    // Replace at exact position
+    result = result.substring(0, anchorIdx) + link + result.substring(anchorIdx + ref.anchor.length);
+  }
+  return result;
+}
+
+function createSlideshowContent(slides, relatedArticles, references) {
   return slides.map(function (slide, index) {
     var slideContent = slide.content || '';
     var isLastSlide = (index === slides.length - 1);
@@ -3544,19 +3626,22 @@ function createSlideshowContent(slides, relatedArticles) {
     var contentParagraphs = formatContentWithLineBreaks(cleanContent);
 
     // Build paragraph blocks — each paragraph gets its own valid wp:paragraph block
+    // Apply reference hyperlinks (news articles only — references array is empty for other types)
     var paragraphBlocksHtml = '';
     if (Array.isArray(contentParagraphs)) {
       paragraphBlocksHtml = contentParagraphs.map(function(para) {
+        var linkedPara = applyReferencesToContent(para, references);
         return `
       <!-- wp:paragraph -->
-      <p>${para}</p>
+      <p>${linkedPara}</p>
       <!-- /wp:paragraph -->`;
       }).join('');
     } else {
       // Fallback: content was too short to split, came back as plain string
+      var linkedFallback = applyReferencesToContent(contentParagraphs, references);
       paragraphBlocksHtml = `
       <!-- wp:paragraph {"placeholder":"Enter slide content here..."} -->
-      <p>${contentParagraphs}</p>
+      <p>${linkedFallback}</p>
       <!-- /wp:paragraph -->`;
     }
 
@@ -11183,6 +11268,7 @@ function batchCreateGDocs() {
  *   B (Original Topic) → I
  *   J (Tags)           → J
  *   Topic & Summary    → K
+ *   I (References)     → M (news articles only)
  *   L (Status)         → set to "DONE"
  */
 function transferDraftsToArticleTracker() {
@@ -11223,6 +11309,7 @@ function transferDraftsToArticleTracker() {
         articleType: data[i][2],      // C
         originalTopic: data[i][1],    // B
         tags: data[i][9],             // J
+        references: data[i][8],       // I (references for news articles)
         topicSummary: topicSummary
       });
     }
@@ -11268,6 +11355,10 @@ function transferDraftsToArticleTracker() {
         .setWrapStrategy(SpreadsheetApp.WrapStrategy.CLIP).setFontFamily('Arial').setFontSize(8);
       astSheet.getRange(destRow, 11).setValue(item.topicSummary)      // → K
         .setWrapStrategy(SpreadsheetApp.WrapStrategy.CLIP).setFontFamily('Arial').setFontSize(8);
+      if (item.references) {
+        astSheet.getRange(destRow, 13).setValue(item.references)    // → M (References)
+          .setWrapStrategy(SpreadsheetApp.WrapStrategy.CLIP).setFontFamily('Arial').setFontSize(8);
+      }
 
       // Mark as DONE in Enhanced Drafter
       edSheet.getRange(item.sourceRow, 12).setValue('DONE');           // L
@@ -11492,7 +11583,7 @@ function createGDocFromRawInput(sheet, row) {
     // Update the row with parsed data
     sheet.getRange(row, 7).setValue(parsed.state);     // G: State
     sheet.getRange(row, 8).setValue(parsed.title);      // H: Title
-    sheet.getRange(row, 9).setValue(parsed.body);       // I: Body
+    sheet.getRange(row, 9).setValue(parsed.references);  // I: References (news articles only)
     sheet.getRange(row, 10).setValue(parsed.tags);      // J: Tags
     sheet.getRange(row, 11).setValue(docUrl);            // K: Doc URL
     SpreadsheetApp.flush(); // Force all writes to complete before setting status
@@ -11508,11 +11599,11 @@ function createGDocFromRawInput(sheet, row) {
 
 
 /**
- * Parse raw input text into title, body, state, and tags.
- * Recognizes H1 (# or (H1 --)), H2 (## or (H2 --)), STATE:, TAGS: markers.
+ * Parse raw input text into title, body, state, tags, and references.
+ * Recognizes H1 (# or (H1 --)), H2 (## or (H2 --)), STATE:, TAGS:, REFERENCES: markers.
  */
 function parseEnhancedDrafterInput(rawInput) {
-  var result = { title: '', intro: '', body: '', state: '', tags: '' };
+  var result = { title: '', intro: '', body: '', state: '', tags: '', references: '' };
   var lines = rawInput.trim().split('\n');
 
   // --- Find title (H1) ---
@@ -11535,9 +11626,10 @@ function parseEnhancedDrafterInput(rawInput) {
     }
   }
 
-  // --- Find STATE: and TAGS: ---
+  // --- Find STATE:, TAGS:, and REFERENCES: ---
   var stateIdx = -1;
   var tagsIdx = -1;
+  var refsIdx = -1;
   for (var i = 0; i < lines.length; i++) {
     var clean = lines[i].trim().replace(/\*+/g, '');
     if (clean.indexOf('STATE:') === 0) {
@@ -11546,13 +11638,16 @@ function parseEnhancedDrafterInput(rawInput) {
     } else if (clean.indexOf('TAGS:') === 0) {
       result.tags = clean.substring(5).trim();
       tagsIdx = i;
+    } else if (clean.indexOf('REFERENCES:') === 0) {
+      refsIdx = i;
     }
   }
 
-  // --- Extract body (everything from title to STATE/TAGS) ---
+  // --- Extract body (everything from title to STATE/TAGS/REFERENCES) ---
   var bodyEnd = lines.length;
   if (stateIdx > -1) bodyEnd = Math.min(bodyEnd, stateIdx);
   if (tagsIdx > -1) bodyEnd = Math.min(bodyEnd, tagsIdx);
+  if (refsIdx > -1) bodyEnd = Math.min(bodyEnd, refsIdx);
 
   if (titleIdx > -1) {
     var bodyLines = lines.slice(titleIdx, bodyEnd);
@@ -11571,6 +11666,18 @@ function parseEnhancedDrafterInput(rawInput) {
       }
     }
     result.intro = introLines.join(' ').trim();
+  }
+
+  // --- Extract REFERENCES (numbered lines after REFERENCES: marker) ---
+  if (refsIdx > -1) {
+    var refLines = [];
+    for (var i = refsIdx + 1; i < lines.length; i++) {
+      var trimmed = lines[i].trim();
+      if (trimmed) {
+        refLines.push(trimmed);
+      }
+    }
+    result.references = refLines.join('\n');
   }
 
   return result;
