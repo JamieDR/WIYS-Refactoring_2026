@@ -60,9 +60,16 @@ const CONFIG = {
     STATE_TOPICS: 'State Topics',
     TOPIC_PLANNING: 'Topic Planning',
     ARTICLE_COLLECTION: 'Article Collection',
-    EMAIL_NEWSLETTER: 'Email Newsletter'
+    EMAIL_NEWSLETTER: 'Email Newsletter',
+    TOPIC_LIST: 'Topic List',
+    ENHANCED_DRAFTER: 'Enhanced Drafter'
   },
 
+  // ===== ENHANCED DRAFTER SETTINGS =====
+  ENHANCED_DRAFTER: {
+    TRANSFER_MARKER: 'Available Outlines',  // Phrase in column B that marks where transfers go below
+    TRANSFER_MARKER_COLUMN: 2               // Column B
+  },
 
   // ===== TRIGGER STRINGS =====
   TRIGGERS: {
@@ -11036,8 +11043,39 @@ function transferToEnhancedDrafter() {
     return;
   }
 
-  // Start after the last row with any data (min row 52, skips any empty gaps)
-  var startRow = Math.max(52, drafterSheet.getLastRow() + 1);
+  // Find the marker row (e.g. "Available Outlines" in column B) and write below it
+  var markerCol = CONFIG.ENHANCED_DRAFTER.TRANSFER_MARKER_COLUMN;
+  var markerText = CONFIG.ENHANCED_DRAFTER.TRANSFER_MARKER;
+  var edLastRow = drafterSheet.getLastRow();
+  var markerRow = -1;
+
+  if (edLastRow >= 1) {
+    var colValues = drafterSheet.getRange(1, markerCol, edLastRow, 1).getValues();
+    for (var m = 0; m < colValues.length; m++) {
+      if (colValues[m][0].toString().trim() === markerText) {
+        markerRow = m + 1;
+        break;
+      }
+    }
+  }
+
+  if (markerRow === -1) {
+    ui.alert('Error', 'Could not find "' + markerText + '" in column B of Enhanced Drafter. Add it as a section heading so the code knows where to place transferred outlines.', ui.ButtonSet.OK);
+    return;
+  }
+
+  // Find first empty row after the marker (check column B for content)
+  var startRow = markerRow + 1;
+  if (edLastRow > markerRow) {
+    var belowMarker = drafterSheet.getRange(markerRow + 1, markerCol, edLastRow - markerRow, 1).getValues();
+    for (var n = 0; n < belowMarker.length; n++) {
+      if (belowMarker[n][0] === '' || belowMarker[n][0] === null) {
+        startRow = markerRow + 1 + n;
+        break;
+      }
+      startRow = markerRow + 1 + n + 1; // all rows below marker are filled, go after the last one
+    }
+  }
 
   // Transfer each row
   for (var j = 0; j < rowsToTransfer.length; j++) {
