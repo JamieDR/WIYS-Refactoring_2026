@@ -1,6 +1,6 @@
 # WIYS — Pending Tasks
 
-Organized easiest → hardest for quick wins first. Updated Feb 14, 2026.
+Organized easiest → hardest for quick wins first. Updated Feb 15, 2026.
 
 ---
 
@@ -106,7 +106,27 @@ Once content pipeline is proven and working:
 
 **Start small:** Pick 3-5 test states, build Phase A, prove the workflow, then scale + add API.
 
-## 12. Improve batch progress notifications (toasts not visible enough)
+## 12. Add slide markers to reference hyperlink system (MSN rules)
+**Sheet:** Uploader (WordPress upload) + Enhanced Drafter (prompt output)
+**Difficulty:** Medium — update 2 functions + coordinate with updated Claude prompts
+**What:** MSN has strict rules about reference hyperlinks in slideshows:
+- **Max 1 hyperlink per content slide** — MSN forbids more than one reference link per slide
+- **Only slides 5 through second-to-last** — no references in intro slides (1-4) or the final slide
+- **News articles only** — no references for other article types (already enforced)
+
+**Current format** (no slide info): `1. context phrase | anchor text | URL`
+**New format** (with slide markers): `Slide 5 -- context phrase | anchor text | URL`
+
+**Prompt changes (Jamie handling):**
+- Prompt 1 (rules): Updated with MSN reference rules and slide range instructions
+- Prompt 2 (HANDOFF): Updated with `Slide X --` format example
+
+**Code changes needed:**
+1. `parseReferences()` (line ~3552) — parse `Slide X --` prefix to extract slide number, return `{slideNum, context, anchor, url}`
+2. `createSlideshowContent()` (line ~3603) — apply each reference only to its designated slide number instead of scanning all slides; enforce slide 5 to second-to-last range and 1-per-slide limit
+3. `applyReferencesToContent()` (line ~3583) — no changes needed (context + anchor matching still works)
+
+## 13. Improve batch progress notifications (toasts not visible enough)
 **Sheet:** Uploader (all Prep for Upload batch functions)
 **Difficulty:** Medium-hard — needs discussion first, then changes across all batch functions
 **Problem:** Toast notifications are too easy to miss — they're small, disappear after 10 seconds, and can't show pop-up dialogs when running from auto-continue triggers (GAS limitation).
@@ -116,12 +136,12 @@ Once content pipeline is proven and working:
 
 # Non-Code Tasks (Jamie to do in browser)
 
-## 13. Whitelist Bingbot in Cloudflare
+## 14. Whitelist Bingbot in Cloudflare
 **System:** Cloudflare (free plan)
 **What:** Cloudflare was blocking Bingbot, which hurts SEO (Bing can't crawl the site). Cloudflare temporarily disabled protection to fix it, but Jamie needs to add a proper whitelist rule.
 **How:** Add a user-agent or verified bot IP exception for Bingbot. Since all 5 custom rules are used on the free plan, this likely means editing an existing rule to include the exception.
 
-## 14. Re-enable Breeze caching plugin (with adjusted settings)
+## 15. Re-enable Breeze caching plugin (with adjusted settings)
 **System:** WordPress (Cloudways)
 **What:** Breeze plugin was causing images to not appear in articles. It was disabled to fix the issue. Likely cause: lazy loading or CDN URL rewriting breaking image paths.
 **Action needed:**
@@ -135,7 +155,7 @@ Once content pipeline is proven and working:
 
 # Learning / Discussion
 
-## 15. Teach Jamie the optimization logic behind fast batch functions
+## 16. Teach Jamie the optimization logic behind fast batch functions
 **Type:** Knowledge transfer / learning session
 **What:** Walk Jamie through WHY the new Prep for Upload batch functions are so much faster than the old Python versions. Key concepts to cover:
 - Bulk reads (`getValues()` on entire columns = 1 API call vs cell-by-cell = hundreds of calls)
