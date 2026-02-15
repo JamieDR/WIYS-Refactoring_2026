@@ -11077,6 +11077,13 @@ function transferToEnhancedDrafter() {
     }
   }
 
+  // Ensure there are enough empty rows for the transfer (insert if needed)
+  var sheetMaxRow = drafterSheet.getMaxRows();
+  var lastNeededRow = startRow + rowsToTransfer.length - 1;
+  if (lastNeededRow > sheetMaxRow) {
+    drafterSheet.insertRowsAfter(sheetMaxRow, lastNeededRow - sheetMaxRow);
+  }
+
   // Transfer each row
   for (var j = 0; j < rowsToTransfer.length; j++) {
     var item = rowsToTransfer[j];
