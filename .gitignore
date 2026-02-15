@@ -1,0 +1,27 @@
+# Dependencies
+node_modules/
+
+# clasp credentials (NEVER commit these)
+.clasprc.json
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor files
+*.swp
+*.swo
+*~
+.vscode/settings.json
+
+# Environment files (secrets)
+.env
+.env.local
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+python/credentials.json
+python/token.json

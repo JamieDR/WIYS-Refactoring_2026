@@ -1,0 +1,76 @@
+# WIYS Refactoring Project — Claude Briefing Document
+
+## What This Is
+A Google Apps Script production system for "When In Your State" (wheninyourstate.com).
+It manages the full editorial pipeline: article drafting → image sourcing → WordPress publishing.
+Used daily by a team of 6 people. Connected to a Google Sheet as the main UI.
+
+## The Human
+- Jamie (JamieDR on GitHub) — project owner, self-taught "vibecoder" who built this with AI assistance
+- Has ADHD — keep explanations structured, one thing at a time, clear next actions
+- Learning programming concepts from scratch — explain terms in plain English, never assume knowledge
+- Wants to become a competent programmer/project manager, not just get tasks done
+- Needs to be asked questions proactively (doesn't always know what to ask)
+
+## Working Style
+- **Collaborative and conservative.** No changes without explanation and approval.
+- **One small change at a time.** Verify it works before moving on.
+- **Documentation first, code second.** Document before changing.
+- **Explain everything.** Terms, concepts, rationale — in plain English without dumbing down technical accuracy.
+- **Be direct and honest.** No sugarcoating, no flattery.
+- **Play harsh devil's advocate.** Before making any change, argue against it. Poke holes in the plan, identify what could break, question whether we're solving the right problem. Every change to a production system used by 6 people deserves this scrutiny.
+- **Session developer logs.** Maintain honest assessment of Jamie's progress in docs/developer-log/.
+
+## Tech Stack
+- Google Apps Script (main codebase, ~16,400 lines in single file)
+- Python (batch operations that bypass Apps Script execution limits — run on Jamie's PC currently)
+- WordPress REST API (wheninyourstate.com)
+- External APIs: Shutterstock, Claude AI, Wikimedia, DPLA, USGS, Library of Congress, NYPL, Flickr
+- Google Workspace: Sheets (main UI), Docs (article drafts), Drive (file storage)
+
+## Repository Structure
+```
+/
+├── CLAUDE.md                          ← You are here (briefing for Claude)
+├── .clasp.json                        ← clasp config (Script ID)
+├── .claspignore                       ← Files clasp should NOT upload
+├── .gitignore                         ← Files git should NOT track
+├── .devcontainer/devcontainer.json    ← GitHub Codespaces auto-setup
+├── src/                               ← Apps Script code (.gs files go here)
+│   └── appsscript.json               ← Apps Script manifest
+├── docs/
+│   ├── architecture/                  ← System documentation
+│   ├── developer-log/                 ← Jamie's progress tracking (per session)
+│   └── guides/                        ← Setup guides, how-tos
+├── python/                            ← Python batch scripts (to be added)
+└── Original Codebase_Feb7 Version     ← Original monolith (reference copy, do not modify)
+```
+
+## Refactoring Plan (Agreed Upon)
+- **Phase 0:** Project structure, clasp, Codespaces, tooling ← CURRENT
+- **Phase 1:** Document what exists (sheets, lifecycle, menus, APIs)
+- **Phase 2:** Split monolith into separate .gs files (organizational only, no behavior changes)
+- **Phase 3:** Reduce duplication (DRY — extract shared patterns)
+- **Phase 4:** Decouple business logic from spreadsheet layout (column mappings for all sheets)
+- **Phase 5:** Clean architecture for new features
+
+## Key Rules
+- NEVER change functionality during refactoring — behavior must stay identical
+- NEVER push to main without Jamie's approval
+- NEVER skip explanation — if Jamie doesn't understand, we don't proceed
+- The original codebase file is kept as a reference and never modified
+- All code changes go through the branch → review → merge workflow
+
+## Google Apps Script Project
+- Script ID: 1282XkiH9YKT9QVZiyyjVQYR8UeyHOWnAuErF1j9mpzve68OWfvaHHyqv
+- Connected Spreadsheet ID: 1gQmKqIDr07tSaqoDY_R13fQcO3YWB6HgLSEmpTsPYb8
+- Timezone: America/Phoenix
+
+## Known Issues in Current Codebase
+- API credentials hardcoded in CONFIG object (Shutterstock tokens, Claude API key in setup function)
+- 16,400-line single file — no modularization
+- Heavy copy-paste duplication (date formatting, auth headers, caching functions)
+- Magic numbers for column indices on most sheets (only Uploader has CONFIG.COLUMNS)
+- Mock event objects used to call single-row functions from batch functions
+- One-time migration scripts mixed in with production code
+- No tests, no documentation
