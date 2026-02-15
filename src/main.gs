@@ -3544,10 +3544,11 @@ function getFeedTypeIdByName(name) {
 
 /**
  * Parse raw references text (from AST column M) into structured array.
- * Expected format: numbered lines with pipe-separated values:
- *   1. context phrase | anchor text | URL
+ * Supports two formats:
+ *   Old: 1. context phrase | anchor text | URL
+ *   New: Slide X -- context phrase | anchor text | URL
  * @param {string} rawText - Raw references text from spreadsheet
- * @returns {Array} Array of {context, anchor, url} objects
+ * @returns {Array} Array of {slideNum, context, anchor, url} objects (slideNum is null for old format)
  */
 function parseReferences(rawText) {
   if (!rawText) return [];
@@ -3556,12 +3557,20 @@ function parseReferences(rawText) {
   for (var i = 0; i < lines.length; i++) {
     var line = lines[i].trim();
     if (!line) continue;
+    // Check for slide-targeted format: "Slide X -- ..."
+    var slideNum = null;
+    var slideMatch = line.match(/^Slide\s+(\d+)\s*--\s*/i);
+    if (slideMatch) {
+      slideNum = parseInt(slideMatch[1], 10);
+      line = line.substring(slideMatch[0].length).trim();
+    }
     // Remove leading number and period: "1. " → ""
     var cleaned = line.replace(/^\d+\.\s*/, '');
     // Split by pipe: context | anchor | URL
     var parts = cleaned.split('|');
     if (parts.length >= 3) {
       refs.push({
+        slideNum: slideNum,
         context: parts[0].trim(),
         anchor: parts[1].trim(),
         url: parts[parts.length - 1].trim()
@@ -3625,12 +3634,33 @@ function createSlideshowContent(slides, relatedArticles, references) {
     // Split content into paragraph groups (returns array)
     var contentParagraphs = formatContentWithLineBreaks(cleanContent);
 
+    // Filter references for this slide
+    // MSN rules: max 1 hyperlink per content slide, only slides 5 through second-to-last
+    var slideNumber = index + 1; // 1-indexed slide number
+    var slideRefs;
+    var hasSlideTargeting = references.length > 0 && references[0].slideNum !== null;
+    if (hasSlideTargeting) {
+      // New format: apply only the reference assigned to this specific slide
+      slideRefs = [];
+      if (slideNumber >= 5 && !isLastSlide) {
+        for (var r = 0; r < references.length; r++) {
+          if (references[r].slideNum === slideNumber) {
+            slideRefs.push(references[r]);
+            break; // max 1 per slide
+          }
+        }
+      }
+    } else {
+      // Old format (no slide numbers): apply all refs to all slides (backward compatible)
+      slideRefs = references;
+    }
+
     // Build paragraph blocks — each paragraph gets its own valid wp:paragraph block
     // Apply reference hyperlinks (news articles only — references array is empty for other types)
     var paragraphBlocksHtml = '';
     if (Array.isArray(contentParagraphs)) {
       paragraphBlocksHtml = contentParagraphs.map(function(para) {
-        var linkedPara = applyReferencesToContent(para, references);
+        var linkedPara = applyReferencesToContent(para, slideRefs);
         return `
       <!-- wp:paragraph -->
       <p>${linkedPara}</p>
@@ -3638,7 +3668,7 @@ function createSlideshowContent(slides, relatedArticles, references) {
       }).join('');
     } else {
       // Fallback: content was too short to split, came back as plain string
-      var linkedFallback = applyReferencesToContent(contentParagraphs, references);
+      var linkedFallback = applyReferencesToContent(contentParagraphs, slideRefs);
       paragraphBlocksHtml = `
       <!-- wp:paragraph {"placeholder":"Enter slide content here..."} -->
       <p>${linkedFallback}</p>
