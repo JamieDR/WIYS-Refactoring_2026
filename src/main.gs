@@ -4017,6 +4017,8 @@ function formatContentWithLineBreaks(content) {
     'Miss', 'Mo', 'Nev', 'Okla', 'Ore', 'Pa', 'Tenn', 'Tex', 'Va',
     'Wash', 'Wis', 'Ariz', 'Ark', 'Colo', 'Del', 'Kan', 'Ky', 'La',
     'Md', 'Neb', 'Vt', 'Wyo', 'Ala',
+    // Month abbreviations (May is never abbreviated with a period)
+    'Jan', 'Feb', 'Mar', 'Apr', 'Jun', 'Jul', 'Aug', 'Sep', 'Sept', 'Oct', 'Nov', 'Dec',
     // Other common abbreviations
     'vs', 'etc', 'approx', 'est'
   ];
