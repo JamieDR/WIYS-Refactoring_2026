@@ -42,12 +42,9 @@ Organized easiest → hardest for quick wins first. Updated Feb 14, 2026.
 
 # Medium Tasks (some logic, but straightforward)
 
-## 7. Move Topic List working rows to start at row 3
+## 7. ~~Move Topic List working rows to start at row 3~~ ✅ DONE
 **Sheet:** Topic List
-**Difficulty:** Medium — need to find and update all row references
-**What:** Currently data starts at row 2 (right after headers in row 1). The Topic Splitter row in column A gets mixed in with article data. Move working rows to start at row 3 so row 2 is reserved for the topic splitter and doesn't get caught up in data operations (Delete Done, sorting, etc.).
-**Affects:** Any function that reads/writes Topic List data — need to update all row references from row 2 to row 3.
-**Note:** Do this before #6 so the Delete Done fix accounts for the new row structure.
+**Done:** Jamie moved data to row 3 in the sheet. Code updated in `splitter()`, `onTopicListEdit()`, and `transferToEnhancedDrafter()` to read/write from row 3. `deleteDoneRows()` deferred — will update when doing Delete Done fixes (#5, #6) across all sheets.
 
 ## 8. Transfer to Enhanced Drafter — randomize article type distribution
 **Sheet:** Transfer to Enhanced Drafter

@@ -10851,14 +10851,14 @@ function splitter() {
 
   if (lines.length === 0) return;
 
-  // Find the first empty row in column C
+  // Find the first empty row in column C (data starts at row 3; row 2 is the splitter input)
   var lastRow = sheet.getLastRow();
-  var startRow = 2;
-  if (lastRow >= 2) {
-    var colC = sheet.getRange(2, 3, lastRow - 1, 1).getValues();
+  var startRow = 3;
+  if (lastRow >= 3) {
+    var colC = sheet.getRange(3, 3, lastRow - 2, 1).getValues();
     for (var i = colC.length - 1; i >= 0; i--) {
       if (colC[i][0] !== '') {
-        startRow = 2 + i + 1;
+        startRow = 3 + i + 1;
         break;
       }
     }
@@ -10914,7 +10914,7 @@ function onTopicListEdit(e) {
   var column = e.range.getColumn();
   var startRow = e.range.getRow();
   var numRows = e.range.getNumRows();
-  if (startRow < 2) { startRow = 2; numRows = numRows - (2 - e.range.getRow()); }
+  if (startRow < 3) { startRow = 3; numRows = numRows - (3 - e.range.getRow()); }
   if (numRows <= 0) return;
 
   for (var i = 0; i < numRows; i++) {
@@ -11010,19 +11010,19 @@ function transferToEnhancedDrafter() {
     return;
   }
 
-  // Find rows with "Outline Ready" in Topic List column G (7)
+  // Find rows with "Outline Ready" in Topic List column G (data starts at row 3)
   var lastRow = topicSheet.getLastRow();
-  if (lastRow < 2) {
+  if (lastRow < 3) {
     ui.alert('Nothing to transfer', 'No rows found in Topic List.', ui.ButtonSet.OK);
     return;
   }
 
-  var data = topicSheet.getRange(2, 2, lastRow - 1, 6).getValues(); // B through G
+  var data = topicSheet.getRange(3, 2, lastRow - 2, 6).getValues(); // B through G, from row 3
   var rowsToTransfer = [];
   for (var i = 0; i < data.length; i++) {
     if (data[i][5] === 'Outline Ready') { // Column G (index 5 in B-G range)
       rowsToTransfer.push({
-        sourceRow: i + 2,
+        sourceRow: i + 3,
         articleType: data[i][0],   // B
         topic: data[i][1],         // C
         placeToVisit: data[i][3],  // E
