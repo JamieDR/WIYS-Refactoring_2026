@@ -61,6 +61,18 @@ Used daily by a team of 6 people. Connected to a Google Sheet as the main UI.
 - The original codebase file is kept as a reference and never modified
 - All code changes go through the branch → review → merge workflow
 
+## Branch Naming
+- **One branch per logical change.** A logical change is something you can describe in one sentence without using "and" to connect unrelated things.
+- **Test:** Would you want to undo these things together? If not, they belong in separate branches.
+- **Name format:** `claude/<descriptive-name>-<session-id>` — the descriptive part should make the change obvious at a glance.
+- **Categories of logical changes:**
+  - **Bug fix** — fixing one broken behavior (e.g., `claude/fix-no-period-protection-...`)
+  - **Feature** — adding one new capability (e.g., `claude/auto-status-on-url-paste-...`)
+  - **Refactoring step** — one phase of reorganizing code (e.g., `claude/split-image-functions-...`)
+  - **Documentation** — updating docs for one topic (e.g., `claude/document-uploader-lifecycle-...`)
+  - **Sheet-specific** — changes scoped to one sheet's logic (e.g., `claude/wet-title-validation-...`, `claude/uploader-column-mapping-...`)
+- **"And" rule:** "Add 'No.' and 'Fig.' to period protections" = one branch (same feature). "Add period protection and auto-status detection" = two branches (unrelated changes).
+
 ## Google Apps Script Project
 - Script ID: 1282XkiH9YKT9QVZiyyjVQYR8UeyHOWnAuErF1j9mpzve68OWfvaHHyqv
 - Connected Spreadsheet ID: 1gQmKqIDr07tSaqoDY_R13fQcO3YWB6HgLSEmpTsPYb8
