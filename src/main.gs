@@ -10999,7 +10999,7 @@ function splitter() {
       var title = line.substring(0, httpIndex).replace(/[\s:\-–—]+$/, '').trim();
       var url = line.substring(httpIndex).trim();
       sheet.getRange(row, 8).setValue(title)
-        .setFontLine('none').setWrapStrategy(SpreadsheetApp.WrapStrategy.WRAP).setHorizontalAlignment('left').setBackground('#fff2cc');
+        .setFontColor('#000000').setFontLine('none').setWrapStrategy(SpreadsheetApp.WrapStrategy.WRAP).setHorizontalAlignment('left').setBackground('#fff2cc');
       sheet.getRange(row, 9).setValue(url).setWrapStrategy(SpreadsheetApp.WrapStrategy.CLIP).setBackground('#fff2cc');
     } else if (httpIndex === 0) {
       // Line is just a URL
@@ -11007,7 +11007,7 @@ function splitter() {
     } else {
       // Line is just a title, no URL
       sheet.getRange(row, 8).setValue(line)
-        .setFontLine('none').setWrapStrategy(SpreadsheetApp.WrapStrategy.WRAP).setHorizontalAlignment('left').setBackground('#fff2cc');
+        .setFontColor('#000000').setFontLine('none').setWrapStrategy(SpreadsheetApp.WrapStrategy.WRAP).setHorizontalAlignment('left').setBackground('#fff2cc');
     }
   }
 
