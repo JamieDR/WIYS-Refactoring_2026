@@ -10962,9 +10962,9 @@ function splitter() {
     return;
   }
 
-  var content = sheet.getRange('A2').getValue();
+  var content = sheet.getRange('H2').getValue();
   if (!content || content.toString().trim() === '') {
-    SpreadsheetApp.getUi().alert('Nothing to split', 'Paste titles into A2 first.', SpreadsheetApp.getUi().ButtonSet.OK);
+    SpreadsheetApp.getUi().alert('Nothing to split', 'Paste titles into H2 first.', SpreadsheetApp.getUi().ButtonSet.OK);
     return;
   }
 
@@ -11012,7 +11012,7 @@ function splitter() {
   }
 
   // Clear the input cell
-  sheet.getRange('A2').clearContent();
+  sheet.getRange('H2').clearContent();
 
   SpreadsheetApp.getUi().alert('Done!', lines.length + ' topics added to Topic List.', SpreadsheetApp.getUi().ButtonSet.OK);
 }
