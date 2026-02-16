@@ -4020,7 +4020,7 @@ function formatContentWithLineBreaks(content) {
     // Month abbreviations (May is never abbreviated with a period)
     'Jan', 'Feb', 'Mar', 'Apr', 'Jun', 'Jul', 'Aug', 'Sep', 'Sept', 'Oct', 'Nov', 'Dec',
     // Other common abbreviations
-    'vs', 'etc', 'approx', 'est'
+    'No', 'vs', 'etc', 'approx', 'est'
   ];
   abbreviations.forEach(function(abbr) {
     textToSplit = textToSplit.replace(new RegExp('\\b' + abbr + '\\.', 'g'), abbr + PLACEHOLDER);
