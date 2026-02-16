@@ -11872,8 +11872,8 @@ function onEdit(e) {
           var valueF = sheet.getRange(currentRow, 6).getValue();
           if (valueF != "") {
             var valueFStr = valueF.toString().trim();
-            if (valueFStr.indexOf('https://claude.ai/') === 0) {
-              sheet.getRange(currentRow, 12).setValue("Outline for Verification");
+            if (valueFStr.indexOf('claude.ai') !== -1) {
+              sheet.getRange(currentRow, 12).setValue("For Outline Verification");
             } else {
               sheet.getRange(currentRow, 12).setValue("Ready for Drafting");
             }
