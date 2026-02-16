@@ -10975,20 +10975,20 @@ function splitter() {
 
   if (lines.length === 0) return;
 
-  // Find the first empty row in column C (data starts at row 3; row 2 is the splitter input)
+  // Find the first empty row in column H (data starts at row 3; row 2 is the splitter input)
   var lastRow = sheet.getLastRow();
   var startRow = 3;
   if (lastRow >= 3) {
-    var colC = sheet.getRange(3, 3, lastRow - 2, 1).getValues();
-    for (var i = colC.length - 1; i >= 0; i--) {
-      if (colC[i][0] !== '') {
+    var colH = sheet.getRange(3, 8, lastRow - 2, 1).getValues();
+    for (var i = colH.length - 1; i >= 0; i--) {
+      if (colH[i][0] !== '') {
         startRow = 3 + i + 1;
         break;
       }
     }
   }
 
-  // Write title to C, URL to D, set Article Type (B) and Status (G)
+  // Write title to H, URL to I
   for (var i = 0; i < lines.length; i++) {
     var line = lines[i].trim();
     var row = startRow + i;
@@ -10998,22 +10998,17 @@ function splitter() {
       // Line has both title and URL
       var title = line.substring(0, httpIndex).replace(/[\s:\-–—]+$/, '').trim();
       var url = line.substring(httpIndex).trim();
-      sheet.getRange(row, 3).setValue(title)
-        .setFontLine('none').setWrapStrategy(SpreadsheetApp.WrapStrategy.WRAP).setHorizontalAlignment('left').setBackground('#c9daf8');
-      sheet.getRange(row, 4).setValue(url).setWrapStrategy(SpreadsheetApp.WrapStrategy.CLIP);
+      sheet.getRange(row, 8).setValue(title)
+        .setFontLine('none').setWrapStrategy(SpreadsheetApp.WrapStrategy.WRAP).setHorizontalAlignment('left').setBackground('#fff2cc');
+      sheet.getRange(row, 9).setValue(url).setWrapStrategy(SpreadsheetApp.WrapStrategy.CLIP).setBackground('#fff2cc');
     } else if (httpIndex === 0) {
       // Line is just a URL
-      sheet.getRange(row, 4).setValue(line).setWrapStrategy(SpreadsheetApp.WrapStrategy.CLIP);
+      sheet.getRange(row, 9).setValue(line).setWrapStrategy(SpreadsheetApp.WrapStrategy.CLIP).setBackground('#fff2cc');
     } else {
       // Line is just a title, no URL
-      sheet.getRange(row, 3).setValue(line)
-        .setFontLine('none').setWrapStrategy(SpreadsheetApp.WrapStrategy.WRAP).setHorizontalAlignment('left').setBackground('#c9daf8');
+      sheet.getRange(row, 8).setValue(line)
+        .setFontLine('none').setWrapStrategy(SpreadsheetApp.WrapStrategy.WRAP).setHorizontalAlignment('left').setBackground('#fff2cc');
     }
-
-    sheet.getRange(row, 2).setValue('Current News');             // B: Article Type
-    sheet.getRange(row, 4).setBackground('#ffffff');             // D: white
-    sheet.getRange(row, 5).setBackground('#ffe5ef');             // E: light pink
-    sheet.getRange(row, 7).setValue('Topic Set');                // G: Status
   }
 
   // Clear the input cell
