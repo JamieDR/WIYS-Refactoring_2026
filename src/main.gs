@@ -144,11 +144,11 @@ const CONFIG = {
 
   // ===== ERROR MESSAGES =====
   ERRORS: {
-    ARTICLE_NOT_FOUND: 'Paste failed — Mismatched titles. Exact match required.',
-    INVALID_DOC_URL: 'Paste failed — GDoc URL missing or broken on AST.',
-    ARTICLE_TITLE_NOT_FOUND: 'Paste failed — Missing H1. Title not found in doc.',
-    NO_H2_SECTIONS: 'Paste failed — Missing H2s. No section headings in doc.',
-    INVALID_URL_FORMAT: 'Paste failed — Bad GDoc URL format.'
+    ARTICLE_NOT_FOUND: 'Paste Failed - Titles don\'t match',
+    INVALID_DOC_URL: 'Paste Failed - No GDoc URL',
+    ARTICLE_TITLE_NOT_FOUND: 'Paste Failed - No H1 found, check GDoc',
+    NO_H2_SECTIONS: 'Paste Failed - Missing H2s, check GDoc',
+    INVALID_URL_FORMAT: 'Paste Failed - Fix GDoc URL'
   },
 
   // ===== CONTENT SECTION MARKERS =====
@@ -952,7 +952,7 @@ function pasteArticleSections(e) {
     // === VALIDATION: Check for structural problems before pasting ===
     var validationErrors = validateParsedSections(sections);
     if (validationErrors.length > 0) {
-      var errorMsg = 'Paste failed — Bad GDoc formatting. ' + validationErrors.join(' | ');
+      var errorMsg = 'Paste Failed - Bad GDoc formatting, check content';
       Logger.log('VALIDATION FAILED: ' + errorMsg);
 
       // Write error to Uploader trigger row
@@ -995,7 +995,7 @@ function pasteArticleSections(e) {
   } catch (error) {
     Logger.log('Error in pasteArticleSections: ' + error.message);
     Logger.log('Stack trace: ' + error.stack);
-    sheet.getRange(row, CONFIG.COLUMNS.STATUS_MESSAGES).setValue('Paste failed — unexpected error. Contact Jamie. (' + error.message + ')');
+    sheet.getRange(row, CONFIG.COLUMNS.STATUS_MESSAGES).setValue('Paste Failed - Unexpected error, contact Jamie.');
   }
 }
 
