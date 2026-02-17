@@ -6082,7 +6082,6 @@ function isUploaderSheetLocked() { return null; /* always unlocked */ }
 function updateLockStatusInSheet(lockStatus) { /* no-op */ }
 function checkUploaderLock(requestingOperation) { return true; /* always allow */ }
 function forceUnlockUploaderSheet() { /* no-op */ }
-}
 
 
 
