@@ -297,8 +297,8 @@ function extractSectionsFromDocument(body, startIndex) {
 
       // Check if this is an H2 heading
       if (heading === DocumentApp.ParagraphHeading.HEADING2) {
-        // Save previous section if exists
-        if (currentSection && currentSection.content.length > 0) {
+        // Save previous section if exists (including empty ones so validation can catch back-to-back H2s)
+        if (currentSection) {
           sections.push(currentSection);
         }
 
@@ -342,7 +342,7 @@ function extractSectionsFromDocument(body, startIndex) {
           const headingText = headingMatch[2].trim();
 
           if (hashCount === 2) {  // ## - H2 heading
-            if (currentSection && currentSection.content.length > 0) {
+            if (currentSection) {
               sections.push(currentSection);
             }
 
@@ -388,7 +388,7 @@ function extractSectionsFromDocument(body, startIndex) {
                paragraph.isBold() &&
                !expectingUrl) {
         // This might be a bold heading
-        if (currentSection && currentSection.content.length > 0) {
+        if (currentSection) {
           sections.push(currentSection);
         }
 
@@ -411,13 +411,45 @@ function extractSectionsFromDocument(body, startIndex) {
     }
   }
 
-  // Don't forget the last section
-  if (currentSection && currentSection.content.length > 0) {
+  // Don't forget the last section (including empty ones so validation can catch issues)
+  if (currentSection) {
     sections.push(currentSection);
   }
 
   Logger.log('Total sections found: ' + sections.length);
   return sections;
+}
+
+
+/**
+ * Validate parsed sections for structural problems before pasting.
+ * Catches malformed docs (merged content, back-to-back headings) so we fail
+ * with an error instead of silently pasting garbage.
+ *
+ * @param {Array} sections - Array of section objects from extractSectionsFromDocument
+ * @returns {Array} Array of error strings. Empty array = valid.
+ */
+function validateParsedSections(sections) {
+  var errors = [];
+
+  for (var i = 0; i < sections.length; i++) {
+    var section = sections[i];
+
+    // Check 1: H2 heading suspiciously long (content likely merged into heading)
+    if (section.subheading.length > 200) {
+      errors.push('Section ' + (i + 1) + ' heading is ' + section.subheading.length +
+        ' chars — content likely merged into heading. Starts with: "' +
+        section.subheading.substring(0, 80) + '..."');
+    }
+
+    // Check 2: Section has no content (back-to-back headings or heading at end of doc)
+    if (section.content.length === 0) {
+      errors.push('Section ' + (i + 1) + ' ("' + section.subheading.substring(0, 60) +
+        '") has no content paragraphs — headings may be back-to-back or doc is malformed.');
+    }
+  }
+
+  return errors;
 }
 
 
@@ -920,13 +952,48 @@ function pasteArticleSections(e) {
     }
     Logger.log('=== END PARSER OUTPUT DUMP ===');
 
-    if (sections.length === 0) {
+    // === VALIDATION: Check for structural problems before pasting ===
+    var validationErrors = validateParsedSections(sections);
+    if (validationErrors.length > 0) {
+      var errorMsg = 'PASTE ERROR: Doc structure issues — paste aborted. ' + validationErrors.join(' | ');
+      Logger.log('VALIDATION FAILED: ' + errorMsg);
+
+      // Write error to Uploader trigger row
+      sheet.getRange(row, CONFIG.COLUMNS.STATUS_MESSAGES).setValue(errorMsg);
+
+      // Find article row in AST and flag it with red
+      try {
+        var statusSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(CONFIG.SHEETS.ARTICLE_STATUS_TRACKER);
+        var statusData = statusSheet.getRange('C:C').getValues();
+        for (var s = 0; s < statusData.length; s++) {
+          if (statusData[s][0] && statusData[s][0].toString().trim() === articleTitle.trim()) {
+            var astRow = s + 1;
+            statusSheet.getRange(astRow, 5).setValue(errorMsg);                // Column E: error message
+            statusSheet.getRange(astRow, 3).setBackground('#FF0000');          // Column C: red background
+            statusSheet.getRange(astRow, 5).setBackground('#FF0000');          // Column E: red background
+            statusSheet.getRange(astRow, 3).setFontColor('#FFFFFF');           // Column C: white text so it's readable on red
+            statusSheet.getRange(astRow, 5).setFontColor('#FFFFFF');           // Column E: white text so it's readable on red
+            Logger.log('Flagged AST row ' + astRow + ' with red background');
+            break;
+          }
+        }
+      } catch (astError) {
+        Logger.log('Could not update AST: ' + astError.message);
+      }
+
+      return;
+    }
+
+    // Filter out any empty sections (now that validation has passed)
+    var validSections = sections.filter(function(s) { return s.content.length > 0; });
+
+    if (validSections.length === 0) {
       sheet.getRange(row, CONFIG.COLUMNS.STATUS_MESSAGES).setValue(CONFIG.ERRORS.NO_H2_SECTIONS);
       return;
     }
 
     // Process and paste the sections
-    processArticleSections(sheet, row, sections);
+    processArticleSections(sheet, row, validSections);
     
   } catch (error) {
     Logger.log('Error in pasteArticleSections: ' + error.message);
@@ -992,12 +1059,14 @@ if (section.needsUrl) {
     // Set row number in Column D (Slide #)
     sheet.getRange(targetRow, CONFIG.COLUMNS.SLIDE_NUMBER).setValue(i + 1);
 
-    // Set subheading in Column E (Subheadings)
+    // Set subheading in Column E (Subheadings) — force black font
     sheet.getRange(targetRow, CONFIG.COLUMNS.SUBHEADING).setValue(section.subheading);
+    sheet.getRange(targetRow, CONFIG.COLUMNS.SUBHEADING).setFontColor('#000000');
 
-    // Combine all content paragraphs and set in Column F (Slide Content)
+    // Combine all content paragraphs and set in Column F (Slide Content) — force black font
     const combinedContent = section.content.join(' ');
     sheet.getRange(targetRow, CONFIG.COLUMNS.SLIDE_CONTENT).setValue(combinedContent);
+    sheet.getRange(targetRow, CONFIG.COLUMNS.SLIDE_CONTENT).setFontColor('#000000');
 
     // === DIAGNOSTIC: Log exactly what was written where ===
     Logger.log('PASTE ROW ' + targetRow + ':');
