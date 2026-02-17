@@ -9796,6 +9796,38 @@ function diagnoseDuplicateTags() {
   Logger.log('Non-tag properties: ' + (totalProps - tagProps));
 }
 
+
+/**
+ * DIAGNOSTIC: Dump all Script Properties into a new sheet called "Script Properties".
+ * Run from Apps Script editor. One-time use — delete the sheet when done.
+ */
+function listAllScriptProperties() {
+  var props = PropertiesService.getScriptProperties().getProperties();
+  var keys = Object.keys(props).sort();
+
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName('Script Properties');
+  if (sheet) ss.deleteSheet(sheet);
+  sheet = ss.insertSheet('Script Properties');
+
+  sheet.getRange(1, 1).setValue('Key');
+  sheet.getRange(1, 2).setValue('Value');
+  sheet.getRange(1, 1, 1, 2).setFontWeight('bold');
+
+  var data = [];
+  for (var i = 0; i < keys.length; i++) {
+    data.push([keys[i], props[keys[i]]]);
+  }
+
+  if (data.length > 0) {
+    sheet.getRange(2, 1, data.length, 2).setValues(data);
+  }
+
+  sheet.autoResizeColumns(1, 2);
+  Logger.log('Listed ' + keys.length + ' properties in "Script Properties" sheet');
+}
+
+
 function checkDailyTagCacheRefresh(username, applicationPassword) {
   var cache = PropertiesService.getScriptProperties();
   var lastRefreshDate = cache.getProperty('last_tag_refresh_date');
