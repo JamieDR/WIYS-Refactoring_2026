@@ -420,6 +420,169 @@ function extractSectionsFromDocument(body, startIndex) {
   return sections;
 }
 
+
+/**
+ * DIAGNOSTIC: Dump every paragraph element in a Google Doc to the execution log.
+ * Run from Apps Script editor. Enter the article title when prompted.
+ * Shows exactly what extractSectionsFromDocument sees: heading type, bold status,
+ * text content, and which detection path the parser would take.
+ *
+ * After running, check View → Execution log for the full dump.
+ */
+function diagnoseDocParsing() {
+  var ui = SpreadsheetApp.getUi();
+  var response = ui.prompt('Doc Parser Diagnostic',
+    'Enter the article title (must match Uploader column A):',
+    ui.ButtonSet.OK_CANCEL);
+
+  if (response.getSelectedButton() !== ui.Button.OK) return;
+  var articleTitle = response.getResponseText().trim();
+  if (!articleTitle) { ui.alert('No title entered.'); return; }
+
+  // --- Locate the Google Doc ---
+  var docUrl = findArticleDocUrl(articleTitle);
+  if (!docUrl) { ui.alert('Article not found in Status Tracker.'); return; }
+
+  var docId = extractGoogleDocId(docUrl);
+  if (!docId) { ui.alert('Could not extract Doc ID from URL:\n' + docUrl); return; }
+
+  var doc = DocumentApp.openById(docId);
+  var body = doc.getBody();
+  var total = body.getNumChildren();
+
+  Logger.log('=== DOC PARSER DIAGNOSTIC ===');
+  Logger.log('Article: ' + articleTitle);
+  Logger.log('Doc URL: ' + docUrl);
+  Logger.log('Total elements in doc body: ' + total);
+  Logger.log('');
+
+  // --- Find H1 start index (same logic as findH1TitleIndex) ---
+  var startIndex = -1;
+  for (var s = 0; s < total; s++) {
+    var el = body.getChild(s);
+    if (el.getType() === DocumentApp.ElementType.PARAGRAPH) {
+      var p = el.asParagraph();
+      var h = p.getHeading();
+      var t = p.getText().trim();
+      if (h === DocumentApp.ParagraphHeading.HEADING1 &&
+          (t === articleTitle || t.includes(articleTitle.split(' - ')[0]))) {
+        startIndex = s + 1;
+        break;
+      }
+    }
+  }
+
+  if (startIndex === -1) {
+    Logger.log('ERROR: Could not find H1 matching "' + articleTitle + '"');
+    Logger.log('Dumping ALL elements anyway for inspection:');
+    startIndex = 0;
+  } else {
+    Logger.log('H1 found at element ' + (startIndex - 1) + ', parsing starts at element ' + startIndex);
+  }
+  Logger.log('');
+
+  // --- Walk every element and log what the parser would see ---
+  var sectionCount = 0;
+  var currentSubheading = '(none — before first heading)';
+
+  for (var i = startIndex; i < total; i++) {
+    var element = body.getChild(i);
+    var elemType = element.getType().toString();
+
+    if (element.getType() !== DocumentApp.ElementType.PARAGRAPH) {
+      Logger.log('[' + i + '] NON-PARAGRAPH element: ' + elemType);
+      continue;
+    }
+
+    var paragraph = element.asParagraph();
+    var heading = paragraph.getHeading();
+    var headingName = heading ? heading.toString() : 'null';
+    var text = paragraph.getText();
+    var trimmed = text.trim();
+    var isBold = false;
+    try { isBold = paragraph.isBold(); } catch (e) { isBold = 'error: ' + e.message; }
+    var numChildren = paragraph.getNumChildren();
+
+    // Check what the parser would do
+    var parserAction = '';
+    var isH2Style = (heading === DocumentApp.ParagraphHeading.HEADING2);
+    var startsWithHash = trimmed.startsWith('#');
+    var hashMatch = trimmed.match(/^(#{1,3})\s+(.+)/);
+    var wouldBeBoldHeading = (trimmed.length < 100 && trimmed.length > 3 &&
+      !trimmed.endsWith('.') && !trimmed.endsWith(',') && !trimmed.endsWith(':') &&
+      !trimmed.endsWith(';') && !trimmed.endsWith('!') && !trimmed.endsWith('?') &&
+      isBold === true);
+
+    if (!trimmed) {
+      parserAction = 'SKIP (empty)';
+    } else if (trimmed.startsWith(CONFIG.CONTENT_MARKERS.READ_MORE_FROM) ||
+               trimmed.includes(CONFIG.CONTENT_MARKERS.INSTRUCTIONS) ||
+               trimmed === CONFIG.CONTENT_MARKERS.DRAFT_PROMPT ||
+               heading === DocumentApp.ParagraphHeading.HEADING1) {
+      parserAction = 'STOP (end marker or H1)';
+    } else if (isH2Style) {
+      sectionCount++;
+      var cleaned = trimmed.replace(/^##\s*/, '').trim();
+      currentSubheading = cleaned;
+      parserAction = 'NEW SECTION #' + sectionCount + ' (H2 style) → subheading: "' + cleaned + '"';
+    } else if (heading === DocumentApp.ParagraphHeading.HEADING3) {
+      parserAction = 'H3 → URL slot';
+    } else if (startsWithHash && hashMatch) {
+      var hc = hashMatch[1].length;
+      if (hc === 2) {
+        sectionCount++;
+        currentSubheading = hashMatch[2].trim();
+        parserAction = 'NEW SECTION #' + sectionCount + ' (markdown ##) → subheading: "' + currentSubheading + '"';
+      } else if (hc === 3) {
+        parserAction = 'MARKDOWN ### → URL slot';
+      } else {
+        parserAction = 'MARKDOWN # (H1 — would STOP)';
+      }
+    } else if (wouldBeBoldHeading) {
+      sectionCount++;
+      currentSubheading = trimmed;
+      parserAction = 'NEW SECTION #' + sectionCount + ' (bold detection) → subheading: "' + trimmed + '"';
+    } else if (sectionCount > 0) {
+      parserAction = 'CONTENT for section #' + sectionCount + ' ("' + currentSubheading + '")';
+    } else {
+      parserAction = 'SKIP (before first heading)';
+    }
+
+    // Log detailed info per paragraph
+    Logger.log('[' + i + '] heading=' + headingName +
+      ' | bold=' + isBold +
+      ' | children=' + numChildren +
+      ' | len=' + trimmed.length +
+      ' | hasNewlines=' + (text.indexOf('\n') !== -1));
+    Logger.log('    TEXT: "' + (trimmed.length > 200 ? trimmed.substring(0, 200) + '...' : trimmed) + '"');
+    Logger.log('    PARSER: ' + parserAction);
+
+    // If text contains newlines, flag it — this would mean heading+content in one paragraph
+    if (text.indexOf('\n') !== -1) {
+      var lineCount = text.split('\n').length;
+      Logger.log('    *** WARNING: Paragraph contains ' + lineCount + ' lines (newlines found). This could merge heading with content! ***');
+      var textLines = text.split('\n');
+      for (var ln = 0; ln < Math.min(textLines.length, 5); ln++) {
+        Logger.log('      Line ' + ln + ': "' + textLines[ln].trim().substring(0, 150) + '"');
+      }
+      if (textLines.length > 5) Logger.log('      ... (' + (textLines.length - 5) + ' more lines)');
+    }
+
+    Logger.log('');
+
+    if (parserAction.indexOf('STOP') === 0) {
+      Logger.log('--- Parser would stop here ---');
+      break;
+    }
+  }
+
+  Logger.log('=== DIAGNOSTIC COMPLETE: ' + sectionCount + ' sections detected ===');
+  ui.alert('Diagnostic Complete',
+    'Found ' + sectionCount + ' sections.\n\nCheck View → Execution log for the full dump.',
+    ui.ButtonSet.OK);
+}
+
+
 /**
  * Find the index where article content begins (after H1 title)
  * @param {DocumentApp.Body} body - The document body
@@ -737,11 +900,31 @@ function pasteArticleSections(e) {
     // Extract sections (H2 headings and their content)
     const sections = extractSectionsFromDocument(body, contentStartIndex);
 
+    // === DIAGNOSTIC: Dump what the parser returned ===
+    Logger.log('=== PARSER OUTPUT DUMP for "' + articleTitle + '" ===');
+    Logger.log('Total sections returned: ' + sections.length);
+    for (let d = 0; d < sections.length; d++) {
+      var sec = sections[d];
+      Logger.log('--- Section ' + (d + 1) + ' ---');
+      Logger.log('  subheading: "' + sec.subheading + '"');
+      Logger.log('  subheading length: ' + sec.subheading.length);
+      Logger.log('  subheading has newlines: ' + (sec.subheading.indexOf('\n') !== -1));
+      Logger.log('  content array length: ' + sec.content.length);
+      for (let c = 0; c < sec.content.length; c++) {
+        var preview = sec.content[c].length > 120 ? sec.content[c].substring(0, 120) + '...' : sec.content[c];
+        Logger.log('  content[' + c + '] (' + sec.content[c].length + ' chars): "' + preview + '"');
+      }
+      Logger.log('  content.join(" ") length: ' + sec.content.join(' ').length);
+      Logger.log('  url: ' + (sec.url || '(none)'));
+      Logger.log('  needsUrl: ' + sec.needsUrl);
+    }
+    Logger.log('=== END PARSER OUTPUT DUMP ===');
+
     if (sections.length === 0) {
       sheet.getRange(row, CONFIG.COLUMNS.STATUS_MESSAGES).setValue(CONFIG.ERRORS.NO_H2_SECTIONS);
       return;
     }
-    
+
     // Process and paste the sections
     processArticleSections(sheet, row, sections);
     
@@ -808,15 +991,20 @@ if (section.needsUrl) {
     
     // Set row number in Column D (Slide #)
     sheet.getRange(targetRow, CONFIG.COLUMNS.SLIDE_NUMBER).setValue(i + 1);
-    
+
     // Set subheading in Column E (Subheadings)
     sheet.getRange(targetRow, CONFIG.COLUMNS.SUBHEADING).setValue(section.subheading);
-    
+
     // Combine all content paragraphs and set in Column F (Slide Content)
     const combinedContent = section.content.join(' ');
     sheet.getRange(targetRow, CONFIG.COLUMNS.SLIDE_CONTENT).setValue(combinedContent);
-    
-    Logger.log('Pasted section ' + (i + 1) + ': ' + section.subheading + (section.url ? ' (URL: ' + section.url + ')' : ''));
+
+    // === DIAGNOSTIC: Log exactly what was written where ===
+    Logger.log('PASTE ROW ' + targetRow + ':');
+    Logger.log('  Col D (slide#=' + CONFIG.COLUMNS.SLIDE_NUMBER + '): ' + (i + 1));
+    Logger.log('  Col E (subheading=' + CONFIG.COLUMNS.SUBHEADING + '): "' + (section.subheading.length > 80 ? section.subheading.substring(0, 80) + '...' : section.subheading) + '" (' + section.subheading.length + ' chars)');
+    Logger.log('  Col F (content=' + CONFIG.COLUMNS.SLIDE_CONTENT + '): "' + (combinedContent.length > 80 ? combinedContent.substring(0, 80) + '...' : combinedContent) + '" (' + combinedContent.length + ' chars)');
+    if (combinedContent.length === 0) Logger.log('  *** WARNING: Content is EMPTY for this section! ***');
   }
   
   // Update status in Uploader
