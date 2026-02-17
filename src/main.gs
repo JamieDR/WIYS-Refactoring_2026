@@ -11892,6 +11892,9 @@ function backfillWETColumnK() {
     }
   }
 
+  // Force all pending writes to the sheet before showing summary
+  SpreadsheetApp.flush();
+
   var summary = 'Backfill WET Column K Complete!\n\n' +
     'Filled: ' + filled + '\n' +
     'Already had data (skipped): ' + skipped + '\n' +
