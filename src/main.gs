@@ -11695,6 +11695,166 @@ function diagnoseDocParsing() {
 }
 
 /**
+ * ONE-TIME: Backfill WET column K with "Title -- Intro Subheading -- Intro Content"
+ * extracted from the Google Docs linked in AST column D.
+ *
+ * For each row in WET that has a title (column C):
+ *   1. Finds the matching row in AST by title
+ *   2. Gets the Google Doc URL from AST column D
+ *   3. Opens the doc and extracts H1, first H2, and first paragraph after H2
+ *   4. Writes "H1 -- H2 -- intro paragraph" to WET column K
+ *
+ * Run from Apps Script editor. Check execution log for details.
+ * Safe to run multiple times — only fills rows where K is empty.
+ */
+function backfillWETColumnK() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var wetSheet = ss.getSheetByName(CONFIG.SHEETS.WP_EDITING_TRACKER);
+  var astSheet = ss.getSheetByName(CONFIG.SHEETS.ARTICLE_STATUS_TRACKER);
+
+  if (!wetSheet || !astSheet) {
+    Logger.log('ERROR: Could not find WET or AST sheet.');
+    SpreadsheetApp.getUi().alert('Could not find WP Editing Tracker or Article Status Tracker sheet.');
+    return;
+  }
+
+  // Build a lookup: AST title (col C) → doc URL (col D)
+  var astLastRow = astSheet.getLastRow();
+  if (astLastRow < 2) {
+    SpreadsheetApp.getUi().alert('No data in Article Status Tracker.');
+    return;
+  }
+  var astData = astSheet.getRange(2, 3, astLastRow - 1, 2).getValues(); // C and D
+  var titleToDocUrl = {};
+  for (var a = 0; a < astData.length; a++) {
+    var astTitle = (astData[a][0] || '').toString().trim();
+    var astDocUrl = (astData[a][1] || '').toString().trim();
+    if (astTitle && astDocUrl) {
+      titleToDocUrl[astTitle] = astDocUrl;
+    }
+  }
+  Logger.log('AST lookup built: ' + Object.keys(titleToDocUrl).length + ' titles with doc URLs.');
+
+  // Process WET rows
+  var wetLastRow = wetSheet.getLastRow();
+  if (wetLastRow < 2) {
+    SpreadsheetApp.getUi().alert('No data in WP Editing Tracker.');
+    return;
+  }
+  var wetData = wetSheet.getRange(2, 3, wetLastRow - 1, 9).getValues(); // C through K (cols 3-11)
+
+  var filled = 0;
+  var skipped = 0;
+  var noMatch = 0;
+  var errors = 0;
+
+  for (var w = 0; w < wetData.length; w++) {
+    var wetRow = w + 2;
+    var wetTitle = (wetData[w][0] || '').toString().trim();  // Column C (index 0 in our range)
+    var wetK = (wetData[w][8] || '').toString().trim();       // Column K (index 8 in our range)
+
+    // Skip empty rows
+    if (!wetTitle) continue;
+
+    // Skip rows that already have K filled
+    if (wetK) {
+      skipped++;
+      continue;
+    }
+
+    // Find doc URL from AST
+    var docUrl = titleToDocUrl[wetTitle];
+    if (!docUrl) {
+      Logger.log('NO MATCH for WET row ' + wetRow + ': "' + wetTitle + '"');
+      noMatch++;
+      continue;
+    }
+
+    // Extract doc ID and open
+    var docId = extractGoogleDocId(docUrl);
+    if (!docId) {
+      Logger.log('BAD DOC URL for WET row ' + wetRow + ': ' + docUrl);
+      errors++;
+      continue;
+    }
+
+    try {
+      var doc = DocumentApp.openById(docId);
+      var body = doc.getBody();
+      var totalElements = body.getNumChildren();
+
+      var h1Text = '';
+      var firstH2Text = '';
+      var introContent = '';
+      var foundH2 = false;
+
+      for (var i = 0; i < totalElements; i++) {
+        var element = body.getChild(i);
+        if (element.getType() !== DocumentApp.ElementType.PARAGRAPH) continue;
+
+        var paragraph = element.asParagraph();
+        var heading = paragraph.getHeading();
+        var text = paragraph.getText().trim();
+        if (!text) continue;
+
+        // Grab H1
+        if (!h1Text && heading === DocumentApp.ParagraphHeading.HEADING1) {
+          h1Text = text;
+          continue;
+        }
+
+        // Grab first H2
+        if (!foundH2 && heading === DocumentApp.ParagraphHeading.HEADING2) {
+          firstH2Text = text.replace(/^##\s*/, '').trim();
+          foundH2 = true;
+          continue;
+        }
+
+        // After first H2, skip H3 (URL line) and grab first normal paragraph
+        if (foundH2 && !introContent) {
+          if (heading === DocumentApp.ParagraphHeading.HEADING3) continue; // skip URL line
+          if (heading === DocumentApp.ParagraphHeading.HEADING2 ||
+              heading === DocumentApp.ParagraphHeading.HEADING1) break; // hit next section
+          introContent = text;
+          break;
+        }
+      }
+
+      // Build the combined value
+      var parts = [];
+      if (h1Text) parts.push(h1Text);
+      if (firstH2Text) parts.push(firstH2Text);
+      if (introContent) parts.push(introContent);
+
+      if (parts.length > 0) {
+        var value = parts.join(' -- ');
+        wetSheet.getRange(wetRow, 11).setValue(value); // Column K
+        filled++;
+        Logger.log('FILLED WET row ' + wetRow + ': ' + value.substring(0, 80) + '...');
+      } else {
+        Logger.log('EMPTY DOC for WET row ' + wetRow + ': no H1/H2/content found');
+        errors++;
+      }
+
+      // Small delay to avoid quota limits
+      Utilities.sleep(200);
+
+    } catch (error) {
+      Logger.log('ERROR on WET row ' + wetRow + ': ' + error.message);
+      errors++;
+    }
+  }
+
+  var summary = 'Backfill WET Column K Complete!\n\n' +
+    'Filled: ' + filled + '\n' +
+    'Already had data (skipped): ' + skipped + '\n' +
+    'No AST match: ' + noMatch + '\n' +
+    'Errors: ' + errors;
+  Logger.log(summary);
+  SpreadsheetApp.getUi().alert(summary);
+}
+
+/**
  * ONE-TIME CLEANUP: Delete all tag cache entries from Script Properties.
  * Run from Apps Script editor ONCE after deploying the tag caching fix.
  * Removes every property whose key starts with "tag_" or equals "last_tag_refresh_date".
