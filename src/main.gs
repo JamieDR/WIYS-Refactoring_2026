@@ -144,11 +144,11 @@ const CONFIG = {
 
   // ===== ERROR MESSAGES =====
   ERRORS: {
-    ARTICLE_NOT_FOUND: 'Error: Article not found in Status Tracker',
-    INVALID_DOC_URL: 'Error: Invalid Doc URL',
-    ARTICLE_TITLE_NOT_FOUND: 'Error: Article title (H1) not found in document',
-    NO_H2_SECTIONS: 'Error: No H2 sections found',
-    INVALID_URL_FORMAT: 'Invalid Google Doc URL format'
+    ARTICLE_NOT_FOUND: 'Paste failed — this article title was not found on the Article Status Tracker. Check that the title matches exactly.',
+    INVALID_DOC_URL: 'Paste failed — the Google Doc link on the Article Status Tracker is missing or broken. Check column D on the AST for this article.',
+    ARTICLE_TITLE_NOT_FOUND: 'Paste failed — the article title was not found as a heading inside the Google Doc. The title in the Uploader must match the title heading in the doc exactly.',
+    NO_H2_SECTIONS: 'Paste failed — no section headings were found in the Google Doc. The doc needs subheadings to split the article into sections.',
+    INVALID_URL_FORMAT: 'Invalid Google Doc URL — it should look like docs.google.com/document/d/...'
   },
 
   // ===== CONTENT SECTION MARKERS =====
@@ -435,17 +435,19 @@ function validateParsedSections(sections) {
   for (var i = 0; i < sections.length; i++) {
     var section = sections[i];
 
-    // Check 1: H2 heading suspiciously long (content likely merged into heading)
+    // Check 1: Heading is way too long — paragraph text probably got merged into the heading
     if (section.subheading.length > 200) {
-      errors.push('Section ' + (i + 1) + ' heading is ' + section.subheading.length +
-        ' chars — content likely merged into heading. Starts with: "' +
-        section.subheading.substring(0, 80) + '..."');
+      errors.push('Section ' + (i + 1) + ' has a heading that is ' + section.subheading.length +
+        ' characters long. Headings should be short (one line). This usually means paragraph text got ' +
+        'merged into the heading when the doc was created. The doc needs to be recreated or manually fixed. ' +
+        'Heading starts with: "' + section.subheading.substring(0, 80) + '..."');
     }
 
-    // Check 2: Section has no content (back-to-back headings or heading at end of doc)
+    // Check 2: Heading with no paragraph text underneath — two headings back-to-back
     if (section.content.length === 0) {
       errors.push('Section ' + (i + 1) + ' ("' + section.subheading.substring(0, 60) +
-        '") has no content paragraphs — headings may be back-to-back or doc is malformed.');
+        '") has a heading but no paragraph text underneath it. Two headings are right next to each other ' +
+        'with nothing between them. The doc needs to be fixed before pasting.');
     }
   }
 
@@ -955,7 +957,7 @@ function pasteArticleSections(e) {
     // === VALIDATION: Check for structural problems before pasting ===
     var validationErrors = validateParsedSections(sections);
     if (validationErrors.length > 0) {
-      var errorMsg = 'PASTE ERROR: Doc structure issues — paste aborted. ' + validationErrors.join(' | ');
+      var errorMsg = 'Paste stopped — the Google Doc has formatting problems that would cause bad data. ' + validationErrors.join(' | ');
       Logger.log('VALIDATION FAILED: ' + errorMsg);
 
       // Write error to Uploader trigger row
@@ -998,7 +1000,7 @@ function pasteArticleSections(e) {
   } catch (error) {
     Logger.log('Error in pasteArticleSections: ' + error.message);
     Logger.log('Stack trace: ' + error.stack);
-    sheet.getRange(row, CONFIG.COLUMNS.STATUS_MESSAGES).setValue('Error: ' + error.message);
+    sheet.getRange(row, CONFIG.COLUMNS.STATUS_MESSAGES).setValue('Paste failed — something went wrong. Check the Apps Script execution log for details. (' + error.message + ')');
   }
 }
 
