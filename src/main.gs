@@ -2712,7 +2712,7 @@ function uploadToWordPress(e) {
   
   if (articleTags && articleTags.length > 0) {
     Logger.log('Found tags for article: ' + articleTags.join(', '));
-    tagIds = convertTagsToWordPressCached(articleTags, username, applicationPassword);
+    tagIds = convertTagsToWordPressIds(articleTags, username, applicationPassword);
     
     // Find related 2025 articles
     relatedArticles = findRelatedArticles(articleTags, stateCategoryId, username, applicationPassword);
@@ -5669,10 +5669,10 @@ function convertTagsToWordPressIds(tagNames, username, applicationPassword) {
       if (searchResponse.getResponseCode() === CONFIG.HTTP_STATUS.OK) {
         var existingTags = JSON.parse(searchResponse.getContentText());
         
-        // Look for exact match
+        // Look for exact match (decode HTML entities — WP returns &amp; etc.)
         var exactMatch = null;
         for (var j = 0; j < existingTags.length; j++) {
-          if (existingTags[j].name.toLowerCase() === tagName.toLowerCase()) {
+          if (decodeHtmlEntities(existingTags[j].name).toLowerCase() === tagName.toLowerCase()) {
             exactMatch = existingTags[j];
             break;
           }
@@ -9137,168 +9137,6 @@ function getCachedAuthorId(authorName) {
   
   return authorId;
 }
-
-
-function convertTagsToWordPressCached(tagNames, username, applicationPassword) {
-  if (!tagNames || tagNames.length === 0) return [];
-  
-  var cache = PropertiesService.getScriptProperties();
-  var finalTagIds = [];
-  var tagsToCreate = [];
-  
-  Logger.log('🏷️ Processing ' + tagNames.length + ' tags with caching...');
-  
-  // Check cache for each tag first
-  for (var i = 0; i < tagNames.length; i++) {
-    var tagName = tagNames[i].trim();
-    var cacheKey = 'tag_' + tagName.toLowerCase().replace(/[^a-z0-9]/g, '_');
-    
-    var cachedId = cache.getProperty(cacheKey);
-    if (cachedId) {
-      finalTagIds.push(parseInt(cachedId));
-      Logger.log('📋 Using cached tag ID for "' + tagName + '": ' + cachedId);
-    } else {
-      // Not cached, need to create/lookup
-      tagsToCreate.push({
-        name: tagName,
-        cacheKey: cacheKey
-      });
-    }
-  }
-  
-  // Only make API calls for uncached tags
-  if (tagsToCreate.length > 0) {
-    Logger.log('🔍 Need to lookup/create ' + tagsToCreate.length + ' tags');
-    
-    for (var j = 0; j < tagsToCreate.length; j++) {
-      var tagInfo = tagsToCreate[j];
-      var tagId = createOrFindTag(tagInfo.name, username, applicationPassword);
-      
-      if (tagId) {
-        finalTagIds.push(tagId);
-        // Cache it for next time
-        cache.setProperty(tagInfo.cacheKey, tagId.toString());
-        Logger.log('💾 Cached new tag "' + tagInfo.name + '": ' + tagId);
-      }
-      
-      // Small delay between API calls
-      Utilities.sleep(200);
-    }
-  }
-  
-  Logger.log('✅ Final tag processing: ' + finalTagIds.length + ' IDs ready');
-  return finalTagIds;
-}
-
-
-function createOrFindTag(tagName, username, applicationPassword) {
-  var tagsEndpoint = CONFIG.WORDPRESS.BASE_URL + "/wp-json/wp/v2/tags";
-  
-  // First, search for existing tag
-  var searchEndpoint = tagsEndpoint + "?search=" + encodeURIComponent(tagName);
-  var searchOptions = {
-    method: "get",
-    headers: {
-      "Authorization": "Basic " + Utilities.base64Encode(username + ":" + applicationPassword)
-    },
-    muteHttpExceptions: true
-  };
-  
-  try {
-    var searchResponse = UrlFetchApp.fetch(searchEndpoint, searchOptions);
-    if (searchResponse.getResponseCode() === CONFIG.HTTP_STATUS.OK) {
-      var existingTags = JSON.parse(searchResponse.getContentText());
-      
-      // Look for exact match
-      for (var i = 0; i < existingTags.length; i++) {
-        if (existingTags[i].name.toLowerCase() === tagName.toLowerCase()) {
-          Logger.log('🔍 Found existing tag: ' + tagName + ' (ID: ' + existingTags[i].id + ')');
-          return existingTags[i].id;
-        }
-      }
-    }
-    
-    // Tag doesn't exist, create it
-    var createOptions = {
-      method: "post",
-      headers: {
-        "Authorization": "Basic " + Utilities.base64Encode(username + ":" + applicationPassword),
-        "Content-Type": "application/json"
-      },
-      payload: JSON.stringify({
-        name: tagName,
-        slug: tagName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
-      }),
-      muteHttpExceptions: true
-    };
-    
-    var createResponse = UrlFetchApp.fetch(tagsEndpoint, createOptions);
-    if (createResponse.getResponseCode() === CONFIG.HTTP_STATUS.CREATED) {
-      var newTag = JSON.parse(createResponse.getContentText());
-      Logger.log('✨ Created new tag: ' + tagName + ' (ID: ' + newTag.id + ')');
-      return newTag.id;
-    }
-    
-  } catch (error) {
-    Logger.log('❌ Error processing tag "' + tagName + '": ' + error.message);
-  }
-  
-  return null;
-}
-
-
-
-function convertTagsToWordPressCached(tagNames, username, applicationPassword) {
-  if (!tagNames || tagNames.length === 0) return [];
-  
-  // Check if cache needs daily refresh at 7 AM
-  // checkDailyTagCacheRefresh(username, applicationPassword); // TEMPORARILY DISABLED
-  
-  var cache = PropertiesService.getScriptProperties();
-  var finalTagIds = [];
-  var tagsToCreate = [];
-  
-  Logger.log('🏷️ Processing ' + tagNames.length + ' tags with caching...');
-  
-  // Check cache for each tag first
-  for (var i = 0; i < tagNames.length; i++) {
-    var tagName = tagNames[i].trim();
-    var cacheKey = 'tag_' + tagName.toLowerCase().replace(/[^a-z0-9]/g, '_');
-    
-    var cachedId = cache.getProperty(cacheKey);
-    if (cachedId) {
-      finalTagIds.push(parseInt(cachedId));
-      Logger.log('📋 Using cached tag ID for "' + tagName + '": ' + cachedId);
-    } else {
-      tagsToCreate.push({
-        name: tagName,
-        cacheKey: cacheKey
-      });
-    }
-  }
-  
-  // Only make API calls for uncached tags
-  if (tagsToCreate.length > 0) {
-    Logger.log('🔍 Need to lookup/create ' + tagsToCreate.length + ' tags');
-    
-    for (var j = 0; j < tagsToCreate.length; j++) {
-      var tagInfo = tagsToCreate[j];
-      var tagId = createOrFindTag(tagInfo.name, username, applicationPassword);
-      
-      if (tagId) {
-        finalTagIds.push(tagId);
-        cache.setProperty(tagInfo.cacheKey, tagId.toString());
-        Logger.log('💾 Cached new tag "' + tagInfo.name + '": ' + tagId);
-      }
-      
-      Utilities.sleep(200);
-    }
-  }
-  
-  Logger.log('✅ Final tag processing: ' + finalTagIds.length + ' IDs ready');
-  return finalTagIds;
-}
-
 
 
 
@@ -13663,6 +13501,30 @@ function diagnoseDocParsing() {
   ui.alert('Diagnostic Complete',
     'Found ' + sectionCount + ' sections.\n\nCheck View → Execution log for the full dump.',
     ui.ButtonSet.OK);
+}
+
+/**
+ * ONE-TIME CLEANUP: Delete all tag cache entries from Script Properties.
+ * Run from Apps Script editor ONCE after deploying the tag caching fix.
+ * Removes every property whose key starts with "tag_" or equals "last_tag_refresh_date".
+ * Safe — does not touch credentials, locks, or other caches (cat_*, feed_*, author_*).
+ * Delete this function after running it.
+ */
+function purgeTagCacheFromScriptProperties() {
+  var props = PropertiesService.getScriptProperties();
+  var allProps = props.getProperties();
+  var keys = Object.keys(allProps);
+  var deleted = 0;
+
+  for (var i = 0; i < keys.length; i++) {
+    if (keys[i].indexOf('tag_') === 0 || keys[i] === 'last_tag_refresh_date') {
+      props.deleteProperty(keys[i]);
+      deleted++;
+    }
+  }
+
+  Logger.log('Purged ' + deleted + ' tag cache entries from Script Properties (' + (keys.length - deleted) + ' remaining)');
+  SpreadsheetApp.getUi().alert('Tag Cache Purged', 'Deleted ' + deleted + ' tag_ entries.\n' + (keys.length - deleted) + ' properties remaining.', SpreadsheetApp.getUi().ButtonSet.OK);
 }
 
 /**
