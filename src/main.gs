@@ -5653,9 +5653,15 @@ function convertTagsToWordPressIds(tagNames, username, applicationPassword) {
   
   for (var i = 0; i < tagNames.length; i++) {
     var tagName = tagNames[i];
-    
+
+    // Skip hashtag-style tags (e.g. #DesertGardening) — these are not our format
+    if (tagName.charAt(0) === '#') {
+      Logger.log('Skipping hashtag tag: ' + tagName);
+      continue;
+    }
+
     // First, try to find existing tag
-    var searchEndpoint = tagsEndpoint + "?search=" + encodeURIComponent(tagName);
+    var searchEndpoint = tagsEndpoint + "?search=" + encodeURIComponent(tagName) + "&per_page=100";
     var searchOptions = {
       method: "get",
       headers: {
