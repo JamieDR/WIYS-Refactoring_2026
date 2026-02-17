@@ -11743,13 +11743,14 @@ function diagnoseDocParsing() {
 
 /**
  * ONE-TIME: Backfill WET column K with "Title -- Intro Subheading -- Intro Content"
- * pulled from the WordPress posts via WET column D (WP Draft URL).
+ * pulled from WordPress posts via WET column D (WP Draft URL).
  *
- * For each WET row that has a WP URL (column D) and empty K:
- *   1. Extracts the post ID from the WP URL
- *   2. Fetches the post via WordPress REST API
- *   3. Extracts title, first <h2>, and first <p> after that <h2> from the HTML content
- *   4. Writes "Title -- H2 -- intro paragraph" to WET column K
+ * Uses the same slideshow block parsing as fetchIntroBySlugIntro (Article Collection).
+ * For each WET row with a WP URL (column D) and empty K:
+ *   1. Extracts slug from the WP URL
+ *   2. Calls fetchIntroBySlugIntro to get subheading + intro content from raw block HTML
+ *   3. Gets the title from the sheet (column C) to avoid extra API call
+ *   4. Writes "Title -- Subheading -- Intro content" to WET column K
  *
  * Run from Apps Script editor. Check execution log for details.
  * Safe to run multiple times — only fills rows where K is empty.
@@ -11768,6 +11769,9 @@ function backfillWETColumnK() {
     SpreadsheetApp.getUi().alert('No data in WP Editing Tracker.');
     return;
   }
+
+  var username = CONFIG.WORDPRESS.USERNAME;
+  var appPassword = CONFIG.WORDPRESS.APP_PASSWORD;
 
   // Read columns C, D, and K (cols 3, 4, 11) — grab C through K in one read
   var wetData = wetSheet.getRange(2, 3, wetLastRow - 1, 9).getValues(); // C(0) D(1) ... K(8)
@@ -11799,51 +11803,36 @@ function backfillWETColumnK() {
       continue;
     }
 
-    // Extract post ID from WP URL
-    var postId = extractPostIdFromUrl(wpUrl);
-    if (!postId) {
-      Logger.log('COULD NOT EXTRACT POST ID for WET row ' + wetRow + ': ' + wpUrl);
+    // Extract slug from WP URL (same approach as Article Collection)
+    var slug = extractSlugFromUrlIntro(wpUrl);
+    if (!slug) {
+      Logger.log('COULD NOT EXTRACT SLUG for WET row ' + wetRow + ': ' + wpUrl);
       errors++;
       continue;
     }
 
     try {
-      // Fetch post from WordPress API
-      var post = getWordPressPost(postId);
-      if (!post) {
-        Logger.log('WP API RETURNED NULL for WET row ' + wetRow + ' (post ID: ' + postId + ')');
+      var result = fetchIntroBySlugIntro(slug, username, appPassword);
+
+      if (!result.success) {
+        Logger.log('FETCH FAILED for WET row ' + wetRow + ' (slug: ' + slug + '): ' + result.error);
         errors++;
         continue;
       }
 
-      var title = (post.title && post.title.rendered) ? post.title.rendered.replace(/<[^>]+>/g, '').trim() : '';
-      var html = (post.content && post.content.rendered) ? post.content.rendered : '';
-
-      // Extract first <h2> text
-      var h2Match = html.match(/<h2[^>]*>([\s\S]*?)<\/h2>/i);
-      var firstH2 = h2Match ? h2Match[1].replace(/<[^>]+>/g, '').trim() : '';
-
-      // Extract first <p> after that <h2>
-      var introContent = '';
-      if (h2Match) {
-        var afterH2 = html.substring(h2Match.index + h2Match[0].length);
-        var pMatch = afterH2.match(/<p[^>]*>([\s\S]*?)<\/p>/i);
-        introContent = pMatch ? pMatch[1].replace(/<[^>]+>/g, '').trim() : '';
-      }
-
-      // Build the combined value
+      // Build "Title -- Subheading -- Intro content"
       var parts = [];
-      if (title) parts.push(title);
-      if (firstH2) parts.push(firstH2);
-      if (introContent) parts.push(introContent);
+      if (wetTitle) parts.push(wetTitle);
+      if (result.subheading) parts.push(result.subheading);
+      if (result.content) parts.push(result.content);
 
-      if (parts.length > 0) {
+      if (parts.length > 1) { // Need at least title + something
         var value = parts.join(' -- ');
         wetSheet.getRange(wetRow, 11).setValue(value); // Column K
         filled++;
         Logger.log('FILLED WET row ' + wetRow + ': ' + value.substring(0, 80) + (value.length > 80 ? '...' : ''));
       } else {
-        Logger.log('NO CONTENT for WET row ' + wetRow + ' (post ID: ' + postId + ')');
+        Logger.log('NO INTRO CONTENT for WET row ' + wetRow + ' (slug: ' + slug + ')');
         errors++;
       }
 
