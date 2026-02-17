@@ -153,6 +153,16 @@ Once content pipeline is proven and working:
 
 ---
 
+# URGENT — Ahead of Refactoring
+
+## Merge second codebase into WIYS workflow sheet
+**Priority:** High — Jamie flagged as urgent (Feb 17, 2026)
+**What:** Another Apps Script codebase on a separate spreadsheet needs to be merged into the main WIYS workflow sheet.
+**Status:** Not yet scoped — need to understand what the other codebase does, how big it is, and what "merge" means (code only, sheet tabs, or both).
+**Next step:** Jamie to share the other spreadsheet/codebase so we can assess scope and plan the merge.
+
+---
+
 # Backlog (Parked for Later)
 
 ## 17. Tag taxonomy cleanup — synonym/reuse problem
