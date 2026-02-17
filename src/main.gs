@@ -13673,7 +13673,13 @@ function listAllScriptProperties() {
   sheet.getRange(1, 1, 1, 2).setFontWeight('bold');
 
   var data = [];
+  var skippedTagEntries = 0;
   for (var i = 0; i < keys.length; i++) {
+    // Skip tag cache entries — show only real config properties
+    if (keys[i].indexOf('tag_') === 0 || keys[i] === 'last_tag_refresh_date') {
+      skippedTagEntries++;
+      continue;
+    }
     data.push([keys[i], props[keys[i]]]);
   }
 
@@ -13682,7 +13688,7 @@ function listAllScriptProperties() {
   }
 
   sheet.autoResizeColumns(1, 2);
-  Logger.log('Listed ' + keys.length + ' properties in "Script Properties" sheet');
+  Logger.log('Listed ' + data.length + ' config properties (skipped ' + skippedTagEntries + ' stale tag_ cache entries)');
 }
 
 
