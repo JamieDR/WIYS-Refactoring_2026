@@ -62,7 +62,8 @@ const CONFIG = {
     ARTICLE_COLLECTION: 'Article Collection',
     EMAIL_NEWSLETTER: 'Email Newsletter',
     TOPIC_LIST: 'Topic List',
-    ENHANCED_DRAFTER: 'Enhanced Drafter'
+    ENHANCED_DRAFTER: 'Enhanced Drafter',
+    SCRIPT_PROPERTIES: 'Script Properties'
   },
 
   // ===== ENHANCED DRAFTER SETTINGS =====
@@ -13664,9 +13665,9 @@ function listAllScriptProperties() {
   var keys = Object.keys(props).sort();
 
   var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var sheet = ss.getSheetByName('Script Properties');
+  var sheet = ss.getSheetByName(CONFIG.SHEETS.SCRIPT_PROPERTIES);
   if (sheet) ss.deleteSheet(sheet);
-  sheet = ss.insertSheet('Script Properties');
+  sheet = ss.insertSheet(CONFIG.SHEETS.SCRIPT_PROPERTIES);
 
   sheet.getRange(1, 1).setValue('Key');
   sheet.getRange(1, 2).setValue('Value');
