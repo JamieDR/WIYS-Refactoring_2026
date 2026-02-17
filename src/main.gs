@@ -62,7 +62,8 @@ const CONFIG = {
     ARTICLE_COLLECTION: 'Article Collection',
     EMAIL_NEWSLETTER: 'Email Newsletter',
     TOPIC_LIST: 'Topic List',
-    ENHANCED_DRAFTER: 'Enhanced Drafter'
+    ENHANCED_DRAFTER: 'Enhanced Drafter',
+    SCRIPT_PROPERTIES: 'Script Properties'
   },
 
   // ===== ENHANCED DRAFTER SETTINGS =====
@@ -13664,9 +13665,9 @@ function listAllScriptProperties() {
   var keys = Object.keys(props).sort();
 
   var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var sheet = ss.getSheetByName('Script Properties');
+  var sheet = ss.getSheetByName(CONFIG.SHEETS.SCRIPT_PROPERTIES);
   if (sheet) ss.deleteSheet(sheet);
-  sheet = ss.insertSheet('Script Properties');
+  sheet = ss.insertSheet(CONFIG.SHEETS.SCRIPT_PROPERTIES);
 
   sheet.getRange(1, 1).setValue('Key');
   sheet.getRange(1, 2).setValue('Value');
@@ -13691,4 +13692,412 @@ function listAllScriptProperties() {
   Logger.log('Listed ' + data.length + ' config properties (skipped ' + skippedTagEntries + ' stale tag_ cache entries)');
 }
 
+/**
+ * DIAGNOSTIC: Read the Function Inventory sheet and log all marked rows.
+ * Run this, then copy the log output and paste it to Claude.
+ */
+function readFunctionInventory() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName('Function Inventory');
+  if (!sheet) { Logger.log('ERROR: No "Function Inventory" sheet found'); return; }
 
+  var data = sheet.getDataRange().getValues();
+  var output = [];
+
+  // Skip header row (row 0)
+  for (var i = 1; i < data.length; i++) {
+    var name = data[i][0];     // Function Name
+    var line = data[i][1];     // Line
+    var action = data[i][6];   // Action column (G)
+    var notes = data[i][7];    // Jamie Notes (H)
+
+    if (action) {  // Only show rows where Action is filled in
+      output.push(action + ' | ' + name + ' (line ' + line + ')' + (notes ? ' | ' + notes : ''));
+    }
+  }
+
+  if (output.length === 0) {
+    Logger.log('No rows marked yet.');
+  } else {
+    Logger.log('=== MARKED FUNCTIONS (' + output.length + ' total) ===');
+    Logger.log(output.join('\n'));
+  }
+}
+
+/**
+ * DIAGNOSTIC: Create a "Function Inventory" sheet listing every function.
+ * Columns: Function Name | Line | What It Does | Sheets | Called By | Claude Notes | Action (dropdown) | Jamie Notes
+ * Jamie fills in Action + Notes, then we execute the cleanup.
+ */
+function listAllFunctions() {
+  // [name, line, description, sheets, calledBy, claudeNotes]
+  var functions = [
+    // Document parsing / article sections
+    ['findArticleDocUrl', 231, 'Find article Google Doc URL', 'AST', 'pasteArticleSections', 'Active — core doc lookup'],
+    ['extractGoogleDocId', 254, 'Extract Doc ID from URL', 'None', 'pasteArticleSections', 'Active utility'],
+    ['extractSectionsFromDocument', 273, 'Parse H2 sections from Google Doc', 'None', 'pasteArticleSections', 'Active — core parser'],
+    ['validateParsedSections', 433, 'Validate parsed doc sections', 'None', 'pasteArticleSections', 'Active — error catching'],
+    ['findH1TitleIndex', 462, 'Find H1 title position in doc', 'None', 'pasteArticleSections', 'Active utility'],
+    ['extractSlugFromUrlIntro', 490, 'Extract slug from article URL', 'None', 'createNewsletters', 'Active — newsletter only'],
+    ['fetchIntroBySlugIntro', 500, 'Fetch article intro from WP by slug', 'WP API', 'createNewsletters', 'Active — newsletter only'],
+    ['pasteArticleSections', 554, 'Paste doc sections into Uploader rows', 'UPL, AST', 'onColumnLEdit trigger', 'CRITICAL — single article paste'],
+    ['processArticleSections', 665, 'Write parsed sections to sheet rows', 'UPL, AST', 'pasteArticleSections', 'Active — core paste logic'],
+
+    // Newsletter
+    ['createNewsletters', 807, 'Generate newsletters from articles', 'NL, AC', 'Menu item', 'Active — do you still use this?'],
+
+    // Preview / AI
+    ['generatePreview', 1027, 'Generate preview text via Claude AI', 'None', 'createNewsletters', 'Active — Claude API call'],
+
+    // Status tracking / colors
+    ['handleArticleStatusColorChange', 1089, 'Color rows based on article status', 'UPL, AST', 'onColumnLEdit trigger', 'Active — visual feedback'],
+    ['colorReadyForWordPressArticle', 1117, 'Color article row green for WP', 'AST', 'uploadToWordPress', 'Active'],
+    ['resetToOriginalColors', 1146, 'Reset row colors to defaults', 'AST', 'uploadToWordPress', 'Active'],
+    ['sendToArticleStatusTracker', 1196, 'Transfer row from Drafter to AST', 'DR, AST', 'onEdit trigger', 'Active'],
+
+    // Enhanced Drafter transfers
+    ['sendToEditors', 1261, 'Send article from Drafter to AST', 'DR, AST', 'onColumnLEdit trigger', 'Active'],
+    ['createArticleImageFolder', 1315, 'Create Drive folder for images', 'None (Drive)', 'onColumnLEdit trigger', 'Active'],
+    ['setFolderPermissions', 1422, 'Set folder sharing permissions', 'None (Drive)', 'createArticleImageFolder', 'Active utility'],
+
+    // Image metadata extraction
+    ['fetchImageFileNames', 1447, 'Fetch image filenames from folder', 'UPL', 'onColumnLEdit trigger', 'Active'],
+    ['getShutterstockMetaData', 1622, 'Get metadata for images (all sources)', 'UPL', 'onColumnLEdit trigger', 'CRITICAL — routes to all extractors'],
+    ['extractTextBetweenStrings', 1865, 'Extract text between two delimiters', 'None', 'Multiple extractors', 'Active utility'],
+    ['extractDPLAMetadata', 1911, 'Extract DPLA image metadata', 'None', 'getShutterstockMetaData', 'Active'],
+    ['extractUSGSMetadata', 2011, 'Extract USGS image metadata', 'None', 'getShutterstockMetaData', 'Active'],
+    ['extractLOCMetadata', 2050, 'Extract Library of Congress metadata', 'None', 'getShutterstockMetaData', 'Active'],
+    ['extractNYPLMetadata', 2131, 'Extract NYPL image metadata', 'None', 'getShutterstockMetaData', 'Active'],
+    ['extractStockPhotoIDFromURL', 2176, 'Extract Shutterstock ID from URL', 'None', 'getShutterstockMetaData', 'Active utility'],
+    ['extractPhotoDescription (line 2184)', 2184, 'Extract photo description from HTML', 'None', 'getShutterstockMetaData', 'DUPLICATE of line 2476 — safe to delete one'],
+    ['extractPhotoContributor (line 2194)', 2194, 'Extract photo contributor from HTML', 'None', 'getShutterstockMetaData', 'DUPLICATE of line 2488 — safe to delete one'],
+    ['extractFlickrMetadata', 2204, 'Extract Flickr image metadata', 'None', 'getShutterstockMetaData', 'Active'],
+    ['extractWikiMetadata', 2251, 'Extract Wikimedia metadata (HTML scrape)', 'None', 'getShutterstockMetaData', 'OLD VERSION — replaced by extractWikiMetadataAPI'],
+    ['decodeHtmlEntities', 2369, 'Decode HTML entities in text', 'None', 'Multiple functions', 'Active utility — used everywhere'],
+    ['extractLicenseFromHiddenCategories', 2395, 'Extract license from wiki categories', 'None', 'extractWikiMetadata', 'Active — wiki license detection'],
+    ['extractNpsPhotoMetadata', 2433, 'Extract NPS photo metadata', 'None', 'getShutterstockMetaData', 'Active'],
+    ['extractPhotoDescription (line 2476)', 2476, 'Extract photo description from HTML', 'None', 'getShutterstockMetaData', 'DUPLICATE of line 2184 — safe to delete one'],
+    ['extractPhotoContributor (line 2488)', 2488, 'Extract photo contributor from HTML', 'None', 'getShutterstockMetaData', 'DUPLICATE of line 2194 — safe to delete one'],
+    ['extractStockPhotoID', 2497, 'Extract stock photo ID from HTML', 'None', 'getShutterstockMetaData', 'Active'],
+
+    // WordPress upload core
+    ['getAuthorIdByUsername', 2506, 'Look up WP author ID by name', 'WP API', 'uploadToWordPress', 'Active utility'],
+    ['acquireArticleLock', 2546, 'Lock article to prevent double-upload', 'None (Props)', 'uploadToWordPress', 'Active — safety mechanism'],
+    ['releaseArticleLock', 2586, 'Release article upload lock', 'None (Props)', 'uploadToWordPress', 'Active'],
+    ['uploadToWordPress', 2604, 'Upload single article to WordPress', 'UPL, WP API', 'onColumnLEdit trigger', 'CRITICAL — main upload function'],
+    ['getUploadQueue', 2881, 'Read upload queue from properties', 'None (Props)', 'processUploadQueue', 'Active utility'],
+    ['saveUploadQueue', 2898, 'Save upload queue to properties', 'None (Props)', 'addToUploadQueue', 'Active utility'],
+    ['addToUploadQueue', 2909, 'Add article to upload queue', 'None (Props)', 'enqueueWordPressUpload', 'Active'],
+    ['removeFromQueue', 2950, 'Remove article from upload queue', 'None (Props)', 'processUploadQueue', 'Active'],
+    ['updateQueuePositions', 2980, 'Update queue numbers in sheet', 'UPL', 'processUploadQueue', 'Active'],
+
+    // Upload queue processing
+    ['processUploadQueue', 3006, 'Process queued uploads one by one', 'UPL, WP API', 'Scheduled trigger', 'CRITICAL — queue processor'],
+    ['enqueueWordPressUpload', 3070, 'Queue article for WP upload', 'UPL', 'onColumnLEdit trigger', 'Active'],
+    ['getRandomAuthor', 3101, 'Pick random WP author for article', 'WP API', 'uploadToWordPress', 'Active'],
+
+    // Slideshow / content building
+    ['getSlidesFromUploader', 3124, 'Read slide data from Uploader rows', 'UPL', 'uploadToWordPress', 'Active utility'],
+    ['uploadImagesToWordPress', 3176, 'Upload images to WP media library', 'WP API', 'uploadToWordPress', 'CRITICAL — image upload'],
+    ['getCategoryIdByName', 3382, 'Look up WP category ID by state name', 'WP API', 'uploadToWordPress', 'Active — consider using getCachedCategoryId instead'],
+    ['getFeedTypeIdByName', 3430, 'Look up WP feed type ID by name', 'WP API', 'uploadToWordPress', 'Active — consider using getCachedFeedTypeId instead'],
+    ['parseReferences', 3483, 'Parse reference links from article text', 'None', 'uploadToWordPress', 'Active'],
+    ['applyReferencesToContent', 3522, 'Insert reference links into content', 'None', 'createSlideshowContent', 'Active'],
+    ['createSlideshowContent', 3542, 'Build slideshow HTML for WordPress', 'None', 'uploadToWordPress', 'CRITICAL — builds WP content'],
+    ['queryRelatedArticles (line 3668)', 3668, 'Query WP for related articles', 'WP API', 'findRelatedArticles', 'DUPLICATE of line 3819 — safe to delete one'],
+    ['findRelatedArticles', 3714, 'Find related articles by tags/category', 'WP API', 'uploadToWordPress', 'Active — Read More feature'],
+    ['getRandomArticles2025', 3774, 'Get random 2025+ articles as fallback', 'WP API', 'createSlideshowContent', 'Active — fallback for Read More'],
+    ['queryRelatedArticles (line 3819)', 3819, 'Query WP for related articles', 'WP API', 'findRelatedArticles', 'DUPLICATE of line 3668 — safe to delete one'],
+    ['scoreAndSortArticles', 3862, 'Score articles by tag relevance', 'None', 'findRelatedArticles', 'Active'],
+    ['formatContentWithLineBreaks', 3926, 'Format content with HTML line breaks', 'None', 'createSlideshowContent', 'Active utility'],
+
+    // Utilities
+    ['escapeQuotes', 4094, 'Escape quotes for JSON', 'None', 'uploadToWordPress', 'Active utility'],
+    ['cleanForDisplay', 4106, 'Clean HTML entities for display', 'None', 'Multiple functions', 'Active utility'],
+    ['correctPunctuationWithClaude', 4139, 'Fix punctuation via Claude AI', 'None', 'uploadToWordPress', 'Active — Claude API call'],
+
+    // Error handling / misc
+    ['notifyOnError', 4226, 'Send error notification to user', 'None', 'Multiple handlers', 'Active utility'],
+    ['createDatePicker', 4261, 'Show date picker dialog', 'None', 'scheduleWordPressPost', 'Active — scheduling UI'],
+    ['downloadShutterstockImage', 4282, 'Download image from Shutterstock', 'UPL', 'onColumnLEdit trigger', 'Active'],
+    ['extractPostIdFromUrl (line 4397)', 4397, 'Extract WP post ID from URL', 'None', 'onWPTrackerEdit', 'DUPLICATE of line 5045 — safe to delete one'],
+
+    // WP Editing Tracker
+    ['getWordPressPostStatus', 4424, 'Get post status from WP API', 'WP API', 'onWPTrackerEdit', 'Active'],
+    ['formatLADateTime', 4518, 'Format date in LA timezone', 'None', 'onWPTrackerEdit', 'Active utility'],
+    ['formatExistingUploaderRows', 4581, 'Format existing Uploader rows', 'UPL', 'One-time setup script', 'ONE-TIME — safe to delete'],
+    ['onWPTrackerEdit', 4619, 'Handle WP Editing Tracker edits', 'WET', 'onEdit trigger', 'CRITICAL — WET automation'],
+    ['transferToProductionTracker', 4641, 'Move row from WET to Production', 'WET, PT', 'onWPTrackerEdit', 'Active'],
+    ['handleProductionTrackerColumnE', 4690, 'Handle Production Tracker col E', 'PT', 'onProductionTrackerEdit', 'Active'],
+    ['scheduleWordPressPost', 4711, 'Schedule WP post for publish date', 'PT, WP API', 'onProductionTrackerEdit', 'Active'],
+    ['setWordPressSchedule', 4783, 'Set WP post schedule via API', 'WP API', 'scheduleWordPressPost', 'Active'],
+    ['checkWordPressStatus', 4853, 'Check if WP post is published', 'PT, WP API', 'onProductionTrackerEdit', 'Active'],
+    ['updateDateTimeColumns', 4928, 'Update date/time display columns', 'PT, WET', 'checkWordPressStatus', 'Active utility'],
+    ['cleanHtmlEntities', 4958, 'Clean HTML entities from text', 'None', 'Multiple functions', 'Active utility — similar to decodeHtmlEntities, could merge'],
+    ['getWordPressPost', 4986, 'Fetch WP post data from API', 'WP API', 'Multiple functions', 'Active utility'],
+    ['updateWordPressPost', 5011, 'Update WP post via API', 'WP API', 'setWordPressSchedule', 'Active utility'],
+    ['extractPostIdFromUrl (line 5045)', 5045, 'Extract WP post ID from URL', 'None', 'checkScheduledPostsStatus', 'DUPLICATE of line 4397 — safe to delete one'],
+    ['checkScheduledPostsStatus', 5064, 'Check all scheduled posts status', 'WET', 'Scheduled trigger', 'Active'],
+
+    // Production tracker
+    ['onProductionTrackerEdit', 5155, 'Handle Production Tracker edits', 'PT', 'onEdit trigger', 'CRITICAL — PT automation'],
+    ['monitorProductionTracker', 5168, 'Monitor PT for status changes', 'PT, WP API', 'Scheduled trigger', 'Active'],
+    ['runProductionTrackerNow', 5249, 'Manually trigger PT monitor', 'PT', 'Menu item', 'Active — convenience wrapper'],
+    ['manualCheckProductionTracker', 5253, 'Manual check from PT button', 'PT', 'onProductionTrackerEdit', 'Active'],
+    ['formatPhoenixDateTime', 5342, 'Format date in Phoenix timezone', 'None', 'monitorProductionTracker', 'Active — similar to formatLADateTime, could merge'],
+    ['recordAllReady', 5476, 'Record all articles as ready', 'PT, WP API', 'Menu item', 'Active'],
+
+    // Tags
+    ['lookupArticleInStatusTracker', 5620, 'Look up article tags in AST', 'AST', 'uploadToWordPress', 'Active — tag lookup'],
+    ['convertTagsToWordPressIds', 5651, 'Convert tag names to WP tag IDs', 'WP API', 'uploadToWordPress', 'Active — now has hashtag filter'],
+
+    // Batch workspace — Paste Article Sections (old style)
+    ['batchPasteArticleSections', 5744, 'Batch paste sections (old)', 'UPL, AST', 'Menu item', 'OLD — replaced by batchPasteContent? Check if still in menu'],
+    ['processWorkspaceLoop', 5756, 'Workspace loop for batch ops (old)', 'UPL, AST', 'batchPasteArticleSections', 'OLD — used by old batch paste'],
+    ['selectSingleWorkspace', 5826, 'Select workspace dialog (old)', 'UPL', 'processWorkspaceLoop', 'OLD — used by old batch paste'],
+    ['findWorkspaceBoundaries', 5888, 'Find workspace start/end rows', 'UPL', 'Multiple batch functions', 'Active — SLOW (row-by-row scan), optimize later'],
+    ['showSingleWorkspacePlan', 5971, 'Show batch plan dialog (old)', 'None', 'processWorkspaceLoop', 'OLD — used by old batch paste'],
+    ['processSingleWorkspace', 6008, 'Process one workspace (old)', 'UPL, AST', 'processWorkspaceLoop', 'OLD — used by old batch paste'],
+    ['processArticlesInWorkspace', 6044, 'Process articles in workspace (old)', 'UPL, AST', 'processSingleWorkspace', 'OLD — used by old batch paste'],
+    ['showResultsAndAskNext', 6110, 'Show results dialog (old)', 'None', 'processArticlesInWorkspace', 'OLD — used by old batch paste'],
+    ['askForNextWorkspace', 6143, 'Ask for next workspace (old)', 'None', 'showResultsAndAskNext', 'OLD — used by old batch paste'],
+
+    // Batch WordPress Upload
+    ['batchUploadToWordPress', 6165, 'Batch upload articles to WordPress', 'UPL, WP API', 'Menu item', 'Active'],
+    ['processWordPressUploadWorkspaceLoop', 6177, 'WP upload workspace loop', 'UPL, WP API', 'batchUploadToWordPress', 'Active'],
+    ['selectSingleWorkspaceForWordPress', 6247, 'Select workspace for WP upload', 'UPL', 'processWordPressUploadWorkspaceLoop', 'Active'],
+    ['getArticlesForWordPressUpload', 6309, 'Get articles ready for WP upload', 'UPL', 'processWordPressUploadWorkspaceLoop', 'Active'],
+    ['showSingleWorkspaceWordPressPlan', 6362, 'Show WP upload plan dialog', 'None', 'processWordPressUploadWorkspaceLoop', 'Active'],
+    ['processSingleWorkspaceWordPress', 6413, 'Process one workspace WP upload', 'UPL, WP API', 'processWordPressUploadWorkspaceLoop', 'Active'],
+    ['processWordPressArticlesInWorkspace', 6453, 'Upload articles to WP in workspace', 'UPL, WP API', 'processSingleWorkspaceWordPress', 'Active'],
+    ['showWordPressResultsAndAskNext', 6549, 'Show WP upload results dialog', 'None', 'processWordPressArticlesInWorkspace', 'Active'],
+    ['askForNextWordPressWorkspace', 6596, 'Ask for next WP workspace', 'None', 'showWordPressResultsAndAskNext', 'Active'],
+
+    // Lock system (old versions)
+    ['lockUploaderSheet (line 6610)', 6610, 'Lock Uploader sheet (old)', 'UPL', 'Old batch functions', 'DUPLICATE — old version, safe to delete'],
+    ['unlockUploaderSheet (line 6626)', 6626, 'Unlock Uploader sheet (old)', 'UPL', 'Old batch functions', 'DUPLICATE — old version, safe to delete'],
+    ['forceUnlockUploaderSheet (line 6640)', 6640, 'Force unlock Uploader (old)', 'UPL', 'Menu item', 'DUPLICATE — old version, safe to delete'],
+
+    // Batch URL validation
+    ['batchCountAndValidateURLs', 6684, 'Batch validate URL counts in docs', 'AST', 'Menu item', 'Active'],
+    ['batchReplaceValidatedURLs', 6775, 'Batch replace URLs in docs', 'AST', 'Menu item', 'Active'],
+    ['countURLsAndSections', 6849, 'Count URLs and sections in doc', 'None', 'batchCountAndValidateURLs', 'Active utility'],
+    ['replaceURLsInDoc', 6887, 'Replace URLs in Google Doc', 'None', 'batchReplaceValidatedURLs', 'Active utility'],
+    ['extractDocIdFromUrl', 6943, 'Extract Doc ID from URL', 'None', 'batchCountAndValidateURLs', 'Active — similar to extractGoogleDocId, could merge'],
+
+    // Lock system (current)
+    ['lockUploaderSheet (line 6953)', 6953, 'Lock Uploader sheet for batch', 'UPL', 'Multiple batch functions', 'Active — current version'],
+    ['unlockUploaderSheet (line 6966)', 6966, 'Unlock Uploader sheet', 'UPL', 'Multiple batch functions', 'Active — current version'],
+    ['isUploaderSheetLocked', 6977, 'Check if Uploader is locked', 'None (Props)', 'checkUploaderLock', 'Active'],
+    ['updateLockStatusInSheet', 6995, 'Update lock status display', 'UPL', 'lockUploaderSheet', 'Active utility'],
+    ['checkUploaderLock', 7028, 'Check lock and alert user', 'UPL', 'Multiple batch functions', 'Active'],
+    ['forceUnlockUploaderSheet (line 7064)', 7064, 'Force unlock Uploader (v2)', 'UPL', 'Menu item', 'DUPLICATE — 3 versions exist, keep only one'],
+    ['forceUnlockUploaderSheet (line 7095)', 7095, 'Force unlock Uploader (v3)', 'UPL', 'Menu item', 'DUPLICATE — 3 versions exist, safe to delete'],
+
+    // Workspace structure
+    ['getWorkspaceStructure', 7103, 'Get all workspace structure', 'UPL', 'Multiple batch functions', 'Active — shared workspace scanner'],
+    ['getArticlesInWorkspace', 7151, 'Get articles in workspace', 'UPL, AST', 'processWorkspaceLoop', 'Active'],
+
+    // Batch schedule
+    ['batchSchedulePosts', 7243, 'Batch schedule posts for publish', 'WET, WP API', 'Menu item', 'Active'],
+
+    // WP post publish
+    ['publishWordPressPostWithDate', 7422, 'Publish WP post with specific date', 'WP API', 'batchSchedulePosts', 'Active'],
+
+    // Title management
+    ['updateTitle', 7454, 'Update article title in WET', 'WET, UPL', 'onEdit trigger', 'Active'],
+    ['batchUpdateTitles', 7501, 'Batch update titles to WordPress', 'WET, WP API', 'Menu item', 'Active'],
+    ['batchPullWordPressTitles', 7595, 'Batch pull final titles from WP', 'WET, WP API', 'Menu item', 'Active'],
+
+    // Batch metadata
+    ['batchGetImageMetadata', 7742, 'Batch extract image metadata', 'UPL', 'Menu item', 'Active'],
+    ['processImageMetadataWorkspaceLoop', 7754, 'Metadata workspace loop', 'UPL', 'batchGetImageMetadata', 'Active'],
+    ['selectSingleWorkspaceForMetadata', 7824, 'Select workspace for metadata', 'UPL', 'processImageMetadataWorkspaceLoop', 'Active'],
+    ['getArticlesForMetadataIndividual', 7886, 'Get articles for metadata', 'UPL', 'processImageMetadataWorkspaceLoop', 'Active'],
+    ['showSingleWorkspaceMetadataPlan', 7927, 'Show metadata plan dialog', 'None', 'processImageMetadataWorkspaceLoop', 'Active'],
+    ['processSingleWorkspaceMetadata', 7972, 'Process one workspace metadata', 'UPL', 'processImageMetadataWorkspaceLoop', 'Active'],
+    ['processMetadataArticlesInWorkspace', 8012, 'Extract metadata for articles', 'UPL', 'processSingleWorkspaceMetadata', 'Active'],
+    ['showMetadataResultsAndAskNext', 8114, 'Show metadata results dialog', 'None', 'processMetadataArticlesInWorkspace', 'Active'],
+    ['askForNextMetadataWorkspace', 8149, 'Ask for next metadata workspace', 'None', 'showMetadataResultsAndAskNext', 'Active'],
+    ['extractMetadataForRow', 8166, 'Extract metadata for single row', 'None', 'processMetadataArticlesInWorkspace', 'Active — routes to all extractors'],
+    ['showMetadataResults', 8477, 'Display metadata results summary', 'None', 'processMetadataArticlesInWorkspace', 'Active'],
+
+    // Uploader transfer (old single-article version)
+    ['processUploaderTransfer (line 8516)', 8516, 'Transfer single article (old)', 'UPL, AST', 'onStatusEdit trigger', 'DUPLICATE of line 10017 — check which is active'],
+
+    // Delete successful uploads (old style)
+    ['batchDeleteSuccessfulUploads', 8549, 'Batch delete uploaded articles (old)', 'UPL, AST', 'Menu item', 'OLD — replaced by batchDeleteUploaded? Check menu'],
+    ['selectWorkspaceForDeletion', 8621, 'Select workspace for deletion (old)', 'UPL', 'batchDeleteSuccessfulUploads', 'OLD — part of old delete system'],
+    ['findWorkspaceByName', 8677, 'Find workspace by person name', 'None', 'selectWorkspaceForDeletion', 'Active utility'],
+    ['showLightningDeletionPlan', 8686, 'Show deletion plan dialog (old)', 'None', 'batchDeleteSuccessfulUploads', 'OLD — part of old delete system'],
+    ['executeLightningFastDeletion', 8736, 'Execute fast deletion (old)', 'UPL, AST', 'batchDeleteSuccessfulUploads', 'OLD — part of old delete system'],
+    ['showLightningResults', 8797, 'Show deletion results (old)', 'None', 'executeLightningFastDeletion', 'OLD — part of old delete system'],
+
+    // Batch transfer
+    ['batchTransferToAleksReview', 8840, 'Transfer WP drafts for review', 'WP API, WET', 'Menu item', 'Active'],
+    ['stopAllBatchOperations', 9005, 'Emergency stop all batches', 'None', 'Menu item', 'Active — safety function'],
+    ['findArticleInStatusTracker', 9012, 'Find article row in AST', 'AST', 'Multiple functions', 'Active utility'],
+    ['formatWordPressDateTime', 9035, 'Format WP date/time string', 'None', 'Multiple functions', 'Active utility'],
+    ['getCachedCategoryId', 9068, 'Get cached WP category ID', 'None (Props)', 'uploadToWordPress', 'Active — caches API calls'],
+    ['getCachedFeedTypeId', 9095, 'Get cached WP feed type ID', 'None (Props)', 'uploadToWordPress', 'Active'],
+    ['getCachedAuthorId', 9122, 'Get cached WP author ID', 'None (Props)', 'uploadToWordPress', 'Active'],
+    ['deleteSlides', 9158, 'Delete slides for article', 'UPL', 'onColumnLEdit trigger', 'Active'],
+
+    // Batch uploader transfer (new fast version)
+    ['batchProcessUploaderTransfers', 9195, 'Batch transfer articles to Uploader', 'UPL, AST', 'Menu item', 'Active'],
+    ['processUploaderTransferWorkspaceLoop', 9207, 'Transfer workspace loop', 'UPL, AST', 'batchProcessUploaderTransfers', 'Active'],
+    ['selectSingleWorkspaceForUploaderTransfer', 9266, 'Select workspace for transfer', 'UPL', 'processUploaderTransferWorkspaceLoop', 'Active'],
+    ['getArticlesForUploaderTransfer', 9322, 'Get articles ready for transfer', 'AST', 'processUploaderTransferWorkspaceLoop', 'Active'],
+    ['showSingleWorkspaceUploaderTransferPlan', 9364, 'Show transfer plan dialog', 'None', 'processUploaderTransferWorkspaceLoop', 'Active'],
+    ['processSingleWorkspaceUploaderTransfer', 9402, 'Process one workspace transfer', 'UPL, AST', 'processUploaderTransferWorkspaceLoop', 'Active'],
+    ['processWorkspaceLightningFast', 9444, 'Ultra-fast workspace transfer', 'UPL, AST', 'processSingleWorkspaceUploaderTransfer', 'Active — optimized bulk ops'],
+    ['getExistingTitlesLightning', 9553, 'Get existing titles fast', 'UPL', 'processWorkspaceLightningFast', 'Active utility'],
+    ['createTitleHashMap', 9584, 'Create hash map of titles', 'None', 'processWorkspaceLightningFast', 'Active utility'],
+    ['calculateAllInsertPositions', 9594, 'Calculate row insert positions', 'UPL', 'processWorkspaceLightningFast', 'Active utility'],
+    ['batchInsertAllRows', 9623, 'Batch insert rows at once', 'UPL', 'processWorkspaceLightningFast', 'Active utility'],
+    ['batchCreateAllFolders', 9628, 'Batch create image folders', 'None (Drive)', 'processWorkspaceLightningFast', 'Active utility'],
+    ['batchFormatAllEntries', 9662, 'Batch format all entries', 'UPL', 'processWorkspaceLightningFast', 'Active utility'],
+    ['batchWriteAllStatusUpdates', 9747, 'Batch write status updates', 'AST', 'processWorkspaceLightningFast', 'Active utility'],
+    ['showUploaderTransferResults', 9758, 'Show transfer results dialog', 'None', 'processSingleWorkspaceUploaderTransfer', 'Active'],
+
+    // Single article transfer helpers (old — may be superseded by batch)
+    ['processNewArticleComplete', 9788, 'Mark article complete in AST', 'AST', 'processSingleWorkspaceUploaderTransfer', 'Check if still called by new batch'],
+    ['checkDuplicateTitle', 9831, 'Check for duplicate title', 'UPL', 'processWorkspaceLightningFast', 'Active — dedup check'],
+    ['createUploaderEntry', 9866, 'Create new Uploader entry', 'UPL', 'processWorkspaceLightningFast', 'Check if still used by new batch'],
+    ['createArticleFolderComplete', 9939, 'Create image folder for article', 'None (Drive)', 'processWorkspaceLightningFast', 'Check if redundant with batchCreateAllFolders'],
+    ['findPersonEndRow', 9959, 'Find person end row (slow)', 'UPL', 'findWorkspaceBoundaries', 'OLD — replaced by findPersonEndRowFast'],
+    ['findPersonRow', 9989, 'Find person start row (slow)', 'UPL', 'findWorkspaceBoundaries', 'OLD — replaced by findPersonRowFast'],
+    ['processUploaderTransfer (line 10017)', 10017, 'Transfer single article (old)', 'UPL, AST', 'onStatusEdit trigger', 'DUPLICATE of line 8516 — check which is active'],
+
+    // Article Collection
+    ['fetchArticlesForDateRange', 10058, 'Fetch WP articles for date range', 'WP API', 'updateArticleCollection', 'Active'],
+    ['recommendCategories', 10204, 'Recommend categories for articles', 'None', 'updateArticleCollection', 'Active'],
+    ['updateArticleCollection', 10263, 'Update Article Collection sheet', 'AC, WP API', 'Menu item', 'Active'],
+    ['sortArticleCollection', 10479, 'Sort Article Collection by status', 'AC', 'Menu item', 'Active'],
+
+    // Menu / onOpen
+    ['onOpen', 10561, 'Create menus on spreadsheet open', 'All', 'Trigger: onOpen', 'CRITICAL — all menus defined here'],
+    ['lockSheet', 10614, 'Lock AST sheet', 'AST', 'Menu item', 'Active'],
+    ['openSheet', 10621, 'Unlock AST sheet', 'AST', 'Menu item', 'Active'],
+
+    // Topic List
+    ['onColumnLEdit', 10628, 'Handle Uploader column L edits', 'UPL', 'onEdit trigger', 'CRITICAL — routes Uploader actions'],
+    ['splitter', 10664, 'Split topic/URL input into columns', 'TL', 'Menu item', 'Active'],
+    ['onTopicListEdit', 10735, 'Handle Topic List edits', 'TL', 'Installable trigger', 'Active'],
+
+    // Enhanced Drafter
+    ['transferToEnhancedDrafter', 10829, 'Transfer topics to Enhanced Drafter', 'TL, ED', 'Menu item', 'Active'],
+    ['batchCreateGDocs', 10934, 'Batch create Google Docs from outlines', 'ED', 'Menu item', 'Active'],
+    ['transferDraftsToArticleTracker', 11009, 'Transfer drafts to AST', 'ED, AST', 'Menu item', 'Active'],
+    ['extractTopicSummary', 11117, 'Extract topic summary from input', 'None', 'createGDocFromRawInput', 'Active utility'],
+    ['deleteDoneRows', 11164, 'Delete rows marked Done', 'ED', 'Menu item', 'Active — needs fix for col A (TODO #5)'],
+    ['onEnhancedDrafterEdit', 11280, 'Handle Enhanced Drafter edits', 'ED', 'Installable trigger', 'Active'],
+    ['createGDocFromRawInput', 11293, 'Create Google Doc from raw input', 'ED', 'batchCreateGDocs', 'Active'],
+    ['parseEnhancedDrafterInput', 11340, 'Parse raw input into sections', 'None', 'createGDocFromRawInput', 'Active'],
+    ['isH1Line', 11423, 'Check if line is H1 heading', 'None', 'parseEnhancedDrafterInput', 'Active utility'],
+    ['isH2Line', 11431, 'Check if line is H2 heading', 'None', 'parseEnhancedDrafterInput', 'Active utility'],
+    ['cleanHeadingMarkers', 11439, 'Remove heading markers from text', 'None', 'createFormattedGDoc', 'Active utility'],
+    ['createFormattedGDoc', 11454, 'Create formatted Google Doc', 'None (Docs)', 'createGDocFromRawInput', 'Active'],
+
+    // Core
+    ['onEdit', 11537, 'Main onEdit trigger — routes all edits', 'All', 'Trigger: onEdit', 'CRITICAL — do not touch'],
+
+    // Status / Wiki
+    ['onStatusEdit', 11627, 'Handle AST status edits', 'AST', 'onEdit trigger', 'Active'],
+    ['extractWikiMetadataAPI', 11646, 'Extract Wiki metadata via API', 'None', 'getShutterstockMetaData', 'Active — newer API-based version'],
+    ['extractWikiMetadataImproved', 11728, 'Extract Wiki metadata via regex', 'None', 'getShutterstockMetaData', 'Active — regex fallback for API'],
+
+    // Batch infrastructure
+    ['selectWorkspaces', 11907, 'Multi-select workspaces dialog', 'UPL', 'New batch functions', 'Active — shared batch UI'],
+    ['saveBatchState', 11954, 'Save batch state for continuation', 'None (Props)', 'Batch functions', 'Active utility'],
+    ['loadBatchState', 11972, 'Load batch state after timeout', 'None (Props)', 'Batch continue functions', 'Active utility'],
+    ['clearBatchState', 11996, 'Clear saved batch state', 'None (Props)', 'Batch finish functions', 'Active utility'],
+    ['scheduleBatchContinuation', 12013, 'Schedule batch continue trigger', 'None', 'Batch functions', 'Active utility'],
+    ['cleanupBatchTrigger', 12028, 'Clean up batch trigger', 'None', 'Batch finish functions', 'Active utility'],
+    ['hasTimeRemaining', 12041, 'Check execution time remaining', 'None', 'Batch loop functions', 'Active utility'],
+    ['retryWithBackoff', 12050, 'Retry with exponential backoff', 'None', 'API call functions', 'Active utility'],
+    ['buildRowCreatedLookup', 12074, 'Build lookup of created rows', 'AST', 'batchCreateNewRows', 'Active utility'],
+    ['refreshUploaderLock', 12090, 'Refresh Uploader lock timer', 'UPL', 'Batch functions', 'Active utility'],
+    ['getExistingWorkspaceTitles', 12107, 'Get existing workspace titles', 'UPL', 'batchCreateNewRows', 'Active utility'],
+    ['findPersonRowFast', 12151, 'Find person row (fast, cached)', 'None', 'Batch functions', 'Active — fast version of findPersonRow'],
+    ['findPersonEndRowFast', 12164, 'Find person end row (fast, cached)', 'None', 'Batch functions', 'Active — fast version of findPersonEndRow'],
+
+    // Prep for Upload (new batch ops)
+    ['batchCreateNewRows', 12196, 'Batch create new rows in Uploader', 'UPL, AST', 'Menu item', 'Active — new Prep for Upload'],
+    ['processCreateNewRowsChunk', 12286, 'Process chunk of row creation', 'UPL, AST', 'batchCreateNewRows', 'Active'],
+    ['continueBatchCreateNewRows', 12652, 'Continue row creation after timeout', 'UPL, AST', 'Scheduled trigger', 'Active'],
+    ['finishBatchCreateNewRows', 12682, 'Finish row creation batch', 'UPL, AST', 'continueBatchCreateNewRows', 'Active'],
+    ['scanASTForPasteArticles', 12734, 'Scan AST for articles to paste', 'AST', 'batchPasteContent', 'Active'],
+    ['findArticleRowInUploader', 12779, 'Find article row in Uploader', 'UPL', 'batchPasteContent', 'Active utility'],
+    ['batchPasteContent', 12794, 'Batch paste article content', 'UPL, AST', 'Menu item', 'Active — new Prep for Upload'],
+    ['processPasteContentChunk', 12865, 'Process chunk of paste op', 'UPL, AST', 'batchPasteContent', 'Active'],
+    ['continueBatchPasteContent', 12957, 'Continue paste after timeout', 'UPL, AST', 'Scheduled trigger', 'Active'],
+    ['finishBatchPasteContent', 12981, 'Finish paste batch', 'UPL, AST', 'continueBatchPasteContent', 'Active'],
+    ['bulkScanForDeleteTargets', 13034, 'Scan for articles to delete', 'UPL, AST', 'batchDeleteUploaded', 'Active'],
+    ['batchDeleteUploaded', 13147, 'Batch delete uploaded articles', 'UPL, AST', 'Menu item', 'Active — new Prep for Upload'],
+    ['processDeleteUploadedChunk', 13222, 'Process chunk of deletion', 'UPL, AST', 'batchDeleteUploaded', 'Active'],
+    ['continueBatchDeleteUploaded', 13295, 'Continue deletion after timeout', 'UPL, AST', 'Scheduled trigger', 'Active'],
+    ['finishBatchDeleteUploaded', 13319, 'Finish deletion batch', 'UPL, AST', 'continueBatchDeleteUploaded', 'Active'],
+
+    // Diagnostics / one-time
+    ['diagnoseDocParsing', 13360, 'Diagnostic: test doc parsing', 'AST', 'Script editor', 'Active diagnostic — keep for debugging'],
+    ['purgeTagCacheFromScriptProperties', 13520, 'Purge stale tag cache entries', 'None (Props)', 'Script editor', 'ONE-TIME — delete after purge confirmed'],
+    ['addClaudeApiKey', 13540, 'Add Claude API key to properties', 'None (Props)', 'Script editor', 'ONE-TIME — already used, safe to delete'],
+    ['diagnoseDuplicateTags', 13561, 'Diagnostic: find duplicate WP tags', 'WP API', 'Script editor', 'Active diagnostic — keep for monitoring'],
+    ['listAllScriptProperties', 13663, 'Diagnostic: dump Script Properties', 'None (Props)', 'Script editor', 'Active diagnostic — keep'],
+    ['listAllFunctions', 0, 'Diagnostic: create this inventory sheet', 'None', 'Script editor', 'Active diagnostic — keep']
+  ];
+
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheetName = 'Function Inventory';
+  var sheet = ss.getSheetByName(sheetName);
+  if (sheet) ss.deleteSheet(sheet);
+  sheet = ss.insertSheet(sheetName);
+
+  // Headers
+  var headers = ['Function Name', 'Line', 'What It Does', 'Sheets', 'Called By', 'Claude Notes', 'Action', 'Jamie Notes'];
+  sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+  sheet.getRange(1, 1, 1, headers.length).setFontWeight('bold').setBackground('#4a86c8').setFontColor('white');
+
+  // Data
+  var data = [];
+  for (var i = 0; i < functions.length; i++) {
+    data.push([functions[i][0], functions[i][1], functions[i][2], functions[i][3], functions[i][4], functions[i][5], '', '']);
+  }
+  sheet.getRange(2, 1, data.length, 8).setValues(data);
+
+  // Action column dropdown
+  var actionRule = SpreadsheetApp.newDataValidation()
+    .requireValueInList(['KEEP', 'DELETE', 'PARK', 'OPTIMIZE', 'MERGE'], true)
+    .setAllowInvalid(false)
+    .build();
+  sheet.getRange(2, 7, data.length, 1).setDataValidation(actionRule);
+
+  // Color-code rows by Claude Notes keywords
+  for (var j = 0; j < data.length; j++) {
+    var row = j + 2;
+    var notes = data[j][5];
+    if (notes.indexOf('CRITICAL') === 0) {
+      sheet.getRange(row, 6).setBackground('#b7e1cd').setFontWeight('bold'); // green
+    } else if (notes.indexOf('DUPLICATE') === 0) {
+      sheet.getRange(row, 6).setBackground('#f4c7c3'); // red
+    } else if (notes.indexOf('OLD') === 0) {
+      sheet.getRange(row, 6).setBackground('#fce8b2'); // yellow
+    } else if (notes.indexOf('ONE-TIME') === 0) {
+      sheet.getRange(row, 6).setBackground('#d5a6bd'); // purple
+    }
+  }
+
+  // Column widths
+  sheet.setColumnWidth(1, 320);
+  sheet.setColumnWidth(2, 55);
+  sheet.setColumnWidth(3, 280);
+  sheet.setColumnWidth(4, 110);
+  sheet.setColumnWidth(5, 250);
+  sheet.setColumnWidth(6, 350);
+  sheet.setColumnWidth(7, 90);
+  sheet.setColumnWidth(8, 300);
+  sheet.setFrozenRows(1);
+
+  Logger.log('Created Function Inventory with ' + data.length + ' functions. Color key: green=CRITICAL, red=DUPLICATE, yellow=OLD, purple=ONE-TIME');
+}
