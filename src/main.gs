@@ -144,11 +144,11 @@ const CONFIG = {
 
   // ===== ERROR MESSAGES =====
   ERRORS: {
-    ARTICLE_NOT_FOUND: 'Error: Article not found in Status Tracker',
-    INVALID_DOC_URL: 'Error: Invalid Doc URL',
-    ARTICLE_TITLE_NOT_FOUND: 'Error: Article title (H1) not found in document',
-    NO_H2_SECTIONS: 'Error: No H2 sections found',
-    INVALID_URL_FORMAT: 'Invalid Google Doc URL format'
+    ARTICLE_NOT_FOUND: 'Paste Failed - Titles don\'t match',
+    INVALID_DOC_URL: 'Paste Failed - No GDoc URL',
+    ARTICLE_TITLE_NOT_FOUND: 'Paste Failed - No H1 found, check GDoc',
+    NO_H2_SECTIONS: 'Paste Failed - Missing H2s, check GDoc',
+    INVALID_URL_FORMAT: 'Paste Failed - Fix GDoc URL'
   },
 
   // ===== CONTENT SECTION MARKERS =====
@@ -297,8 +297,8 @@ function extractSectionsFromDocument(body, startIndex) {
 
       // Check if this is an H2 heading
       if (heading === DocumentApp.ParagraphHeading.HEADING2) {
-        // Save previous section if exists
-        if (currentSection && currentSection.content.length > 0) {
+        // Save previous section if exists (including empty ones so validation can catch back-to-back H2s)
+        if (currentSection) {
           sections.push(currentSection);
         }
 
@@ -342,7 +342,7 @@ function extractSectionsFromDocument(body, startIndex) {
           const headingText = headingMatch[2].trim();
 
           if (hashCount === 2) {  // ## - H2 heading
-            if (currentSection && currentSection.content.length > 0) {
+            if (currentSection) {
               sections.push(currentSection);
             }
 
@@ -388,7 +388,7 @@ function extractSectionsFromDocument(body, startIndex) {
                paragraph.isBold() &&
                !expectingUrl) {
         // This might be a bold heading
-        if (currentSection && currentSection.content.length > 0) {
+        if (currentSection) {
           sections.push(currentSection);
         }
 
@@ -411,14 +411,46 @@ function extractSectionsFromDocument(body, startIndex) {
     }
   }
 
-  // Don't forget the last section
-  if (currentSection && currentSection.content.length > 0) {
+  // Don't forget the last section (including empty ones so validation can catch issues)
+  if (currentSection) {
     sections.push(currentSection);
   }
 
   Logger.log('Total sections found: ' + sections.length);
   return sections;
 }
+
+
+/**
+ * Validate parsed sections for structural problems before pasting.
+ * Catches malformed docs (merged content, back-to-back headings) so we fail
+ * with an error instead of silently pasting garbage.
+ *
+ * @param {Array} sections - Array of section objects from extractSectionsFromDocument
+ * @returns {Array} Array of error strings. Empty array = valid.
+ */
+function validateParsedSections(sections) {
+  var errors = [];
+
+  for (var i = 0; i < sections.length; i++) {
+    var section = sections[i];
+
+    // Check 1: Heading is way too long — paragraph text probably got merged into the heading
+    if (section.subheading.length > 200) {
+      errors.push('Section ' + (i + 1) + ': heading is ' + section.subheading.length + ' chars — text merged into heading.');
+    }
+
+    // Check 2: Heading with no paragraph text underneath — two headings back-to-back
+    if (section.content.length === 0) {
+      errors.push('Section ' + (i + 1) + ': no content — back-to-back headings.');
+    }
+  }
+
+  return errors;
+}
+
+
+
 
 /**
  * Find the index where article content begins (after H1 title)
@@ -449,188 +481,9 @@ function findH1TitleIndex(body, articleTitle) {
   return -1;
 }
 
-/**
- * Run this ONCE to add Claude API key to Script Properties
- */
-function addClaudeApiKey() {
-  var ui = SpreadsheetApp.getUi();
-  var response = ui.prompt('Claude API Key', 'Paste your Anthropic API key:', ui.ButtonSet.OK_CANCEL);
-
-  if (response.getSelectedButton() !== ui.Button.OK) return;
-
-  var apiKey = response.getResponseText().trim();
-  if (!apiKey) {
-    ui.alert('Error', 'No key entered.', ui.ButtonSet.OK);
-    return;
-  }
-
-  PropertiesService.getScriptProperties().setProperty('CLAUDE_API_KEY', apiKey);
-  ui.alert('Done!', 'Claude API key saved to Script Properties.', ui.ButtonSet.OK);
-}
 
 
-/**
- * ONE-TIME: Categorize all articles
- */
-function categorizeArticles() {
-  var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Article Collection');
-  var lastRow = sheet.getLastRow();
-  var apiKey = PropertiesService.getScriptProperties().getProperty('CLAUDE_API_KEY');
-  
-  var categories = 'Local Life, Travel Feature, Current News, Outdoors, History';
-  
-  var startTime = new Date();
-  var processed = 0;
-  
-  for (var row = 2; row <= lastRow; row++) {
-    // Skip if already categorized
-    var existingCategory = sheet.getRange(row, 2).getValue();
-    if (existingCategory && existingCategory !== '') continue;
-    
-    var title = sheet.getRange(row, 3).getValue();
-    if (!title) continue;
-    
-    var response = UrlFetchApp.fetch('https://api.anthropic.com/v1/messages', {
-      'method': 'post',
-      'headers': {
-        'Content-Type': 'application/json',
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01'
-      },
-      'payload': JSON.stringify({
-        'model': 'claude-3-haiku-20240307',
-        'max_tokens': 20,
-        'messages': [{ 'role': 'user', 'content': 'Categories: ' + categories + '\n\nTitle: "' + title + '"\n\nWhich ONE category? Reply with ONLY the category name.' }]
-      })
-    });
-    
-    var category = JSON.parse(response.getContentText()).content[0].text.trim();
-    sheet.getRange(row, 2).setValue(category);
-    SpreadsheetApp.flush();
-    
-    processed++;
-    
-    // Cooldown: pause 60 seconds every 5 minutes
-    var elapsed = (new Date() - startTime) / 1000 / 60; // minutes
-    if (elapsed >= 5) {
-      Logger.log('Cooldown at row ' + row + ' - processed ' + processed);
-      Utilities.sleep(60000); // 1 minute pause
-      startTime = new Date(); // reset timer
-    }
-    
-    Utilities.sleep(200);
-  }
-  
-  SpreadsheetApp.getUi().alert('Done! Processed ' + processed + ' articles.');
-}
 
-/**
- * ONE-TIME SCRIPT: Fetch Intros for Article Collection
- * Fetches intro subheading + first paragraph for all articles and writes to column G.
- */
-
-/**
- * ONE-TIME SCRIPT: Fetch Intros for Article Collection (BULK WRITE - FASTEST)
- */
-function fetchIntrosForCollectionBulk() {
-  var ui = SpreadsheetApp.getUi();
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var sheet = ss.getSheetByName('Article Collection');
-
-  if (!sheet) {
-    ui.alert('Error', 'Article Collection sheet not found.', ui.ButtonSet.OK);
-    return;
-  }
-
-  var username = PropertiesService.getScriptProperties().getProperty('WP_USERNAME');
-  var appPassword = PropertiesService.getScriptProperties().getProperty('WP_APP_PASSWORD');
-
-  if (!username || !appPassword) {
-    ui.alert('Error', 'WordPress credentials not configured.', ui.ButtonSet.OK);
-    return;
-  }
-
-  var lastRow = sheet.getLastRow();
-  if (lastRow < 2) {
-    ui.alert('No Data', 'No articles found.', ui.ButtonSet.OK);
-    return;
-  }
-
-  // Ensure header
-  if (!sheet.getRange(1, 7).getValue()) sheet.getRange(1, 7).setValue('Intro');
-
-  // Read columns D (URL) and G (Intro) at once
-  var urls = sheet.getRange(2, 4, lastRow - 1, 1).getValues();
-  var intros = sheet.getRange(2, 7, lastRow - 1, 1).getValues();
-
-  // Find rows needing intros
-  var needsIntro = [];
-  for (var i = 0; i < urls.length; i++) {
-    if (urls[i][0] && !intros[i][0]) {
-      needsIntro.push(i);
-    }
-  }
-
-  if (needsIntro.length === 0) {
-    ui.alert('Complete', 'All articles already have intros.', ui.ButtonSet.OK);
-    return;
-  }
-
-  var response = ui.alert('Fetch Intros (Bulk)', 'Found ' + needsIntro.length + ' articles without intros.\n\nContinue?', ui.ButtonSet.YES_NO);
-  if (response !== ui.Button.YES) return;
-
-  var successCount = 0;
-  var errorCount = 0;
-  var errorRows = [];
-  var WRITE_EVERY = 100;
-
-  for (var j = 0; j < needsIntro.length; j++) {
-    var idx = needsIntro[j];
-    var url = urls[idx][0];
-
-    try {
-      var slug = extractSlugFromUrlIntro(url);
-      if (!slug) throw new Error('Bad slug');
-
-      var result = fetchIntroBySlugIntro(slug, username, appPassword);
-
-      if (result.success) {
-        var text = '';
-        if (result.subheading) text = result.subheading + '\n\n';
-        if (result.content) text += result.content;
-        intros[idx][0] = text.trim();
-        successCount++;
-      } else {
-        intros[idx][0] = 'Error: ' + result.error;
-        errorRows.push(idx + 2);
-        errorCount++;
-      }
-    } catch (e) {
-      intros[idx][0] = 'Error: ' + e.message;
-      errorRows.push(idx + 2);
-      errorCount++;
-    }
-
-    if ((j + 1) % WRITE_EVERY === 0) {
-      sheet.getRange(2, 7, intros.length, 1).setValues(intros);
-      SpreadsheetApp.flush();
-      Logger.log('Written ' + (j + 1) + '/' + needsIntro.length);
-    }
-
-    Utilities.sleep(250);
-  }
-
-  // Final bulk write
-  sheet.getRange(2, 7, intros.length, 1).setValues(intros);
-
-  // Mark error rows red
-  for (var e = 0; e < errorRows.length; e++) {
-    sheet.getRange(errorRows[e], 7).setBackground('#ffcccc');
-  }
-
-  SpreadsheetApp.flush();
-  ui.alert('Done', 'Success: ' + successCount + '\nErrors: ' + errorCount, ui.ButtonSet.OK);
-}
 
 
 function extractSlugFromUrlIntro(url) {
@@ -737,18 +590,73 @@ function pasteArticleSections(e) {
     // Extract sections (H2 headings and their content)
     const sections = extractSectionsFromDocument(body, contentStartIndex);
 
-    if (sections.length === 0) {
+    // === DIAGNOSTIC: Dump what the parser returned ===
+    Logger.log('=== PARSER OUTPUT DUMP for "' + articleTitle + '" ===');
+    Logger.log('Total sections returned: ' + sections.length);
+    for (let d = 0; d < sections.length; d++) {
+      var sec = sections[d];
+      Logger.log('--- Section ' + (d + 1) + ' ---');
+      Logger.log('  subheading: "' + sec.subheading + '"');
+      Logger.log('  subheading length: ' + sec.subheading.length);
+      Logger.log('  subheading has newlines: ' + (sec.subheading.indexOf('\n') !== -1));
+      Logger.log('  content array length: ' + sec.content.length);
+      for (let c = 0; c < sec.content.length; c++) {
+        var preview = sec.content[c].length > 120 ? sec.content[c].substring(0, 120) + '...' : sec.content[c];
+        Logger.log('  content[' + c + '] (' + sec.content[c].length + ' chars): "' + preview + '"');
+      }
+      Logger.log('  content.join(" ") length: ' + sec.content.join(' ').length);
+      Logger.log('  url: ' + (sec.url || '(none)'));
+      Logger.log('  needsUrl: ' + sec.needsUrl);
+    }
+    Logger.log('=== END PARSER OUTPUT DUMP ===');
+
+    // === VALIDATION: Check for structural problems before pasting ===
+    var validationErrors = validateParsedSections(sections);
+    if (validationErrors.length > 0) {
+      var errorMsg = 'Paste Failed - Bad GDoc formatting, check content';
+      Logger.log('VALIDATION FAILED: ' + errorMsg);
+
+      // Write error to Uploader trigger row
+      sheet.getRange(row, CONFIG.COLUMNS.STATUS_MESSAGES).setValue(errorMsg);
+
+      // Find article row in AST and flag it with red
+      try {
+        var statusSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(CONFIG.SHEETS.ARTICLE_STATUS_TRACKER);
+        var statusData = statusSheet.getRange('C:C').getValues();
+        for (var s = 0; s < statusData.length; s++) {
+          if (statusData[s][0] && statusData[s][0].toString().trim() === articleTitle.trim()) {
+            var astRow = s + 1;
+            statusSheet.getRange(astRow, 5).setValue(errorMsg);                // Column E: error message
+            statusSheet.getRange(astRow, 3).setBackground('#FF0000');          // Column C: red background
+            statusSheet.getRange(astRow, 5).setBackground('#FF0000');          // Column E: red background
+            statusSheet.getRange(astRow, 3).setFontColor('#FFFFFF');           // Column C: white text so it's readable on red
+            statusSheet.getRange(astRow, 5).setFontColor('#FFFFFF');           // Column E: white text so it's readable on red
+            Logger.log('Flagged AST row ' + astRow + ' with red background');
+            break;
+          }
+        }
+      } catch (astError) {
+        Logger.log('Could not update AST: ' + astError.message);
+      }
+
+      return;
+    }
+
+    // Filter out any empty sections (now that validation has passed)
+    var validSections = sections.filter(function(s) { return s.content.length > 0; });
+
+    if (validSections.length === 0) {
       sheet.getRange(row, CONFIG.COLUMNS.STATUS_MESSAGES).setValue(CONFIG.ERRORS.NO_H2_SECTIONS);
       return;
     }
-    
+
     // Process and paste the sections
-    processArticleSections(sheet, row, sections);
+    processArticleSections(sheet, row, validSections);
     
   } catch (error) {
     Logger.log('Error in pasteArticleSections: ' + error.message);
     Logger.log('Stack trace: ' + error.stack);
-    sheet.getRange(row, CONFIG.COLUMNS.STATUS_MESSAGES).setValue('Error: ' + error.message);
+    sheet.getRange(row, CONFIG.COLUMNS.STATUS_MESSAGES).setValue('Paste Failed - Unexpected error, contact Jamie.');
   }
 }
 
@@ -808,17 +716,38 @@ if (section.needsUrl) {
     
     // Set row number in Column D (Slide #)
     sheet.getRange(targetRow, CONFIG.COLUMNS.SLIDE_NUMBER).setValue(i + 1);
-    
-    // Set subheading in Column E (Subheadings)
+
+    // Set subheading in Column E (Subheadings) — force black font
     sheet.getRange(targetRow, CONFIG.COLUMNS.SUBHEADING).setValue(section.subheading);
-    
-    // Combine all content paragraphs and set in Column F (Slide Content)
+    sheet.getRange(targetRow, CONFIG.COLUMNS.SUBHEADING).setFontColor('#000000');
+
+    // Combine all content paragraphs and set in Column F (Slide Content) — force black font
     const combinedContent = section.content.join(' ');
     sheet.getRange(targetRow, CONFIG.COLUMNS.SLIDE_CONTENT).setValue(combinedContent);
-    
-    Logger.log('Pasted section ' + (i + 1) + ': ' + section.subheading + (section.url ? ' (URL: ' + section.url + ')' : ''));
+    sheet.getRange(targetRow, CONFIG.COLUMNS.SLIDE_CONTENT).setFontColor('#000000');
+
+    // === DIAGNOSTIC: Log exactly what was written where ===
+    Logger.log('PASTE ROW ' + targetRow + ':');
+    Logger.log('  Col D (slide#=' + CONFIG.COLUMNS.SLIDE_NUMBER + '): ' + (i + 1));
+    Logger.log('  Col E (subheading=' + CONFIG.COLUMNS.SUBHEADING + '): "' + (section.subheading.length > 80 ? section.subheading.substring(0, 80) + '...' : section.subheading) + '" (' + section.subheading.length + ' chars)');
+    Logger.log('  Col F (content=' + CONFIG.COLUMNS.SLIDE_CONTENT + '): "' + (combinedContent.length > 80 ? combinedContent.substring(0, 80) + '...' : combinedContent) + '" (' + combinedContent.length + ' chars)');
+    if (combinedContent.length === 0) Logger.log('  *** WARNING: Content is EMPTY for this section! ***');
+
+    // === DIAGNOSTIC: Detect the merged subheading+content bug ===
+    if (section.subheading.length > 100 && combinedContent.length === 0) {
+      Logger.log('  *** BUG DETECTED: Subheading is ' + section.subheading.length + ' chars with NO content. Subheading+content likely merged! ***');
+      Logger.log('  Full subheading text: "' + section.subheading + '"');
+    }
+    if (section.subheading.indexOf('\n') !== -1) {
+      Logger.log('  *** BUG DETECTED: Subheading contains NEWLINES — multiple lines merged into heading ***');
+      var subLines = section.subheading.split('\n');
+      Logger.log('  Subheading line count: ' + subLines.length);
+      for (var sl = 0; sl < subLines.length; sl++) {
+        Logger.log('    subheading line ' + sl + ': "' + subLines[sl].substring(0, 150) + '"');
+      }
+    }
   }
-  
+
   // Update status in Uploader
   sheet.getRange(row, CONFIG.COLUMNS.STATUS_MESSAGES).setValue(CONFIG.STATUS.SECTIONS_PASTED_SUCCESSFULLY);
 
@@ -2783,7 +2712,7 @@ function uploadToWordPress(e) {
   
   if (articleTags && articleTags.length > 0) {
     Logger.log('Found tags for article: ' + articleTags.join(', '));
-    tagIds = convertTagsToWordPressCached(articleTags, username, applicationPassword);
+    tagIds = convertTagsToWordPressIds(articleTags, username, applicationPassword);
     
     // Find related 2025 articles
     relatedArticles = findRelatedArticles(articleTags, stateCategoryId, username, applicationPassword);
@@ -5724,9 +5653,15 @@ function convertTagsToWordPressIds(tagNames, username, applicationPassword) {
   
   for (var i = 0; i < tagNames.length; i++) {
     var tagName = tagNames[i];
-    
+
+    // Skip hashtag-style tags (e.g. #DesertGardening) — these are not our format
+    if (tagName.charAt(0) === '#') {
+      Logger.log('Skipping hashtag tag: ' + tagName);
+      continue;
+    }
+
     // First, try to find existing tag
-    var searchEndpoint = tagsEndpoint + "?search=" + encodeURIComponent(tagName);
+    var searchEndpoint = tagsEndpoint + "?search=" + encodeURIComponent(tagName) + "&per_page=100";
     var searchOptions = {
       method: "get",
       headers: {
@@ -5740,10 +5675,10 @@ function convertTagsToWordPressIds(tagNames, username, applicationPassword) {
       if (searchResponse.getResponseCode() === CONFIG.HTTP_STATUS.OK) {
         var existingTags = JSON.parse(searchResponse.getContentText());
         
-        // Look for exact match
+        // Look for exact match (decode HTML entities — WP returns &amp; etc.)
         var exactMatch = null;
         for (var j = 0; j < existingTags.length; j++) {
-          if (existingTags[j].name.toLowerCase() === tagName.toLowerCase()) {
+          if (decodeHtmlEntities(existingTags[j].name).toLowerCase() === tagName.toLowerCase()) {
             exactMatch = existingTags[j];
             break;
           }
@@ -7122,62 +7057,7 @@ function checkUploaderLock(requestingOperation) {
 }
 
 
-// Show detailed lock status
-function showDetailedLockStatus() {
-  var currentLock = isUploaderSheetLocked();
-  var props = PropertiesService.getScriptProperties();
-  
-  if (currentLock) {
-    var lockTime = props.getProperty('UPLOADER_LOCK_TIME');
-    var lockDate = new Date(parseInt(lockTime));
-    var now = new Date();
-    var minutesLocked = Math.floor((now.getTime() - lockDate.getTime()) / (1000 * 60));
-    
-    var message = '🔒 SHEET STATUS: LOCKED\n\n';
-    message += '📋 Current Operation: ' + currentLock + '\n';
-    message += '⏰ Started: ' + Utilities.formatDate(lockDate, Session.getScriptTimeZone(), 'MMM dd, HH:mm:ss') + '\n';
-    message += '⌛ Duration: ' + minutesLocked + ' minutes\n\n';
-    message += '💡 TIP: Most batch operations complete within 5-15 minutes.\n';
-    message += 'If this has been locked for over 30 minutes, it may be stuck.';
-    
-    SpreadsheetApp.getUi().alert('🔒 Detailed Lock Status', message, SpreadsheetApp.getUi().ButtonSet.OK);
-  } else {
-    SpreadsheetApp.getUi().alert(
-      '✅ Sheet Available', 
-      'The sheet is currently unlocked and ready for batch operations!', 
-      SpreadsheetApp.getUi().ButtonSet.OK
-    );
-  }
-}
 
-// Show all active locks (for future expansion)
-function showAllActiveLocks() {
-  var props = PropertiesService.getScriptProperties();
-  var allProperties = props.getProperties();
-  var activeLocks = [];
-  
-  for (var key in allProperties) {
-    if (key.includes('_LOCKED')) {
-      activeLocks.push({
-        operation: allProperties[key],
-        startTime: allProperties[key + '_TIME'] || 'Unknown'
-      });
-    }
-  }
-  
-  if (activeLocks.length === 0) {
-    SpreadsheetApp.getUi().alert('No Active Locks', 'All systems are currently available!', SpreadsheetApp.getUi().ButtonSet.OK);
-  } else {
-    var message = '🔒 ACTIVE LOCKS:\n\n';
-    for (var i = 0; i < activeLocks.length; i++) {
-      var lock = activeLocks[i];
-      var lockDate = new Date(parseInt(lock.startTime));
-      message += '• ' + lock.operation + ' (Since ' + 
-                 Utilities.formatDate(lockDate, Session.getScriptTimeZone(), 'HH:mm') + ')\n';
-    }
-    SpreadsheetApp.getUi().alert('Active Locks', message, SpreadsheetApp.getUi().ButtonSet.OK);
-  }
-}
 
 // Enhanced force unlock with confirmation
 function forceUnlockUploaderSheet() {
@@ -9265,284 +9145,8 @@ function getCachedAuthorId(authorName) {
 }
 
 
-function convertTagsToWordPressCached(tagNames, username, applicationPassword) {
-  if (!tagNames || tagNames.length === 0) return [];
-  
-  var cache = PropertiesService.getScriptProperties();
-  var finalTagIds = [];
-  var tagsToCreate = [];
-  
-  Logger.log('🏷️ Processing ' + tagNames.length + ' tags with caching...');
-  
-  // Check cache for each tag first
-  for (var i = 0; i < tagNames.length; i++) {
-    var tagName = tagNames[i].trim();
-    var cacheKey = 'tag_' + tagName.toLowerCase().replace(/[^a-z0-9]/g, '_');
-    
-    var cachedId = cache.getProperty(cacheKey);
-    if (cachedId) {
-      finalTagIds.push(parseInt(cachedId));
-      Logger.log('📋 Using cached tag ID for "' + tagName + '": ' + cachedId);
-    } else {
-      // Not cached, need to create/lookup
-      tagsToCreate.push({
-        name: tagName,
-        cacheKey: cacheKey
-      });
-    }
-  }
-  
-  // Only make API calls for uncached tags
-  if (tagsToCreate.length > 0) {
-    Logger.log('🔍 Need to lookup/create ' + tagsToCreate.length + ' tags');
-    
-    for (var j = 0; j < tagsToCreate.length; j++) {
-      var tagInfo = tagsToCreate[j];
-      var tagId = createOrFindTag(tagInfo.name, username, applicationPassword);
-      
-      if (tagId) {
-        finalTagIds.push(tagId);
-        // Cache it for next time
-        cache.setProperty(tagInfo.cacheKey, tagId.toString());
-        Logger.log('💾 Cached new tag "' + tagInfo.name + '": ' + tagId);
-      }
-      
-      // Small delay between API calls
-      Utilities.sleep(200);
-    }
-  }
-  
-  Logger.log('✅ Final tag processing: ' + finalTagIds.length + ' IDs ready');
-  return finalTagIds;
-}
 
 
-function createOrFindTag(tagName, username, applicationPassword) {
-  var tagsEndpoint = CONFIG.WORDPRESS.BASE_URL + "/wp-json/wp/v2/tags";
-  
-  // First, search for existing tag
-  var searchEndpoint = tagsEndpoint + "?search=" + encodeURIComponent(tagName);
-  var searchOptions = {
-    method: "get",
-    headers: {
-      "Authorization": "Basic " + Utilities.base64Encode(username + ":" + applicationPassword)
-    },
-    muteHttpExceptions: true
-  };
-  
-  try {
-    var searchResponse = UrlFetchApp.fetch(searchEndpoint, searchOptions);
-    if (searchResponse.getResponseCode() === CONFIG.HTTP_STATUS.OK) {
-      var existingTags = JSON.parse(searchResponse.getContentText());
-      
-      // Look for exact match
-      for (var i = 0; i < existingTags.length; i++) {
-        if (existingTags[i].name.toLowerCase() === tagName.toLowerCase()) {
-          Logger.log('🔍 Found existing tag: ' + tagName + ' (ID: ' + existingTags[i].id + ')');
-          return existingTags[i].id;
-        }
-      }
-    }
-    
-    // Tag doesn't exist, create it
-    var createOptions = {
-      method: "post",
-      headers: {
-        "Authorization": "Basic " + Utilities.base64Encode(username + ":" + applicationPassword),
-        "Content-Type": "application/json"
-      },
-      payload: JSON.stringify({
-        name: tagName,
-        slug: tagName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
-      }),
-      muteHttpExceptions: true
-    };
-    
-    var createResponse = UrlFetchApp.fetch(tagsEndpoint, createOptions);
-    if (createResponse.getResponseCode() === CONFIG.HTTP_STATUS.CREATED) {
-      var newTag = JSON.parse(createResponse.getContentText());
-      Logger.log('✨ Created new tag: ' + tagName + ' (ID: ' + newTag.id + ')');
-      return newTag.id;
-    }
-    
-  } catch (error) {
-    Logger.log('❌ Error processing tag "' + tagName + '": ' + error.message);
-  }
-  
-  return null;
-}
-
-
-
-function convertTagsToWordPressCached(tagNames, username, applicationPassword) {
-  if (!tagNames || tagNames.length === 0) return [];
-  
-  // Check if cache needs daily refresh at 7 AM
-  // checkDailyTagCacheRefresh(username, applicationPassword); // TEMPORARILY DISABLED
-  
-  var cache = PropertiesService.getScriptProperties();
-  var finalTagIds = [];
-  var tagsToCreate = [];
-  
-  Logger.log('🏷️ Processing ' + tagNames.length + ' tags with caching...');
-  
-  // Check cache for each tag first
-  for (var i = 0; i < tagNames.length; i++) {
-    var tagName = tagNames[i].trim();
-    var cacheKey = 'tag_' + tagName.toLowerCase().replace(/[^a-z0-9]/g, '_');
-    
-    var cachedId = cache.getProperty(cacheKey);
-    if (cachedId) {
-      finalTagIds.push(parseInt(cachedId));
-      Logger.log('📋 Using cached tag ID for "' + tagName + '": ' + cachedId);
-    } else {
-      tagsToCreate.push({
-        name: tagName,
-        cacheKey: cacheKey
-      });
-    }
-  }
-  
-  // Only make API calls for uncached tags
-  if (tagsToCreate.length > 0) {
-    Logger.log('🔍 Need to lookup/create ' + tagsToCreate.length + ' tags');
-    
-    for (var j = 0; j < tagsToCreate.length; j++) {
-      var tagInfo = tagsToCreate[j];
-      var tagId = createOrFindTag(tagInfo.name, username, applicationPassword);
-      
-      if (tagId) {
-        finalTagIds.push(tagId);
-        cache.setProperty(tagInfo.cacheKey, tagId.toString());
-        Logger.log('💾 Cached new tag "' + tagInfo.name + '": ' + tagId);
-      }
-      
-      Utilities.sleep(200);
-    }
-  }
-  
-  Logger.log('✅ Final tag processing: ' + finalTagIds.length + ' IDs ready');
-  return finalTagIds;
-}
-
-/**
- * DIAGNOSTIC — Run from Script Editor to see duplicate tags in WordPress.
- * Fetches ALL tags, groups by lowercase name, logs any with duplicates.
- * Does NOT modify anything. Safe to run anytime.
- */
-function diagnoseDuplicateTags() {
-  var username = CONFIG.WORDPRESS.USERNAME;
-  var applicationPassword = CONFIG.WORDPRESS.APP_PASSWORD;
-  var tagsEndpoint = CONFIG.WORDPRESS.BASE_URL + "/wp-json/wp/v2/tags";
-
-  var allTags = [];
-  var page = 1;
-  var perPage = 100;
-
-  Logger.log('Fetching all WordPress tags...');
-
-  // Paginate through all tags
-  while (true) {
-    var url = tagsEndpoint + "?per_page=" + perPage + "&page=" + page;
-    var response = UrlFetchApp.fetch(url, {
-      method: "get",
-      headers: {
-        "Authorization": "Basic " + Utilities.base64Encode(username + ":" + applicationPassword)
-      },
-      muteHttpExceptions: true
-    });
-
-    if (response.getResponseCode() !== 200) {
-      Logger.log('API error on page ' + page + ': ' + response.getResponseCode());
-      break;
-    }
-
-    var tags = JSON.parse(response.getContentText());
-    if (tags.length === 0) break;
-
-    allTags = allTags.concat(tags);
-    Logger.log('Fetched page ' + page + ' (' + tags.length + ' tags, ' + allTags.length + ' total so far)');
-
-    if (tags.length < perPage) break;
-    page++;
-    Utilities.sleep(200);
-  }
-
-  Logger.log('Total tags fetched: ' + allTags.length);
-
-  // Group by lowercase name
-  var tagsByName = {};
-  for (var i = 0; i < allTags.length; i++) {
-    var tag = allTags[i];
-    var key = tag.name.toLowerCase();
-    if (!tagsByName[key]) {
-      tagsByName[key] = [];
-    }
-    tagsByName[key].push({
-      id: tag.id,
-      name: tag.name,
-      slug: tag.slug,
-      count: tag.count
-    });
-  }
-
-  // Find duplicates
-  var duplicateCount = 0;
-  var wastedTags = 0;
-  var names = Object.keys(tagsByName).sort();
-
-  for (var j = 0; j < names.length; j++) {
-    var group = tagsByName[names[j]];
-    if (group.length > 1) {
-      duplicateCount++;
-      wastedTags += group.length - 1;
-      Logger.log('DUPLICATE: "' + names[j] + '" (' + group.length + ' copies)');
-      for (var k = 0; k < group.length; k++) {
-        Logger.log('  ID: ' + group[k].id + ' | name: "' + group[k].name + '" | slug: ' + group[k].slug + ' | posts: ' + group[k].count);
-      }
-    }
-  }
-
-  Logger.log('--- SUMMARY ---');
-  Logger.log('Total unique tag names: ' + names.length);
-  Logger.log('Tag names with duplicates: ' + duplicateCount);
-  Logger.log('Wasted duplicate tags: ' + wastedTags);
-  Logger.log('Total tags in WordPress: ' + allTags.length);
-
-  // Also check Script Properties usage
-  var props = PropertiesService.getScriptProperties();
-  var allProps = props.getProperties();
-  var tagProps = 0;
-  var totalProps = 0;
-  var propKeys = Object.keys(allProps);
-  for (var p = 0; p < propKeys.length; p++) {
-    totalProps++;
-    if (propKeys[p].indexOf('tag_') === 0) {
-      tagProps++;
-    }
-  }
-
-  Logger.log('--- SCRIPT PROPERTIES ---');
-  Logger.log('Total properties: ' + totalProps);
-  Logger.log('Tag cache entries: ' + tagProps);
-  Logger.log('Non-tag properties: ' + (totalProps - tagProps));
-}
-
-function checkDailyTagCacheRefresh(username, applicationPassword) {
-  var cache = PropertiesService.getScriptProperties();
-  var lastRefreshDate = cache.getProperty('last_tag_refresh_date');
-  var today = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd');
-  
-  // If we haven't refreshed today, refresh now
-  if (lastRefreshDate !== today) {
-    Logger.log('🏷️ Daily tag cache refresh - last refresh: ' + (lastRefreshDate || 'never'));
-    preloadAllWordPressTagsQuiet(username, applicationPassword);
-    cache.setProperty('last_tag_refresh_date', today);
-    Logger.log('✅ Tag cache refreshed for ' + today);
-  } else {
-    Logger.log('📋 Tag cache already refreshed today (' + today + ')');
-  }
-}
 
 
 
@@ -12257,48 +11861,11 @@ function extractWikiMetadataImproved(url, html) {
 
 
 
-/**
- * Lists all script properties (run this to see what you have)
- */
-function listAllProperties() {
-  var props = PropertiesService.getScriptProperties().getProperties();
-  var list = [];
-  
-  for (var key in props) {
-    list.push(key + ': ' + props[key].substring(0, 50) + '...');
-  }
-  
-  Logger.log('Total properties: ' + list.length);
-  Logger.log(list.join('\n'));
-  
-  SpreadsheetApp.getUi().alert('Properties (' + list.length + ')', list.join('\n'), SpreadsheetApp.getUi().ButtonSet.OK);
-}
 
 
 
 
 
-/**
- * ONE-TIME: Populate Article Collection (July 16, 2025 to today)
- */
-
-
-/**
- * Quick category check
- */
-function getCategoryFromTitleAndTags(title, tags) {
-  var text = (title + ' ' + tags.join(' ')).toLowerCase();
-  
-  if (/news|breaking|update|announced|opens|closes|launches/.test(text)) return 'News';
-  if (/history|historic|century|founded|oldest|museum|memorial|forgotten|abandoned/.test(text)) return 'History';
-  if (/hidden|secret|unknown|overlooked|gem|little-known/.test(text)) return 'Hidden Gems';
-  if (/food|restaurant|eat|dining|diner|cafe|coffee|bakery|brewery|bar|cuisine/.test(text)) return 'Food & Drink';
-  if (/outdoor|nature|park|trail|hiking|camping|lake|river|mountain|beach|waterfall/.test(text)) return 'Outdoors';
-  if (/local|community|neighborhood|town|main street|downtown|small town/.test(text)) return 'Local Life';
-  if (/culture|art|music|festival|theater|gallery|tradition/.test(text)) return 'Culture';
-  
-  return 'Travel';
-}
 
 
 /**
@@ -13773,4 +13340,355 @@ function finishBatchDeleteUploaded(state) {
   Logger.log(message);
   unlockUploaderSheet('Delete Successful Uploads');
 }
+
+
+// ╔══════════════════════════════════════════════════════════════════════════════╗
+// ║  DIAGNOSTIC, SETUP & ONE-TIME FUNCTIONS                                    ║
+// ║  Everything below this line is NOT called by production code.              ║
+// ║  Safe to run manually from the Apps Script editor.                         ║
+// ╚══════════════════════════════════════════════════════════════════════════════╝
+
+/**
+ * DIAGNOSTIC: Dump every paragraph element in a Google Doc to the execution log.
+ * Run from Apps Script editor. Enter the article title when prompted.
+ * Shows exactly what extractSectionsFromDocument sees: heading type, bold status,
+ * text content, and which detection path the parser would take.
+ *
+ * After running, check View → Execution log for the full dump.
+ */
+function diagnoseDocParsing() {
+  var ui = SpreadsheetApp.getUi();
+  var response = ui.prompt('Doc Parser Diagnostic',
+    'Enter the article title (must match Uploader column A):',
+    ui.ButtonSet.OK_CANCEL);
+
+  if (response.getSelectedButton() !== ui.Button.OK) return;
+  var articleTitle = response.getResponseText().trim();
+  if (!articleTitle) { ui.alert('No title entered.'); return; }
+
+  // --- Locate the Google Doc ---
+  var docUrl = findArticleDocUrl(articleTitle);
+  if (!docUrl) { ui.alert('Article not found in Status Tracker.'); return; }
+
+  var docId = extractGoogleDocId(docUrl);
+  if (!docId) { ui.alert('Could not extract Doc ID from URL:\n' + docUrl); return; }
+
+  var doc = DocumentApp.openById(docId);
+  var body = doc.getBody();
+  var total = body.getNumChildren();
+
+  Logger.log('=== DOC PARSER DIAGNOSTIC ===');
+  Logger.log('Article: ' + articleTitle);
+  Logger.log('Doc URL: ' + docUrl);
+  Logger.log('Total elements in doc body: ' + total);
+  Logger.log('');
+
+  // --- Find H1 start index (same logic as findH1TitleIndex) ---
+  var startIndex = -1;
+  for (var s = 0; s < total; s++) {
+    var el = body.getChild(s);
+    if (el.getType() === DocumentApp.ElementType.PARAGRAPH) {
+      var p = el.asParagraph();
+      var h = p.getHeading();
+      var t = p.getText().trim();
+      if (h === DocumentApp.ParagraphHeading.HEADING1 &&
+          (t === articleTitle || t.includes(articleTitle.split(' - ')[0]))) {
+        startIndex = s + 1;
+        break;
+      }
+    }
+  }
+
+  if (startIndex === -1) {
+    Logger.log('ERROR: Could not find H1 matching "' + articleTitle + '"');
+    Logger.log('Dumping ALL elements anyway for inspection:');
+    startIndex = 0;
+  } else {
+    Logger.log('H1 found at element ' + (startIndex - 1) + ', parsing starts at element ' + startIndex);
+  }
+  Logger.log('');
+
+  // --- Walk every element and log what the parser would see ---
+  var sectionCount = 0;
+  var currentSubheading = '(none — before first heading)';
+
+  for (var i = startIndex; i < total; i++) {
+    var element = body.getChild(i);
+    var elemType = element.getType().toString();
+
+    if (element.getType() !== DocumentApp.ElementType.PARAGRAPH) {
+      Logger.log('[' + i + '] NON-PARAGRAPH element: ' + elemType);
+      continue;
+    }
+
+    var paragraph = element.asParagraph();
+    var heading = paragraph.getHeading();
+    var headingName = heading ? heading.toString() : 'null';
+    var text = paragraph.getText();
+    var trimmed = text.trim();
+    var isBold = false;
+    try { isBold = paragraph.isBold(); } catch (e) { isBold = 'error: ' + e.message; }
+    var numChildren = paragraph.getNumChildren();
+
+    // Check what the parser would do
+    var parserAction = '';
+    var isH2Style = (heading === DocumentApp.ParagraphHeading.HEADING2);
+    var startsWithHash = trimmed.startsWith('#');
+    var hashMatch = trimmed.match(/^(#{1,3})\s+(.+)/);
+    var wouldBeBoldHeading = (trimmed.length < 100 && trimmed.length > 3 &&
+      !trimmed.endsWith('.') && !trimmed.endsWith(',') && !trimmed.endsWith(':') &&
+      !trimmed.endsWith(';') && !trimmed.endsWith('!') && !trimmed.endsWith('?') &&
+      isBold === true);
+
+    if (!trimmed) {
+      parserAction = 'SKIP (empty)';
+    } else if (trimmed.startsWith(CONFIG.CONTENT_MARKERS.READ_MORE_FROM) ||
+               trimmed.includes(CONFIG.CONTENT_MARKERS.INSTRUCTIONS) ||
+               trimmed === CONFIG.CONTENT_MARKERS.DRAFT_PROMPT ||
+               heading === DocumentApp.ParagraphHeading.HEADING1) {
+      parserAction = 'STOP (end marker or H1)';
+    } else if (isH2Style) {
+      sectionCount++;
+      var cleaned = trimmed.replace(/^##\s*/, '').trim();
+      currentSubheading = cleaned;
+      parserAction = 'NEW SECTION #' + sectionCount + ' (H2 style) → subheading: "' + cleaned + '"';
+    } else if (heading === DocumentApp.ParagraphHeading.HEADING3) {
+      parserAction = 'H3 → URL slot';
+    } else if (startsWithHash && hashMatch) {
+      var hc = hashMatch[1].length;
+      if (hc === 2) {
+        sectionCount++;
+        currentSubheading = hashMatch[2].trim();
+        parserAction = 'NEW SECTION #' + sectionCount + ' (markdown ##) → subheading: "' + currentSubheading + '"';
+      } else if (hc === 3) {
+        parserAction = 'MARKDOWN ### → URL slot';
+      } else {
+        parserAction = 'MARKDOWN # (H1 — would STOP)';
+      }
+    } else if (wouldBeBoldHeading) {
+      sectionCount++;
+      currentSubheading = trimmed;
+      parserAction = 'NEW SECTION #' + sectionCount + ' (bold detection) → subheading: "' + trimmed + '"';
+    } else if (sectionCount > 0) {
+      parserAction = 'CONTENT for section #' + sectionCount + ' ("' + currentSubheading + '")';
+    } else {
+      parserAction = 'SKIP (before first heading)';
+    }
+
+    // Log detailed info per paragraph
+    Logger.log('[' + i + '] heading=' + headingName +
+      ' | bold=' + isBold +
+      ' | children=' + numChildren +
+      ' | len=' + trimmed.length +
+      ' | hasNewlines=' + (text.indexOf('\n') !== -1));
+    Logger.log('    TEXT: "' + (trimmed.length > 200 ? trimmed.substring(0, 200) + '...' : trimmed) + '"');
+    Logger.log('    PARSER: ' + parserAction);
+
+    // If text contains newlines, flag it — this would mean heading+content in one paragraph
+    if (text.indexOf('\n') !== -1) {
+      var lineCount = text.split('\n').length;
+      Logger.log('    *** WARNING: Paragraph contains ' + lineCount + ' lines (newlines found). This could merge heading with content! ***');
+      var textLines = text.split('\n');
+      for (var ln = 0; ln < Math.min(textLines.length, 5); ln++) {
+        Logger.log('      Line ' + ln + ': "' + textLines[ln].trim().substring(0, 150) + '"');
+      }
+      if (textLines.length > 5) Logger.log('      ... (' + (textLines.length - 5) + ' more lines)');
+    }
+
+    Logger.log('');
+
+    if (parserAction.indexOf('STOP') === 0) {
+      Logger.log('--- Parser would stop here ---');
+      break;
+    }
+  }
+
+  Logger.log('=== DIAGNOSTIC COMPLETE: ' + sectionCount + ' sections detected ===');
+  ui.alert('Diagnostic Complete',
+    'Found ' + sectionCount + ' sections.\n\nCheck View → Execution log for the full dump.',
+    ui.ButtonSet.OK);
+}
+
+/**
+ * ONE-TIME CLEANUP: Delete all tag cache entries from Script Properties.
+ * Run from Apps Script editor ONCE after deploying the tag caching fix.
+ * Removes every property whose key starts with "tag_" or equals "last_tag_refresh_date".
+ * Safe — does not touch credentials, locks, or other caches (cat_*, feed_*, author_*).
+ * Delete this function after running it.
+ */
+function purgeTagCacheFromScriptProperties() {
+  var props = PropertiesService.getScriptProperties();
+  var allProps = props.getProperties();
+  var keys = Object.keys(allProps);
+  var deleted = 0;
+
+  for (var i = 0; i < keys.length; i++) {
+    if (keys[i].indexOf('tag_') === 0 || keys[i] === 'last_tag_refresh_date') {
+      props.deleteProperty(keys[i]);
+      deleted++;
+    }
+  }
+
+  Logger.log('Purged ' + deleted + ' tag cache entries from Script Properties (' + (keys.length - deleted) + ' remaining)');
+  SpreadsheetApp.getUi().alert('Tag Cache Purged', 'Deleted ' + deleted + ' tag_ entries.\n' + (keys.length - deleted) + ' properties remaining.', SpreadsheetApp.getUi().ButtonSet.OK);
+}
+
+/**
+ * Run this ONCE to add Claude API key to Script Properties
+ */
+function addClaudeApiKey() {
+  var ui = SpreadsheetApp.getUi();
+  var response = ui.prompt('Claude API Key', 'Paste your Anthropic API key:', ui.ButtonSet.OK_CANCEL);
+
+  if (response.getSelectedButton() !== ui.Button.OK) return;
+
+  var apiKey = response.getResponseText().trim();
+  if (!apiKey) {
+    ui.alert('Error', 'No key entered.', ui.ButtonSet.OK);
+    return;
+  }
+
+  PropertiesService.getScriptProperties().setProperty('CLAUDE_API_KEY', apiKey);
+  ui.alert('Done!', 'Claude API key saved to Script Properties.', ui.ButtonSet.OK);
+}
+
+/**
+ * DIAGNOSTIC — Run from Script Editor to see duplicate tags in WordPress.
+ * Fetches ALL tags, groups by lowercase name, logs any with duplicates.
+ * Does NOT modify anything. Safe to run anytime.
+ */
+function diagnoseDuplicateTags() {
+  var username = CONFIG.WORDPRESS.USERNAME;
+  var applicationPassword = CONFIG.WORDPRESS.APP_PASSWORD;
+  var tagsEndpoint = CONFIG.WORDPRESS.BASE_URL + "/wp-json/wp/v2/tags";
+
+  var allTags = [];
+  var page = 1;
+  var perPage = 100;
+
+  Logger.log('Fetching all WordPress tags...');
+
+  // Paginate through all tags
+  while (true) {
+    var url = tagsEndpoint + "?per_page=" + perPage + "&page=" + page;
+    var response = UrlFetchApp.fetch(url, {
+      method: "get",
+      headers: {
+        "Authorization": "Basic " + Utilities.base64Encode(username + ":" + applicationPassword)
+      },
+      muteHttpExceptions: true
+    });
+
+    if (response.getResponseCode() !== 200) {
+      Logger.log('API error on page ' + page + ': ' + response.getResponseCode());
+      break;
+    }
+
+    var tags = JSON.parse(response.getContentText());
+    if (tags.length === 0) break;
+
+    allTags = allTags.concat(tags);
+    Logger.log('Fetched page ' + page + ' (' + tags.length + ' tags, ' + allTags.length + ' total so far)');
+
+    if (tags.length < perPage) break;
+    page++;
+    Utilities.sleep(200);
+  }
+
+  Logger.log('Total tags fetched: ' + allTags.length);
+
+  // Group by lowercase name
+  var tagsByName = {};
+  for (var i = 0; i < allTags.length; i++) {
+    var tag = allTags[i];
+    var key = tag.name.toLowerCase();
+    if (!tagsByName[key]) {
+      tagsByName[key] = [];
+    }
+    tagsByName[key].push({
+      id: tag.id,
+      name: tag.name,
+      slug: tag.slug,
+      count: tag.count
+    });
+  }
+
+  // Find duplicates
+  var duplicateCount = 0;
+  var wastedTags = 0;
+  var names = Object.keys(tagsByName).sort();
+
+  for (var j = 0; j < names.length; j++) {
+    var group = tagsByName[names[j]];
+    if (group.length > 1) {
+      duplicateCount++;
+      wastedTags += group.length - 1;
+      Logger.log('DUPLICATE: "' + names[j] + '" (' + group.length + ' copies)');
+      for (var k = 0; k < group.length; k++) {
+        Logger.log('  ID: ' + group[k].id + ' | name: "' + group[k].name + '" | slug: ' + group[k].slug + ' | posts: ' + group[k].count);
+      }
+    }
+  }
+
+  Logger.log('--- SUMMARY ---');
+  Logger.log('Total unique tag names: ' + names.length);
+  Logger.log('Tag names with duplicates: ' + duplicateCount);
+  Logger.log('Wasted duplicate tags: ' + wastedTags);
+  Logger.log('Total tags in WordPress: ' + allTags.length);
+
+  // Also check Script Properties usage
+  var props = PropertiesService.getScriptProperties();
+  var allProps = props.getProperties();
+  var tagProps = 0;
+  var totalProps = 0;
+  var propKeys = Object.keys(allProps);
+  for (var p = 0; p < propKeys.length; p++) {
+    totalProps++;
+    if (propKeys[p].indexOf('tag_') === 0) {
+      tagProps++;
+    }
+  }
+
+  Logger.log('--- SCRIPT PROPERTIES ---');
+  Logger.log('Total properties: ' + totalProps);
+  Logger.log('Tag cache entries: ' + tagProps);
+  Logger.log('Non-tag properties: ' + (totalProps - tagProps));
+}
+
+/**
+ * DIAGNOSTIC: Dump all Script Properties into a new sheet called "Script Properties".
+ * Run from Apps Script editor. One-time use — delete the sheet when done.
+ */
+function listAllScriptProperties() {
+  var props = PropertiesService.getScriptProperties().getProperties();
+  var keys = Object.keys(props).sort();
+
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName('Script Properties');
+  if (sheet) ss.deleteSheet(sheet);
+  sheet = ss.insertSheet('Script Properties');
+
+  sheet.getRange(1, 1).setValue('Key');
+  sheet.getRange(1, 2).setValue('Value');
+  sheet.getRange(1, 1, 1, 2).setFontWeight('bold');
+
+  var data = [];
+  var skippedTagEntries = 0;
+  for (var i = 0; i < keys.length; i++) {
+    // Skip tag cache entries — show only real config properties
+    if (keys[i].indexOf('tag_') === 0 || keys[i] === 'last_tag_refresh_date') {
+      skippedTagEntries++;
+      continue;
+    }
+    data.push([keys[i], props[keys[i]]]);
+  }
+
+  if (data.length > 0) {
+    sheet.getRange(2, 1, data.length, 2).setValues(data);
+  }
+
+  sheet.autoResizeColumns(1, 2);
+  Logger.log('Listed ' + data.length + ' config properties (skipped ' + skippedTagEntries + ' stale tag_ cache entries)');
+}
+
 
