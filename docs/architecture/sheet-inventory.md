@@ -196,11 +196,11 @@ All sheets in the WIYS Production Spreadsheet, their purpose, and their column l
 - No column mapping needed.
 - Noted here for completeness.
 
-### Sheets in CONFIG but not in main workflow
-The following sheets are listed in `CONFIG.SHEETS` (main.gs lines 53-66) but are not part of the 8 main sheets above:
-- **Drafter** — may be an older version of Enhanced Drafter
-- **Drafter Basic** — may be a simplified drafter variant
-- **State Topics** — unclear usage
-- **Topic Planning** — unclear usage
+### Legacy sheets (deleted)
+The following sheets were listed in `CONFIG.SHEETS` (main.gs lines 53-66) but have been deleted from the spreadsheet as of 2026-02-17:
+- **Drafter** — older version of Enhanced Drafter
+- **Drafter Basic** — simplified drafter variant
+- **State Topics**
+- **Topic Planning**
 
-These need further investigation to determine if they are still active or legacy.
+Their references in `CONFIG.SHEETS` should be removed during refactoring.
