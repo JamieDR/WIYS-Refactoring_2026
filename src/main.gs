@@ -9216,20 +9216,68 @@ function transferDraftsToArticleTracker() {
       var title = data[i][7]; // H (index 7)
       if (!title || title.toString().trim() === '') continue;
 
-      var rawInput = data[i][4] || ''; // E (index 4)
       var originalTopic = data[i][1] || ''; // B (index 1)
-      var topicSummary = extractTopicSummary(originalTopic, rawInput);
+      var docUrl = data[i][10] || '';       // K (index 10)
+
+      // Extract title + intro subheading + intro content from Google Doc
+      var articleSummary = '';
+      var docId = extractGoogleDocId(docUrl);
+      if (docId) {
+        try {
+          var doc = DocumentApp.openById(docId);
+          var body = doc.getBody();
+          var totalElements = body.getNumChildren();
+          var h1Text = '';
+          var firstH2Text = '';
+          var introContent = '';
+          var foundH2 = false;
+
+          for (var e = 0; e < totalElements; e++) {
+            var el = body.getChild(e);
+            if (el.getType() !== DocumentApp.ElementType.PARAGRAPH) continue;
+            var para = el.asParagraph();
+            var heading = para.getHeading();
+            var pText = para.getText().trim();
+            if (!pText) continue;
+
+            if (!h1Text && heading === DocumentApp.ParagraphHeading.HEADING1) {
+              h1Text = pText;
+              continue;
+            }
+            if (!foundH2 && heading === DocumentApp.ParagraphHeading.HEADING2) {
+              firstH2Text = pText.replace(/^##\s*/, '').trim();
+              foundH2 = true;
+              continue;
+            }
+            if (foundH2 && !introContent) {
+              if (heading === DocumentApp.ParagraphHeading.HEADING3) continue;
+              if (heading === DocumentApp.ParagraphHeading.HEADING2 ||
+                  heading === DocumentApp.ParagraphHeading.HEADING1) break;
+              introContent = pText;
+              break;
+            }
+          }
+
+          var parts = [];
+          if (h1Text) parts.push(h1Text);
+          if (firstH2Text) parts.push(firstH2Text);
+          if (introContent) parts.push(introContent);
+          articleSummary = parts.join(' -- ');
+        } catch (err) {
+          Logger.log('Could not extract doc summary for row ' + (i + 2) + ': ' + err.message);
+        }
+      }
 
       rowsToTransfer.push({
         sourceRow: i + 2,
         state: data[i][6],           // G
         title: title,                 // H
-        docUrl: data[i][10],          // K
+        docUrl: docUrl,               // K
         articleType: data[i][2],      // C
-        originalTopic: data[i][1],    // B
+        originalTopic: originalTopic, // B
         tags: data[i][9],             // J
         references: data[i][8],       // I (references for news articles)
-        topicSummary: topicSummary
+        articleSummary: articleSummary
       });
     }
   }
@@ -9272,7 +9320,7 @@ function transferDraftsToArticleTracker() {
         .setWrapStrategy(SpreadsheetApp.WrapStrategy.CLIP).setFontFamily('Arial').setFontSize(8);
       astSheet.getRange(destRow, 10).setValue(item.tags)              // → J
         .setWrapStrategy(SpreadsheetApp.WrapStrategy.CLIP).setFontFamily('Arial').setFontSize(8);
-      astSheet.getRange(destRow, 11).setValue(item.topicSummary)      // → K
+      astSheet.getRange(destRow, 11).setValue(item.articleSummary)     // → K (Title -- Intro H2 -- Intro content)
         .setWrapStrategy(SpreadsheetApp.WrapStrategy.CLIP).setFontFamily('Arial').setFontSize(8);
       if (item.references) {
         astSheet.getRange(destRow, 13).setValue(item.references)    // → M (References)
