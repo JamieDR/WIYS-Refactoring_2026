@@ -549,6 +549,49 @@ function fetchIntroBySlugIntro(slug, username, appPassword) {
 }
 
 
+function fetchIntroByPostId(postId, username, appPassword) {
+  try {
+    var postUrl = 'https://wheninyourstate.com/wp-json/wp/v2/posts/' + postId + '?context=edit';
+    var options = {
+      method: 'get',
+      headers: { 'Authorization': 'Basic ' + Utilities.base64Encode(username + ':' + appPassword) },
+      muteHttpExceptions: true
+    };
+
+    var postResponse = UrlFetchApp.fetch(postUrl, options);
+    if (postResponse.getResponseCode() !== 200) return { success: false, error: 'API error: ' + postResponse.getResponseCode() };
+
+    var postData = JSON.parse(postResponse.getContentText());
+    var content = postData.content.raw;
+
+    if (!content.includes('wp:clmsn/slideshow-item')) return { success: false, error: 'No slideshow' };
+
+    var match = content.match(/<!-- wp:clmsn\/slideshow-item\s+({[^}]+})\s*-->([\s\S]*?)<!-- \/wp:clmsn\/slideshow-item -->/);
+    if (!match) return { success: false, error: 'Cannot parse slideshow' };
+
+    var blockContent = match[2];
+    var result = { success: true };
+
+    var h3Match = blockContent.match(/<h3[^>]*>([\s\S]*?)<\/h3>/);
+    if (h3Match) result.subheading = h3Match[1].replace(/&#8217;/g, "'").replace(/&#8220;/g, '"').replace(/&#8221;/g, '"').replace(/&amp;/g, '&').trim();
+
+    var pMatches = blockContent.match(/<p[^>]*>[\s\S]*?<\/p>/g);
+    if (pMatches && pMatches.length > 0) {
+      var allParagraphs = [];
+      for (var p = 0; p < pMatches.length; p++) {
+        var pText = pMatches[p].replace(/<[^>]+>/g, '').replace(/&#8217;/g, "'").replace(/&#8216;/g, "'").replace(/&#8220;/g, '"').replace(/&#8221;/g, '"').replace(/&#038;/g, '&').replace(/&amp;/g, '&').replace(/\s+/g, ' ').trim();
+        if (pText) allParagraphs.push(pText);
+      }
+      result.content = allParagraphs.join('\n\n');
+    }
+
+    if (!result.subheading && !result.content) return { success: false, error: 'No intro found' };
+    return result;
+
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+}
 
 
 function pasteArticleSections(e) {
@@ -11803,19 +11846,23 @@ function backfillWETColumnK() {
       continue;
     }
 
-    // Extract slug from WP URL (same approach as Article Collection)
+    // Try slug first, fall back to post ID for ?p= format URLs
     var slug = extractSlugFromUrlIntro(wpUrl);
-    if (!slug) {
-      Logger.log('COULD NOT EXTRACT SLUG for WET row ' + wetRow + ': ' + wpUrl);
+    var postId = slug ? null : extractPostIdFromUrl(wpUrl);
+
+    if (!slug && !postId) {
+      Logger.log('COULD NOT EXTRACT SLUG OR POST ID for WET row ' + wetRow + ': ' + wpUrl);
       errors++;
       continue;
     }
 
     try {
-      var result = fetchIntroBySlugIntro(slug, username, appPassword);
+      var result = slug
+        ? fetchIntroBySlugIntro(slug, username, appPassword)
+        : fetchIntroByPostId(postId, username, appPassword);
 
       if (!result.success) {
-        Logger.log('FETCH FAILED for WET row ' + wetRow + ' (slug: ' + slug + '): ' + result.error);
+        Logger.log('FETCH FAILED for WET row ' + wetRow + ' (' + (slug ? 'slug: ' + slug : 'postId: ' + postId) + '): ' + result.error);
         errors++;
         continue;
       }
@@ -11832,7 +11879,7 @@ function backfillWETColumnK() {
         filled++;
         Logger.log('FILLED WET row ' + wetRow + ': ' + value.substring(0, 80) + (value.length > 80 ? '...' : ''));
       } else {
-        Logger.log('NO INTRO CONTENT for WET row ' + wetRow + ' (slug: ' + slug + ')');
+        Logger.log('NO INTRO CONTENT for WET row ' + wetRow + ' (' + (slug ? 'slug: ' + slug : 'postId: ' + postId) + ')');
         errors++;
       }
 
