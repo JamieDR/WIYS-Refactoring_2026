@@ -144,11 +144,11 @@ const CONFIG = {
 
   // ===== ERROR MESSAGES =====
   ERRORS: {
-    ARTICLE_NOT_FOUND: 'Paste failed — Mismatched titles. Title in Uploader not found on AST. Must be an exact match.',
-    INVALID_DOC_URL: 'Paste failed — GDoc URL mismatch. The Google Doc link on the AST is missing or broken.',
-    ARTICLE_TITLE_NOT_FOUND: 'Paste failed — Missing H1. No heading in the Google Doc matches the article title. Title must be an exact match.',
-    NO_H2_SECTIONS: 'Paste failed — Missing H2s. No section headings found in the Google Doc.',
-    INVALID_URL_FORMAT: 'Paste failed — GDoc URL mismatch. URL should look like docs.google.com/document/d/...'
+    ARTICLE_NOT_FOUND: 'Paste failed — Mismatched titles. Exact match required.',
+    INVALID_DOC_URL: 'Paste failed — GDoc URL missing or broken on AST.',
+    ARTICLE_TITLE_NOT_FOUND: 'Paste failed — Missing H1. Title not found in doc.',
+    NO_H2_SECTIONS: 'Paste failed — Missing H2s. No section headings in doc.',
+    INVALID_URL_FORMAT: 'Paste failed — Bad GDoc URL format.'
   },
 
   // ===== CONTENT SECTION MARKERS =====
@@ -437,14 +437,12 @@ function validateParsedSections(sections) {
 
     // Check 1: Heading is way too long — paragraph text probably got merged into the heading
     if (section.subheading.length > 200) {
-      errors.push('Clean GDoc content — Section ' + (i + 1) + ' heading is ' + section.subheading.length +
-        ' chars long. Paragraph text is merged into the heading. Fix the doc before pasting.');
+      errors.push('Section ' + (i + 1) + ': heading is ' + section.subheading.length + ' chars — text merged into heading.');
     }
 
     // Check 2: Heading with no paragraph text underneath — two headings back-to-back
     if (section.content.length === 0) {
-      errors.push('Clean GDoc content — Section ' + (i + 1) + ' ("' + section.subheading.substring(0, 50) +
-        '") has no text under it. Back-to-back headings. Fix the doc before pasting.');
+      errors.push('Section ' + (i + 1) + ': no content — back-to-back headings.');
     }
   }
 
@@ -954,7 +952,7 @@ function pasteArticleSections(e) {
     // === VALIDATION: Check for structural problems before pasting ===
     var validationErrors = validateParsedSections(sections);
     if (validationErrors.length > 0) {
-      var errorMsg = 'Paste failed — Clean GDoc content. ' + validationErrors.join(' | ');
+      var errorMsg = 'Paste failed — Bad GDoc formatting. ' + validationErrors.join(' | ');
       Logger.log('VALIDATION FAILED: ' + errorMsg);
 
       // Write error to Uploader trigger row
@@ -997,7 +995,7 @@ function pasteArticleSections(e) {
   } catch (error) {
     Logger.log('Error in pasteArticleSections: ' + error.message);
     Logger.log('Stack trace: ' + error.stack);
-    sheet.getRange(row, CONFIG.COLUMNS.STATUS_MESSAGES).setValue('Paste failed — unexpected error. Check execution log. (' + error.message + ')');
+    sheet.getRange(row, CONFIG.COLUMNS.STATUS_MESSAGES).setValue('Paste failed — unexpected error. Contact Jamie. (' + error.message + ')');
   }
 }
 
