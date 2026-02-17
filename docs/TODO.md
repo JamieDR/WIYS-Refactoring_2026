@@ -164,6 +164,11 @@ Once content pipeline is proven and working:
 - Or both
 **Also:** Other team is dumping 15+ hashtag-style tags per article. Their boss has been notified. Code now skips `#` tags (committed Feb 17).
 
+## 18. Config sheet — visual map of all CONFIG values and sheet dependencies
+**System:** New sheet tab in the spreadsheet
+**What:** A visual reference showing CONFIG values organized by sheet name — column mappings, which functions touch each sheet, dependencies between sheets, WordPress IDs, endpoints. Jamie is a visual learner; this replaces digging through code to understand the system.
+**When:** After Phase 3 (column mappings) — the config will be more stable by then.
+
 ---
 
 # Learning / Discussion
