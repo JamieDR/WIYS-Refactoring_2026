@@ -1005,8 +1005,22 @@ if (section.needsUrl) {
     Logger.log('  Col E (subheading=' + CONFIG.COLUMNS.SUBHEADING + '): "' + (section.subheading.length > 80 ? section.subheading.substring(0, 80) + '...' : section.subheading) + '" (' + section.subheading.length + ' chars)');
     Logger.log('  Col F (content=' + CONFIG.COLUMNS.SLIDE_CONTENT + '): "' + (combinedContent.length > 80 ? combinedContent.substring(0, 80) + '...' : combinedContent) + '" (' + combinedContent.length + ' chars)');
     if (combinedContent.length === 0) Logger.log('  *** WARNING: Content is EMPTY for this section! ***');
+
+    // === DIAGNOSTIC: Detect the merged subheading+content bug ===
+    if (section.subheading.length > 100 && combinedContent.length === 0) {
+      Logger.log('  *** BUG DETECTED: Subheading is ' + section.subheading.length + ' chars with NO content. Subheading+content likely merged! ***');
+      Logger.log('  Full subheading text: "' + section.subheading + '"');
+    }
+    if (section.subheading.indexOf('\n') !== -1) {
+      Logger.log('  *** BUG DETECTED: Subheading contains NEWLINES — multiple lines merged into heading ***');
+      var subLines = section.subheading.split('\n');
+      Logger.log('  Subheading line count: ' + subLines.length);
+      for (var sl = 0; sl < subLines.length; sl++) {
+        Logger.log('    subheading line ' + sl + ': "' + subLines[sl].substring(0, 150) + '"');
+      }
+    }
   }
-  
+
   // Update status in Uploader
   sheet.getRange(row, CONFIG.COLUMNS.STATUS_MESSAGES).setValue(CONFIG.STATUS.SECTIONS_PASTED_SUCCESSFULLY);
 
