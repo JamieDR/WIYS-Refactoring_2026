@@ -13693,6 +13693,38 @@ function listAllScriptProperties() {
 }
 
 /**
+ * DIAGNOSTIC: Read the Function Inventory sheet and log all marked rows.
+ * Run this, then copy the log output and paste it to Claude.
+ */
+function readFunctionInventory() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName('Function Inventory');
+  if (!sheet) { Logger.log('ERROR: No "Function Inventory" sheet found'); return; }
+
+  var data = sheet.getDataRange().getValues();
+  var output = [];
+
+  // Skip header row (row 0)
+  for (var i = 1; i < data.length; i++) {
+    var name = data[i][0];     // Function Name
+    var line = data[i][1];     // Line
+    var action = data[i][6];   // Action column (G)
+    var notes = data[i][7];    // Jamie Notes (H)
+
+    if (action) {  // Only show rows where Action is filled in
+      output.push(action + ' | ' + name + ' (line ' + line + ')' + (notes ? ' | ' + notes : ''));
+    }
+  }
+
+  if (output.length === 0) {
+    Logger.log('No rows marked yet.');
+  } else {
+    Logger.log('=== MARKED FUNCTIONS (' + output.length + ' total) ===');
+    Logger.log(output.join('\n'));
+  }
+}
+
+/**
  * DIAGNOSTIC: Create a "Function Inventory" sheet listing every function.
  * Columns: Function Name | Line | What It Does | Sheets | Called By | Claude Notes | Action (dropdown) | Jamie Notes
  * Jamie fills in Action + Notes, then we execute the cleanup.
