@@ -11816,8 +11816,8 @@ function backfillWETColumnK() {
   var username = CONFIG.WORDPRESS.USERNAME;
   var appPassword = CONFIG.WORDPRESS.APP_PASSWORD;
 
-  // Read columns C, D, and K (cols 3, 4, 11) — grab C through K in one read
-  var wetData = wetSheet.getRange(2, 3, wetLastRow - 1, 9).getValues(); // C(0) D(1) ... K(8)
+  // Read columns C through K — WP URL is in Column E (index 2), title in C (index 0), K (index 8)
+  var wetData = wetSheet.getRange(2, 3, wetLastRow - 1, 9).getValues(); // C(0) D(1) E(2) ... K(8)
 
   var filled = 0;
   var skipped = 0;
@@ -11827,7 +11827,7 @@ function backfillWETColumnK() {
   for (var w = 0; w < wetData.length; w++) {
     var wetRow = w + 2;
     var wetTitle = (wetData[w][0] || '').toString().trim();  // Column C
-    var wpUrl = (wetData[w][1] || '').toString().trim();     // Column D
+    var wpUrl = (wetData[w][2] || '').toString().trim();     // Column E
     var wetK = (wetData[w][8] || '').toString().trim();       // Column K
 
     // Skip empty rows
