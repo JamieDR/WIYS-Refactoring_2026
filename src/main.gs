@@ -9425,6 +9425,109 @@ function convertTagsToWordPressCached(tagNames, username, applicationPassword) {
   return finalTagIds;
 }
 
+/**
+ * DIAGNOSTIC — Run from Script Editor to see duplicate tags in WordPress.
+ * Fetches ALL tags, groups by lowercase name, logs any with duplicates.
+ * Does NOT modify anything. Safe to run anytime.
+ */
+function diagnoseDuplicateTags() {
+  var username = CONFIG.WORDPRESS.USERNAME;
+  var applicationPassword = CONFIG.WORDPRESS.APP_PASSWORD;
+  var tagsEndpoint = CONFIG.WORDPRESS.BASE_URL + "/wp-json/wp/v2/tags";
+
+  var allTags = [];
+  var page = 1;
+  var perPage = 100;
+
+  Logger.log('Fetching all WordPress tags...');
+
+  // Paginate through all tags
+  while (true) {
+    var url = tagsEndpoint + "?per_page=" + perPage + "&page=" + page;
+    var response = UrlFetchApp.fetch(url, {
+      method: "get",
+      headers: {
+        "Authorization": "Basic " + Utilities.base64Encode(username + ":" + applicationPassword)
+      },
+      muteHttpExceptions: true
+    });
+
+    if (response.getResponseCode() !== 200) {
+      Logger.log('API error on page ' + page + ': ' + response.getResponseCode());
+      break;
+    }
+
+    var tags = JSON.parse(response.getContentText());
+    if (tags.length === 0) break;
+
+    allTags = allTags.concat(tags);
+    Logger.log('Fetched page ' + page + ' (' + tags.length + ' tags, ' + allTags.length + ' total so far)');
+
+    if (tags.length < perPage) break;
+    page++;
+    Utilities.sleep(200);
+  }
+
+  Logger.log('Total tags fetched: ' + allTags.length);
+
+  // Group by lowercase name
+  var tagsByName = {};
+  for (var i = 0; i < allTags.length; i++) {
+    var tag = allTags[i];
+    var key = tag.name.toLowerCase();
+    if (!tagsByName[key]) {
+      tagsByName[key] = [];
+    }
+    tagsByName[key].push({
+      id: tag.id,
+      name: tag.name,
+      slug: tag.slug,
+      count: tag.count
+    });
+  }
+
+  // Find duplicates
+  var duplicateCount = 0;
+  var wastedTags = 0;
+  var names = Object.keys(tagsByName).sort();
+
+  for (var j = 0; j < names.length; j++) {
+    var group = tagsByName[names[j]];
+    if (group.length > 1) {
+      duplicateCount++;
+      wastedTags += group.length - 1;
+      Logger.log('DUPLICATE: "' + names[j] + '" (' + group.length + ' copies)');
+      for (var k = 0; k < group.length; k++) {
+        Logger.log('  ID: ' + group[k].id + ' | name: "' + group[k].name + '" | slug: ' + group[k].slug + ' | posts: ' + group[k].count);
+      }
+    }
+  }
+
+  Logger.log('--- SUMMARY ---');
+  Logger.log('Total unique tag names: ' + names.length);
+  Logger.log('Tag names with duplicates: ' + duplicateCount);
+  Logger.log('Wasted duplicate tags: ' + wastedTags);
+  Logger.log('Total tags in WordPress: ' + allTags.length);
+
+  // Also check Script Properties usage
+  var props = PropertiesService.getScriptProperties();
+  var allProps = props.getProperties();
+  var tagProps = 0;
+  var totalProps = 0;
+  var propKeys = Object.keys(allProps);
+  for (var p = 0; p < propKeys.length; p++) {
+    totalProps++;
+    if (propKeys[p].indexOf('tag_') === 0) {
+      tagProps++;
+    }
+  }
+
+  Logger.log('--- SCRIPT PROPERTIES ---');
+  Logger.log('Total properties: ' + totalProps);
+  Logger.log('Tag cache entries: ' + tagProps);
+  Logger.log('Non-tag properties: ' + (totalProps - tagProps));
+}
+
 function checkDailyTagCacheRefresh(username, applicationPassword) {
   var cache = PropertiesService.getScriptProperties();
   var lastRefreshDate = cache.getProperty('last_tag_refresh_date');

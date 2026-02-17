@@ -47,12 +47,12 @@ Used daily by a team of 6 people. Connected to a Google Sheet as the main UI.
 ```
 
 ## Refactoring Plan (Agreed Upon)
-- **Phase 0:** Project structure, clasp, Codespaces, tooling ← CURRENT
+- **Phase 0:** Project structure, clasp, Codespaces, tooling ← DONE
 - **Phase 1:** Document what exists (sheets, lifecycle, menus, APIs)
-- **Phase 2:** Split monolith into separate .gs files (organizational only, no behavior changes)
-- **Phase 3:** Reduce duplication (DRY — extract shared patterns)
-- **Phase 4:** Decouple business logic from spreadsheet layout (column mappings for all sheets)
-- **Phase 5:** Clean architecture for new features
+- **Phase 2:** Reduce duplication (DRY — extract shared patterns) ← CURRENT
+- **Phase 3:** Decouple business logic from spreadsheet layout (column mappings for all sheets)
+- **Phase 4:** Clean architecture for new features
+- **Phase 5:** Split monolith into separate .gs files (organizational only, no behavior changes)
 
 ## Key Rules
 - NEVER change functionality during refactoring — behavior must stay identical
