@@ -1,539 +1,601 @@
-# Git, GitHub & Codespaces — Complete Lesson
+# Git, GitHub & Codespaces — Interactive Lesson
 
-**Purpose:** Before we do any more work on the codebase, you need to understand and operate the tools that protect it. This isn't optional — it's the safety net under everything we've built.
+**How this works:** This is NOT a reading assignment. It's a guided walkthrough you do WITH Claude in the terminal. Every concept is learned by doing something, seeing what happens, and answering a question about it. Claude will be checking your answers.
 
-**Goal:** After this lesson, you should be able to answer: **What** is each tool? **Why** does it exist? **How** does it work? **Where** does it fit in your workflow?
-
----
-
-## Chapter 1: The Big Picture — What Are These Things?
-
-There are three separate things that people often confuse. Let's untangle them.
-
-### Git (the tool)
-**What:** A program that runs on your computer (or in Codespaces) that tracks changes to files over time. It was created in 2005 by Linus Torvalds (the same person who created Linux).
-
-**Why it exists:** Before Git, developers had problems:
-- "Which version of this file is the latest?"
-- "I broke something — how do I go back to yesterday's version?"
-- "Two people edited the same file — whose changes do we keep?"
-
-Git solves all three. It's a **time machine for your code.**
-
-**Where it runs:** On your local machine. Git works entirely offline. You don't need internet to track changes, make commits, switch branches, or view history. It's a program installed in your environment.
-
-**Key concept:** Git tracks a **repository** (often shortened to "repo"). A repository is just a folder that Git is watching. Our repository is the `WIYS-Refactoring_2026` folder.
-
-### GitHub (the website)
-**What:** A website (github.com) that stores a copy of your Git repository online. Think of it as Google Drive, but specifically designed for Git repositories.
-
-**Why it exists:** Git works locally, but what if:
-- Your computer dies? (You need a backup somewhere else.)
-- Someone else needs to see the code? (They need access to a shared copy.)
-- You want to review changes before they go live? (You need a place to discuss them.)
-
-GitHub is that shared place. It's **not** Git itself — it's a service built on top of Git.
-
-**Where it fits:** GitHub holds the **remote** copy. Your Codespace holds the **local** copy. Git is the tool that syncs between them.
-
-**Your GitHub repo:** `github.com/JamieDR/WIYS-Refactoring_2026` — this is the "source of truth." If your Codespace explodes, everything is still safe on GitHub.
-
-### GitHub Codespaces (the environment)
-**What:** A virtual computer that GitHub runs for you in the cloud. When you open a Codespace, GitHub creates a Linux machine, clones your repository onto it, installs the tools defined in `.devcontainer/devcontainer.json`, and gives you a VS Code editor in your browser.
-
-**Why it exists:** Setting up a development environment on your own computer is painful — you need to install Git, Node.js, Python, clasp, configure everything, deal with OS differences. Codespaces does all that setup automatically, every time, identically.
-
-**Where it fits:** Your Codespace IS your local machine for development purposes. When you run Git commands in the Codespace terminal, you're running them on that virtual machine. When you edit files in the Codespace editor, you're editing files on that virtual machine.
-
-**What happens when you open your Codespace:**
-1. GitHub creates (or restarts) a virtual Linux machine
-2. It clones your repository from GitHub onto it
-3. It reads `.devcontainer/devcontainer.json` and installs tools (like clasp, Python, Node.js)
-4. It opens VS Code in your browser, connected to that machine
-5. You're ready to work
-
-**What happens when you close/stop your Codespace:**
-- The virtual machine pauses (like putting a computer to sleep)
-- Your files are preserved — they're still there when you restart
-- But if you DELETE the Codespace (different from stopping), the local files are gone
-- That's fine as long as you pushed your changes to GitHub first
-
-### How They Connect — The Flow
-
-```
-Your Codespace (local)          GitHub (remote)
-┌─────────────────────┐         ┌─────────────────────┐
-│                     │         │                     │
-│  You edit files     │         │  Backup copy lives  │
-│  Git tracks changes │  push → │  here on GitHub     │
-│  You make commits   │ ← pull  │  PRs happen here    │
-│                     │         │  Others can see it  │
-│  clasp push →→→→→→→→│→→→→→→→→→│→→→ Google Apps Script│
-│                     │         │                     │
-└─────────────────────┘         └─────────────────────┘
-        Git syncs between local and remote
-        clasp syncs between local and Google Apps Script
-```
-
-**Two separate sync systems:**
-- **Git** moves code between your Codespace and GitHub
-- **clasp** moves code between your Codespace and Google Apps Script
-
-They don't know about each other. You run them separately.
+**Rules:**
+- YOU type every command. Claude doesn't type for you.
+- Before running each command, Claude will ask what you THINK will happen.
+- After running it, Claude will ask what you SEE and what it means.
+- If you get something wrong, that's fine — that's how learning works. We'll talk through it.
+- Don't skip ahead. Each exercise builds on the last.
 
 ---
 
-## Chapter 2: Why Git Matters for This Project
+## Module 1: Where Are You Right Now?
 
-### The Production Problem
-Your WIYS system is used by 6 people every day. The code is 16,400+ lines. We're refactoring it — changing internal structure without changing what it does. That's like renovating a restaurant while it's open for business.
+### Exercise 1.1 — Your first command
 
-Without Git:
-- You make a change. It breaks something. How do you undo it? (You can't reliably.)
-- I make a change in Session 7. In Session 9 something is wrong. When did it break? (No way to trace.)
-- You want to try an experimental approach. What if it fails? (You've lost the working version.)
-
-With Git:
-- Every change is recorded with who made it, when, and why (commit message)
-- You can go back to any previous state instantly
-- Branches let you try experiments without risking the working code
-- If something breaks in production, you can trace exactly which commit introduced the problem
-
-### The Safety Net Analogy
-Git is like a safety net under a trapeze. You don't think about it when things are going well. But when you fall — when code breaks, when a refactoring goes wrong, when you accidentally delete something — it catches you. The cost of NOT having it is catastrophic. The cost of having it is learning a few commands.
-
-Right now, **I** operate your safety net. That's a problem. You should be able to:
-- Verify what I committed (trust but verify)
-- Roll back changes yourself if something breaks between sessions
-- Understand what happened in the project history without asking me
-
----
-
-## Chapter 3: Core Concepts (The Mental Model)
-
-Before learning commands, you need the mental model. Commands are just buttons — understanding is what matters.
-
-### Concept 1: The Three States of a File
-
-Every file in a Git repository is in one of three states:
-
-```
- ┌──────────────┐     git add     ┌──────────────┐    git commit    ┌──────────────┐
- │   Modified   │ ──────────────→ │    Staged     │ ──────────────→ │  Committed   │
- │  (unstaged)  │                 │  (in outbox)  │                 │   (saved)    │
- └──────────────┘                 └──────────────┘                  └──────────────┘
-       ↑                                                                   │
-       └───────────────── you edit the file again ─────────────────────────┘
-```
-
-- **Modified (unstaged):** You changed the file, but Git hasn't been told to include it in the next save point yet. It's on your desk.
-- **Staged:** You told Git "include this file in my next save point." It's in your outbox, waiting to be sent.
-- **Committed:** The save point is created. The changes are permanently recorded in history. It's in the filing cabinet.
-
-**Why the middle step?** Why can't you just save directly? Because sometimes you change 5 files but only want to save 3 of them right now. Staging lets you pick exactly which changes go into each commit. It's quality control.
-
-### Concept 2: Commits (Save Points)
-
-A commit is a snapshot of your entire project at one moment in time. Every commit has:
-- A **hash** (unique ID) — like `a3f7b2c`. No two commits in history will ever have the same hash.
-- An **author** — who made it
-- A **timestamp** — when
-- A **message** — why (this is what YOU write)
-- A **parent** — which commit came before it
-
-Commits form a chain. Each one points back to the one before it:
-
-```
-commit 1 ← commit 2 ← commit 3 ← commit 4 (latest)
-```
-
-You can go back to any commit in this chain. That's your time machine.
-
-### Concept 3: Branches (Parallel Timelines)
-
-A branch is a parallel timeline. When you create a branch, you're saying "I want to try something, but I don't want to risk the main timeline."
-
-```
-main:     commit 1 ← commit 2 ← commit 3
-                                    ↑
-my-branch:                     ← commit A ← commit B
-```
-
-- `main` keeps going as it was
-- `my-branch` splits off and has its own commits
-- If `my-branch` works out, you **merge** it back into `main`
-- If it doesn't, you delete the branch and `main` is untouched
-
-**For this project:**
-- `main` is the production-ready code
-- Feature/fix branches (like `claude/fix-tag-caching-...`) are where we make changes
-- We merge into `main` only after reviewing (via Pull Requests on GitHub)
-
-### Concept 4: Remote vs. Local
-
-Your repository exists in two places:
-- **Local** (your Codespace) — where you edit, stage, commit
-- **Remote** (GitHub) — the backup/shared copy
-
-They are **not** automatically in sync. You manually sync them:
-- `git push` → sends your local commits to GitHub
-- `git pull` → downloads commits from GitHub to your local copy
-
-**Why manual?** Because automatic syncing would mean half-finished work gets uploaded instantly. You want to control when things go to GitHub.
-
-### Concept 5: Pull Requests (Code Review)
-
-A Pull Request (PR) is a GitHub feature (not a Git feature). It says: "I have a branch with changes. I'd like to merge it into main. Please review it first."
-
-PRs let you:
-- See exactly what changed (diff view)
-- Discuss changes before they go live
-- Approve or request modifications
-- Keep a record of why changes were made
-
-**Our workflow:**
-1. Create a branch
-2. Make commits on that branch
-3. Push the branch to GitHub
-4. Open a Pull Request on GitHub
-5. Review the changes
-6. Merge into main (or reject)
-
----
-
-## Chapter 4: The Commands (Hands-On)
-
-Now that you have the mental model, here are the commands. Each one maps to a concept you already understand.
-
-### 4.1 — Checking Status: "What's going on right now?"
-
-#### `git status`
-The command you'll use most. Run it constantly. Run it before and after everything.
-
+**Do this:** Open your terminal in Codespaces and type:
 ```bash
 git status
 ```
 
-**Output tells you:**
-- Line 1: Which branch you're on
-- Green text: Files that are **staged** (in the outbox, ready to commit)
-- Red text: Files that are **modified but unstaged** OR **untracked** (new files Git doesn't know about)
-- "nothing to commit, working tree clean" = everything is committed, nothing has changed
+**Claude will ask you:**
+1. Read the very first line of the output. What does it say?
+2. Does it say "nothing to commit" or does it list some files? What does that tell you?
+3. If there are files listed — are they in green or red text? (We'll talk about what that means.)
 
-**When to run it:** Before every operation. After every operation. When in doubt. There's no cost to running it — it just reads the current state.
+**The concept you just learned:** `git status` is your "where am I, what's going on" command. You'll run this constantly. It costs nothing and tells you everything about the current state.
 
-#### `git branch`
-Lists your local branches. The `*` marks the one you're on.
+---
 
+### Exercise 1.2 — What branch are you on?
+
+**Do this:**
 ```bash
 git branch
 ```
 
-#### `git branch -a`
-Lists all branches — local AND remote (ones that exist on GitHub).
+**Claude will ask you:**
+1. How many branches do you see?
+2. One of them has a `*` next to it. Which one? What do you think the `*` means?
 
+**Now try this:**
 ```bash
 git branch -a
 ```
 
-Remote branches show up as `remotes/origin/branch-name`.
+**Claude will ask you:**
+1. What new entries appeared? They should start with `remotes/origin/...`
+2. What do you think "remotes" means? Where do you think those branches live?
 
-### 4.2 — Viewing Changes: "What did I change?"
+**The concept you just learned:** Your code exists in two places — your Codespace (local) and GitHub (remote). `git branch` shows local branches. `git branch -a` shows both. The `remotes/origin/` ones live on GitHub.
 
-#### `git diff`
-Shows line-by-line changes in **unstaged** files.
+---
 
-```bash
-git diff
-```
+### Exercise 1.3 — Your project history
 
-**Reading the output:**
-```
-diff --git a/src/Code.gs b/src/Code.gs     ← which file
-index abc123..def456 100644                  ← (you can ignore this line)
---- a/src/Code.gs                            ← the "before" version
-+++ b/src/Code.gs                            ← the "after" version
-@@ -150,7 +150,8 @@                          ← location: line 150, showing 7→8 lines
-   unchanged line                             ← context (no + or -)
--  old line that was removed                  ← REMOVED (red)
-+  new line that replaced it                  ← ADDED (green)
-+  another new line                           ← ADDED (green)
-   unchanged line                             ← context
-```
-
-**The pager:** If the diff is long, it opens in a scrollable viewer.
-- `q` = quit (exit back to terminal)
-- `space` = scroll down one page
-- `b` = scroll up one page
-- `↑` / `↓` = scroll one line at a time
-
-#### `git diff --staged`
-Same format, but shows changes in **staged** files (what's about to be committed).
-
-```bash
-git diff --staged
-```
-
-**Decision guide:**
-- "What have I changed but not staged?" → `git diff`
-- "What am I about to commit?" → `git diff --staged`
-
-### 4.3 — Viewing History: "What happened before?"
-
-#### `git log --oneline -5`
-The one you'll use most. Shows the last 5 commits, one line each.
-
+**Do this:**
 ```bash
 git log --oneline -5
 ```
 
-Output:
-```
-e492747 Add Git lesson materials and update clasp status
-df6d7ef Merge pull request #11 from JamieDR/claude/resume-session-Xuq9x
-ab83c82 Add Session 8 developer log
-c102bab Merge pull request #10
-8f3a2d1 Fix tag caching bug
-```
+**Claude will ask you:**
+1. Each line has a short code (like `e492747`) and then some text. What do you think the code is? What's the text?
+2. Which entry is the most recent — the top or the bottom?
+3. Pick any line. Can you tell what was changed just from the text? If the text is unclear, what would be a better version?
 
-The 7-character code is the **short hash** (abbreviated commit ID). The text is the **commit message**.
-
-#### `git log`
-Full-detail version. Shows hash, author, date, and message for each commit.
-
+**Now try the full version:**
 ```bash
-git log
+git log -3
 ```
 
-Same pager rules — `q` to quit.
+**Claude will ask you:**
+1. What extra information do you see compared to `--oneline`?
+2. Who is listed as the author?
+3. It opens in a scrollable viewer. Press `q` to exit. Did that work?
 
-#### `git log --oneline --graph`
-Shows the branch structure visually.
+**The concept you just learned:** Every time someone saves changes to this project, it creates a "commit" — a save point with a unique ID (the hash), a message, an author, and a timestamp. `git log` is the history book.
 
+---
+
+## Module 2: What Are Git, GitHub, and Codespaces?
+
+Now that you've used some commands, let's make sure you understand the bigger picture. This module is a conversation, not reading.
+
+### Exercise 2.1 — Find the evidence
+
+**Do this:**
 ```bash
-git log --oneline --graph -15
+git remote -v
 ```
 
-You'll see lines like `*`, `|`, `/`, `\` that show where branches split and merge.
+**Claude will ask you:**
+1. You should see a URL. What website does it point to?
+2. That URL is where your code gets backed up when you "push." What website is that?
+3. So there are TWO copies of your code — one here in your Codespace, one at that URL. Why would you want two copies?
 
-### 4.4 — The Commit Workflow: "Save my work"
+**The concept:** Git is the tool (runs locally). GitHub is the website (remote backup). Your Codespace is the virtual computer where you work. Three different things.
 
-This is always three steps, in this order. No exceptions.
+---
 
-#### Step 1: Stage — `git add`
+### Exercise 2.2 — See your Codespace config
 
+**Do this:**
 ```bash
-git add src/Code.gs                          # stage one file
-git add src/Code.gs docs/some-doc.md         # stage multiple files
+cat .devcontainer/devcontainer.json
 ```
 
-**Rule: Always name specific files.** Never use `git add .` or `git add -A`. Those stage everything, including files you might not want (like `.env` files with API keys, or large files you didn't mean to track).
+**Claude will ask you:**
+1. Can you spot the line that installs clasp? What does it say?
+2. This file runs automatically when your Codespace starts up. Why is that useful? What would happen if you had to install clasp manually every time?
 
-#### Step 2: Verify — `git status`
+**The concept:** Codespaces reads this config file and sets up your environment automatically. That's why you don't have to install tools yourself — it's all defined here.
 
+---
+
+### Exercise 2.3 — clasp vs. Git (the two pipelines)
+
+**Do this:**
+```bash
+clasp --version
+```
+```bash
+git --version
+```
+
+**Claude will ask you:**
+1. Both of these are tools that move code around. But they move code to DIFFERENT places. Where does `clasp push` send code? Where does `git push` send code?
+2. If you ran `clasp push` but forgot to run `git push`, what would happen? Would the live Google Apps Script have the new code? Would GitHub?
+3. If you deleted your Codespace right now without running `git push`, would your live Google Apps Script still work? Would GitHub have your latest changes?
+
+**The concept:** Two completely separate pipelines. clasp goes to Google Apps Script. Git goes to GitHub. They don't know about each other.
+
+```
+Google Apps Script  ←── clasp ──→  YOUR CODESPACE  ←── git ──→  GitHub
+    (live system)                   (where you work)              (backup)
+```
+
+---
+
+## Module 3: The Three States of a File (Learn by Watching)
+
+This is the most important concept in Git. You're going to learn it by watching a file move through all three states.
+
+### Exercise 3.1 — Start clean
+
+**Do this:**
 ```bash
 git status
 ```
 
-Check the green (staged) section. Is that exactly what you intend to commit? If you staged something by mistake:
+**Claude will ask you:**
+1. Does it say "nothing to commit, working tree clean"? (If not, we need to deal with that first.)
 
-```bash
-git restore --staged filename    # unstage it (the file's changes are kept, just removed from the outbox)
-```
-
-#### Step 3: Commit — `git commit`
-
-```bash
-git commit -m "Fix tag caching bug that created duplicate WordPress tags"
-```
-
-The `-m` flag means "message follows." The message goes in quotes.
-
-**Commit message rules:**
-- Start with a verb: Fix, Add, Remove, Update, Refactor
-- Say WHAT changed AND WHY
-- Keep the first line under ~72 characters
-- Good: "Fix tag caching bug that created duplicate WordPress tags"
-- Good: "Remove dead function purgeTagCacheFromScriptProperties"
-- Bad: "update" / "fix" / "changes" / "stuff"
-
-### 4.5 — Syncing with GitHub: "Send/receive"
-
-#### `git push` — Send your commits to GitHub
-
-```bash
-git push                              # if tracking is already set up
-git push -u origin branch-name        # first push of a new branch (sets up tracking)
-```
-
-**What `-u origin branch-name` means:**
-- `-u` = set up tracking (so future pushes just need `git push`)
-- `origin` = the name for "GitHub" (it's the default remote name)
-- `branch-name` = which branch to push
-
-**When to push:**
-- When you've finished a logical unit of work
-- Before ending a session (so your work is backed up on GitHub)
-- Before opening a Pull Request
-
-#### `git pull` — Get the latest from GitHub
-
-```bash
-git pull                             # pull current branch
-git pull origin main                 # pull a specific branch
-```
-
-**When to pull:**
-- Start of every session
-- Before creating a new branch (so you branch from the latest code)
-- When someone else has made changes on GitHub
-
-### 4.6 — Branch Operations: "Work in parallel"
-
-#### See branches
-```bash
-git branch                # local branches
-git branch -a             # local + remote
-```
-
-#### Switch to an existing branch
-```bash
-git checkout branch-name
-```
-
-**Important:** If you have uncommitted changes when you try to switch, Git will warn you. Either commit them first or stash them (we'll cover stashing later — for now, just commit first).
-
-#### Create a new branch and switch to it
-```bash
-git checkout -b my-new-branch
-```
-
-**Critical sequence for creating a branch:**
-```bash
-git checkout main                  # 1. Go to main
-git pull                           # 2. Get the latest
-git checkout -b my-new-branch      # 3. Create branch from updated main
-```
-
-**Why this order?** If you skip step 2, your branch is based on outdated code. If you skip step 1, your branch is based on whatever branch you were on — which might not be `main`.
-
-#### Delete a branch (when done with it)
-```bash
-git branch -d branch-name          # safe delete (only if fully merged)
-```
+Good. Everything is saved. No changes pending. Remember what this "clean" state looks like.
 
 ---
 
-## Chapter 5: .gitignore — What Git Should NOT Track
+### Exercise 3.2 — Make a change (State 1: Modified)
 
-Not every file in your project folder should be tracked by Git. The `.gitignore` file tells Git which files and folders to ignore completely.
+**Do this:** Open the file explorer on the left in VS Code. Navigate to `docs/guides/`. Create a new file called `jamie-scratch.md`. Type anything in it — even just "hello world". Save the file.
 
-**Why this matters:**
-- API keys and credentials should NEVER be in Git (anyone with access to the repo could see them)
-- Large files (images, videos, data dumps) bloat the repository
-- Temporary/generated files (like `node_modules/`) are recreated by tools and don't need version control
-
-**How it works:** You list patterns in `.gitignore`, one per line:
-```
-.env                    # ignore this specific file
-*.log                   # ignore all files ending in .log
-node_modules/           # ignore this entire folder
+**Now run:**
+```bash
+git status
 ```
 
-Git will pretend these files don't exist. They won't show up in `git status`, won't be staged by `git add`, and won't be committed.
+**Claude will ask you:**
+1. The output changed from Exercise 3.1. What's different?
+2. Is your new file in green or red?
+3. Git calls it "untracked." What do you think that means? Has Git ever seen this file before?
 
-**Our `.gitignore` already handles this** — but you should know it exists and what it does.
+**The concept:** You just saw **State 1: Modified/Untracked.** The file exists on your computer, but Git hasn't been told to care about it yet. It's sitting on your desk, not in the outbox.
 
 ---
 
-## Chapter 6: How clasp Fits In
+### Exercise 3.3 — Stage the file (State 2: Staged)
 
-You already know clasp from using it. Here's how it relates to Git:
-
-**clasp** pushes/pulls code between your Codespace and Google Apps Script. **Git** pushes/pulls code between your Codespace and GitHub. They are completely independent systems.
-
-```
-Google Apps Script  ←──clasp push/pull──→  Codespace  ←──git push/pull──→  GitHub
-    (live system)                        (your workspace)                  (backup/review)
+**Do this:**
+```bash
+git add docs/guides/jamie-scratch.md
 ```
 
-**The workflow in practice:**
-1. Edit code in Codespace
-2. Test with `clasp push` → Google Apps Script
-3. Once it works: `git add` → `git commit` → `git push` to GitHub
-4. Open a PR on GitHub for review
+Nothing will print. That's normal. **Now run:**
+```bash
+git status
+```
 
-**Important:** `clasp push` does NOT commit to Git. `git push` does NOT push to Google Apps Script. They are separate actions.
+**Claude will ask you:**
+1. What happened to your file? Is it still in the same section of the output?
+2. What color is it now?
+3. The section header changed. What does it say now? ("Changes to be committed" vs "Untracked files")
+4. If you ran `git commit` right now, would this file be included?
+
+**The concept:** You just saw **State 2: Staged.** The file is now in the outbox, queued up for the next save point. You told Git "include this in my next commit."
 
 ---
 
-## Chapter 7: GitHub-Specific Features
+### Exercise 3.4 — Commit the file (State 3: Committed)
 
-These are features of the GitHub **website**, not Git commands.
+**Before you type this:** Think about what happened. You created a scratch file for practice purposes. Write a commit message that explains what you did and why. Don't use "update" or "test" — be specific.
 
-### Pull Requests (PRs)
-- Created on GitHub, not from the terminal (though you can use `gh pr create` if you have the GitHub CLI)
-- Show the diff between a branch and main
-- Allow discussion and review before merging
-- This is where Jamie approves changes before they go into production
+**Do this** (replace the message with your own):
+```bash
+git commit -m "Add scratch file for Git practice exercises"
+```
 
-### Issues
-- Bug reports, feature requests, and tasks
-- Can be referenced in commit messages: "Fix #42" will automatically close issue #42 when merged
+**Now run:**
+```bash
+git status
+```
 
-### The Repository Page
-- Shows your files, branches, commits, PRs, and issues all in one place
-- The "Code" tab shows the files on the currently selected branch
-- The "Commits" tab shows the same thing as `git log` but in a web interface
+**Claude will ask you:**
+1. What does the output say now? Does it look like Exercise 3.1?
+2. Where did your file go? (It's still on disk — but what does Git think about it now?)
+
+**Now run:**
+```bash
+git log --oneline -3
+```
+
+**Claude will ask you:**
+1. Is your commit at the top?
+2. Read your commit message. Does it make sense? Would someone reading the log understand what you did?
+
+**The concept:** You just saw **State 3: Committed.** The save point is created. Your file's changes are permanently recorded in Git's history. The working tree is "clean" again — meaning everything is saved.
 
 ---
 
-## Chapter 8: Common Situations and What to Do
+### Exercise 3.5 — See all three states at once
 
-### "I want to see what Claude committed last session"
-```bash
-git log --oneline -10
-```
-Read the messages. If you want more detail on a specific commit:
-```bash
-git show abc1234        # replace with the actual short hash
-```
+Let's make this concrete. You're going to set up a situation with files in all three states at once.
 
-### "I want to undo the last commit (haven't pushed yet)"
+**Step 1:** Edit `docs/guides/jamie-scratch.md` — add a new line of text. Save it.
+**Step 2:** Create another new file: `docs/guides/jamie-scratch-2.md`. Type anything. Save it.
+**Step 3:** Stage ONLY the second file:
 ```bash
-git reset --soft HEAD~1
-```
-This moves the commit back to "staged" state. Your changes are still there, just not committed. You can re-commit with a different message, or unstage and modify.
-
-**Never do this after pushing** — it rewrites history that's already on GitHub.
-
-### "I edited a file and want to undo the edit (haven't staged)"
-```bash
-git restore filename
-```
-**Warning:** This throws away your changes permanently. Only do this if you're sure you don't want the edits.
-
-### "I staged a file by accident"
-```bash
-git restore --staged filename
-```
-This unstages it (puts it back to "modified"). Your edits are still in the file.
-
-### "I'm not sure which branch I should be on"
-```bash
-git branch          # see where you are
-git checkout main   # go to main if you're unsure
+git add docs/guides/jamie-scratch-2.md
 ```
 
-### "I want to see what's different between my branch and main"
+**Now run:**
 ```bash
-git diff main
+git status
 ```
-Shows everything that's different between your current branch and main.
+
+**Claude will ask you:**
+1. How many files appear in the output?
+2. Which file is green (staged)? Which is red (modified but unstaged)?
+3. If you run `git commit` right now, which file(s) get saved? Which ones don't?
+4. Why is this useful? Can you think of a real situation where you'd want to commit some files but not others?
+
+**The concept:** The staging area lets you choose exactly what goes into each commit. You changed two files, but you're only saving one. That's the point of the middle step.
+
+---
+
+### Exercise 3.6 — Clean up
+
+Let's commit everything and clean up the scratch files.
+
+**Do this:**
+```bash
+git add docs/guides/jamie-scratch.md
+git status
+```
+
+**Claude will ask:** Both files should be green now. Correct?
+
+```bash
+git commit -m "Update scratch files during Git practice"
+```
+
+Now let's remove the scratch files since they were just for practice:
+```bash
+rm docs/guides/jamie-scratch.md docs/guides/jamie-scratch-2.md
+git status
+```
+
+**Claude will ask you:**
+1. The files show as "deleted" — in what color?
+2. Git noticed you deleted them. But has Git recorded that deletion yet?
+
+**Stage and commit the deletion:**
+```bash
+git add docs/guides/jamie-scratch.md docs/guides/jamie-scratch-2.md
+git commit -m "Remove scratch files after Git practice"
+```
+
+**The concept:** Deleting a file is a change, just like editing one. Git tracks deletions too. You still need to stage and commit them.
+
+---
+
+## Module 4: Viewing Changes (The Diff)
+
+### Exercise 4.1 — Set up a change to look at
+
+**Do this:** Open `docs/guides/jamie-scratch.md` — wait, we deleted that. Let's use a real file.
+
+Open `docs/guides/Jamie - Git Essentials Lesson.md` in VS Code. Scroll to the very bottom. Add this line:
+```
+<!-- Jamie completed this exercise -->
+```
+Save the file.
+
+**Now run:**
+```bash
+git diff
+```
+
+**Claude will ask you:**
+1. What file does the diff show?
+2. Do you see a line starting with `+`? What does `+` mean?
+3. Do you see any lines starting with `-`? What does `-` mean?
+4. The `@@` line at the top — what do you think those numbers mean?
+
+**Now undo that change** (we don't actually want to commit it):
+```bash
+git restore "docs/guides/Jamie - Git Essentials Lesson.md"
+git status
+```
+
+**Claude will ask you:**
+1. What did `git restore` do?
+2. Is the working tree clean now?
+3. **Important:** Is that edit gone forever? Could you get it back? (Answer: no, it's gone. `git restore` throws away uncommitted changes permanently. That's why you only use it when you're sure.)
+
+---
+
+### Exercise 4.2 — diff vs. diff --staged
+
+**Do this:**
+1. Open `docs/guides/Jamie - Git Essentials Lesson.md` again. Add `<!-- Test line A -->` at the bottom. Save.
+2. Stage it: `git add "docs/guides/Jamie - Git Essentials Lesson.md"`
+3. Now edit the same file AGAIN. Add `<!-- Test line B -->` below line A. Save.
+
+**Now run these two commands and compare:**
+```bash
+git diff
+```
+```bash
+git diff --staged
+```
+
+**Claude will ask you:**
+1. Did `git diff` and `git diff --staged` show the same thing?
+2. Which one showed "Test line A"? Which showed "Test line B"?
+3. Why are they different? (Hint: one shows what's staged, the other shows what's NOT staged.)
+4. If you committed right now, which line would be in the commit — A, B, or both?
+
+**Clean up:**
+```bash
+git restore "docs/guides/Jamie - Git Essentials Lesson.md"
+git restore --staged "docs/guides/Jamie - Git Essentials Lesson.md"
+git status
+```
+
+**Claude will ask:** Notice we used TWO restore commands. `git restore --staged` unstages the file (moves it from outbox back to desk). `git restore` (without --staged) throws away the edits. Why did we need both?
+
+---
+
+## Module 5: Branches (Parallel Workstreams)
+
+### Exercise 5.1 — See where you are
+
+**Do this:**
+```bash
+git branch
+```
+
+**Claude will ask you:**
+1. What branch are you on? (The one with `*`)
+2. What do you think `main` represents? Is it safe to experiment on `main`?
+
+---
+
+### Exercise 5.2 — Create a branch
+
+**Do this:**
+```bash
+git checkout main
+git pull
+git checkout -b jamie/git-practice
+```
+
+**Claude will ask you:**
+1. We ran three commands. What did each one do? (Don't look it up — think about it.)
+2. Run `git branch` now. What's different from Exercise 5.1?
+3. Why did we go to `main` and `pull` BEFORE creating the new branch?
+
+**The concept:** A branch starts from wherever you are when you create it. If you're on outdated code, the branch starts from outdated code. That's why you always: go to main → pull latest → then create your branch.
+
+---
+
+### Exercise 5.3 — Work on a branch
+
+**Do this:**
+1. Create a file: `docs/guides/jamie-branch-test.md` with content "This was created on a branch"
+2. Stage it: `git add docs/guides/jamie-branch-test.md`
+3. Commit: `git commit -m "Add test file on practice branch"`
+
+**Now do this:**
+```bash
+git log --oneline -3
+```
+
+**Claude will ask:** Your commit is at the top. Now watch what happens when we switch branches:
+
+```bash
+git checkout main
+```
+
+**Check if the file exists:**
+```bash
+ls docs/guides/jamie-branch-test.md
+```
+
+**Claude will ask you:**
+1. Is the file there? (It shouldn't be.)
+2. Where did it go?
+3. Is it deleted forever? How would you get it back?
+
+**Switch back:**
+```bash
+git checkout jamie/git-practice
+ls docs/guides/jamie-branch-test.md
+```
+
+**Claude will ask you:**
+1. Is it back?
+2. In your own words, what just happened? What IS a branch?
+
+**The concept:** Each branch has its own version of the project. When you switch branches, your files literally change to match that branch's version. The file isn't gone — it's on the other branch, waiting.
+
+---
+
+### Exercise 5.4 — Clean up the practice branch
+
+**Do this:**
+```bash
+git checkout main
+git branch -d jamie/git-practice
+```
+
+If it says "not fully merged" — that's Git protecting you. It's saying "that branch has commits that aren't on main. Are you sure you want to delete it?" For practice purposes:
+```bash
+git branch -D jamie/git-practice
+```
+
+**Claude will ask you:**
+1. What's the difference between `-d` and `-D`?
+2. Why would Git warn you before deleting a branch with unmerged commits?
+3. In real work, what should you do BEFORE deleting a branch? (Answer: merge it into main first, usually via a Pull Request.)
+
+---
+
+## Module 6: Pushing and Pulling (Syncing with GitHub)
+
+### Exercise 6.1 — Check the connection
+
+**Do this:**
+```bash
+git remote -v
+```
+
+**Claude will ask you:**
+1. The word "origin" is Git's name for "the remote copy." Where does it point?
+2. You see "fetch" and "push" URLs. What do you think each one is used for?
+
+---
+
+### Exercise 6.2 — Push something
+
+**Do this** (make sure you're on main):
+```bash
+git checkout main
+git log --oneline -3
+```
+
+**Claude will ask you:**
+1. Look at the most recent commit. Is that commit on GitHub yet?
+
+How to tell:
+```bash
+git status
+```
+
+If it says "Your branch is up to date with 'origin/main'" — yes, GitHub has everything you have.
+If it says "Your branch is ahead of 'origin/main' by X commits" — no, you have commits that GitHub doesn't have yet.
+
+**Claude will ask you:**
+1. Which message did you get?
+2. What command would you run to send your local commits to GitHub?
+
+**The concept:** Local and remote are NOT automatically synced. You have to explicitly push (send) and pull (receive). This is a feature, not a limitation — it means half-finished work doesn't accidentally end up on GitHub.
+
+---
+
+### Exercise 6.3 — Understand pull
+
+**Claude will ask you:**
+1. When should you run `git pull`?
+2. What would happen if you didn't pull at the start of a session, and Claude had pushed changes from a previous session? (Answer: your local copy would be behind. You'd be working on old code.)
+3. What does "Your branch is behind 'origin/main' by 3 commits" mean in plain English?
+
+---
+
+## Module 7: .gitignore (What Git Shouldn't Track)
+
+### Exercise 7.1 — See what's ignored
+
+**Do this:**
+```bash
+cat .gitignore
+```
+
+**Claude will ask you:**
+1. Can you spot any patterns? What types of files are being ignored?
+2. Why would you NOT want to track `.env` files in Git?
+3. If you created a file called `secrets.env`, would `git status` show it? Why or why not?
+
+---
+
+### Exercise 7.2 — Test it
+
+**Do this:**
+1. Create a file called `test.log` in the project root (if `*.log` is in .gitignore)
+2. Run `git status`
+
+**Claude will ask you:**
+1. Does the file show up? Why or why not?
+2. Delete the test file: `rm test.log`
+
+**The concept:** `.gitignore` is a safety mechanism. It prevents you from accidentally committing files that shouldn't be in version control — credentials, large files, temporary files.
+
+---
+
+## Module 8: Putting It All Together — The Full Workflow
+
+Now you do the complete workflow from scratch, narrating what you're doing and why at each step. Claude will only correct you if you're about to do something wrong.
+
+### Exercise 8.1 — The real deal
+
+**Your mission:** Create a documentation file, commit it, and push it to GitHub. Here's the step-by-step, but YOU decide which commands to run.
+
+1. **Get oriented.** What commands do you run first to see where you are?
+2. **Set up a branch.** We need a clean branch from main. What's the sequence?
+3. **Create the file.** Make `docs/guides/jamie-git-complete.md` with content: "I completed the Git interactive lesson on [today's date]."
+4. **Check what changed.** What command shows you the current state?
+5. **Stage the file.** What command?
+6. **Verify what's staged.** How do you check before committing?
+7. **Commit.** Write your own message. Make it good.
+8. **Verify the commit.** How do you confirm it worked?
+9. **Push to GitHub.** This is a new branch — what's the full push command?
+10. **Check GitHub.** Go to your repo page in the browser. Can you find your branch and commit?
+
+Claude will watch and ask questions at each step, but won't type for you.
+
+---
+
+## Module 9: Emergency Situations (Practice Recovering)
+
+These exercises simulate things going wrong, so you know what to do when there's no Claude around.
+
+### Exercise 9.1 — Undo an edit you don't want
+
+1. Edit any file. Add some nonsense text.
+2. Run `git status` — confirm it shows as modified.
+3. You don't want this change. What command throws it away?
+4. Run it. Confirm the file is back to normal.
+
+**Claude will ask:** That change is gone forever now. When is this safe to do? When is it NOT safe?
+
+---
+
+### Exercise 9.2 — Unstage a file
+
+1. Edit a file. Stage it with `git add`.
+2. Run `git status` — confirm it's green/staged.
+3. Wait — you didn't mean to stage it yet. What command unstages it WITHOUT losing the edit?
+4. Run it. Confirm it's back to red/unstaged.
+
+**Claude will ask:** What's the difference between `git restore filename` and `git restore --staged filename`?
+
+---
+
+### Exercise 9.3 — Figure out what Claude did
+
+1. Run `git log --oneline -10`
+2. Pick a commit that Claude made (not yours).
+3. Run `git show [hash]` with that commit's hash.
+4. Read the output. What files did Claude change? What were the actual changes?
+
+**Claude will ask you:** Why is this skill important? When would you use it in real life?
 
 ---
 
 ## Quick Reference Card
+
+Keep this open in a tab. Use it until you don't need it anymore.
 
 | What you want to do | Command |
 |---|---|
@@ -554,26 +616,14 @@ Shows everything that's different between your current branch and main.
 | Create + switch to new branch | `git checkout -b branch-name` |
 | See a specific commit's changes | `git show abc1234` |
 | Compare branch to main | `git diff main` |
+| Where does "origin" point? | `git remote -v` |
 
 ---
 
-## Session 9 Walkthrough Plan
+## Session 9 Plan
 
-When you start next session, here's exactly what we'll do:
-
-1. **Run `git status`** — read the output, tell me what each section means
-2. **Run `git log --oneline -5`** — identify the last few commits, who made them
-3. **Run `git branch`** — tell me which branch you're on
-4. **Run `git branch -a`** — identify remote branches
-5. **Make a small test edit** to a file
-6. **Run `git status`** — describe how the output changed
-7. **Run `git diff`** — read the diff, identify the added/removed lines
-8. **Stage the file with `git add`**
-9. **Run `git status`** — explain the difference from step 6
-10. **Run `git diff --staged`** — confirm you see the staged changes
-11. **Commit with `git commit -m "..."`** — write your own message
-12. **Run `git log --oneline -3`** — verify your commit is at the top
-13. **Push with `git push`**
-14. **Check GitHub** — go to the repo page and see your commit there
-
-After the walkthrough, you take the exam. No help from me — you either know it or you look it up in this guide. That's the whole point.
+1. **You read nothing ahead of time.** Show up, open the terminal.
+2. **We go through Modules 1–9 together.** You type, I ask questions, you answer.
+3. **After the walkthrough, you take the exam** (separate document). No help from me.
+4. **You tell me how it went.** What clicked, what didn't.
+5. **Only then do we do any other work.**
