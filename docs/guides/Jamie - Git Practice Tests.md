@@ -276,11 +276,83 @@ You open your Codespace and something feels off — files look different than yo
 
 ---
 
-## PART E: Commit Message Workshop
+## PART E: GitHub Website (Do these in your browser at github.com)
+
+### E1.
+Go to your repo page on GitHub. Find and click on the commit history.
+1. How many total commits does the project have?
+2. Find the most recent commit by Claude. Click on it. What files were changed?
+3. Can you see the green/red diff? What do the colors mean?
+
+---
+
+### E2.
+Go back to the main repo page. Use the branch dropdown (says "main") to switch to a different branch.
+1. What branch did you switch to?
+2. Did the file list change? How can you tell you're on a different branch?
+3. Switch back to `main`.
+
+---
+
+### E3.
+Go to the "Pull requests" tab. Find a closed/merged PR.
+1. What was the PR about? (Read the title and description.)
+2. Click "Files changed." How many files were modified?
+3. Who created the PR? Who merged it?
+
+---
+
+### E4.
+Without using the browser, answer from memory:
+1. Where on the GitHub website do you find the list of branches?
+2. Where do you go to see a PR's code changes?
+3. What's the difference between an "open" and "closed" PR?
+4. Where on the website would you open your Codespace from?
+
+---
+
+## PART F: GitHub CLI (Do these in your Codespace terminal)
+
+### F1.
+Run the command to list all open Pull Requests. What command did you use? Are there any open?
+
+---
+
+### F2.
+Run the command to view the details of a specific PR (pick any number from the closed list). What command did you use? What information did it show?
+
+---
+
+### F3.
+Run the command to see the diff (code changes) of that same PR. What command did you use? Does the output look familiar?
+
+---
+
+### F4.
+Run the command to list all issues. What command did you use?
+
+---
+
+### F5.
+From memory (don't look it up): what command would you run to CREATE a new Pull Request from the terminal? What two pieces of information does it need?
+
+---
+
+### F6.
+You finished a feature on a branch and want to get it into production. Put these steps in the correct order:
+- Create a Pull Request
+- Push the branch to GitHub
+- Get the PR reviewed and approved
+- Merge the PR into main
+- Make commits on the branch
+
+---
+
+## PART G: Commit Message Workshop
 
 For each scenario, write a good commit message. Then write a BAD one and explain why it's bad.
 
-### E1.
+### G1.
 You removed the function `purgeTagCacheFromScriptProperties()` because it was a one-time migration script that already ran and is now dead code.
 
 **Good message:**
@@ -289,7 +361,7 @@ You removed the function `purgeTagCacheFromScriptProperties()` because it was a 
 
 ---
 
-### E2.
+### G2.
 You found that column K in the Editorial sheet was being read from the wrong column index (D instead of E), causing article status data to be garbled.
 
 **Good message:**
@@ -298,7 +370,7 @@ You found that column K in the Editorial sheet was being read from the wrong col
 
 ---
 
-### E3.
+### G3.
 You added "Fig." and "No." to the period protection list in the sentence splitter so that abbreviations like "Fig. 1" and "No. 5" don't get treated as sentence endings.
 
 **Good message:**
@@ -307,7 +379,7 @@ You added "Fig." and "No." to the period protection list in the sentence splitte
 
 ---
 
-### E4.
+### G4.
 You created a new documentation file explaining how the image uploader lifecycle works.
 
 **Good message:**
@@ -316,7 +388,7 @@ You created a new documentation file explaining how the image uploader lifecycle
 
 ---
 
-### E5.
+### G5.
 You updated the Claude project prompt to include MSN Lifestyle editorial guidelines that were previously only in a separate document.
 
 **Good message:**
@@ -329,27 +401,36 @@ You updated the Claude project prompt to include MSN Lifestyle editorial guideli
 
 Be honest with yourself.
 
-**Part A (Conceptual):**
-- If you could explain all 7 without looking anything up: you understand the system. Solid.
-- If you needed the lesson for 1-2: normal — re-read those sections.
-- If you needed it for 3+: re-read the whole lesson. The concepts need to settle before the commands will make sense.
+**Part A (Conceptual) — 7 questions:**
+- Explained all 7 without looking anything up: you understand the system. Solid.
+- Needed the lesson for 1-2: normal — re-read those sections.
+- Needed it for 3+: the concepts need to settle. Go back through the interactive lesson modules.
 
-**Part B (Commands):**
+**Part B (Commands) — 14 questions:**
 - 12-14 from memory: ready to use Git independently.
 - 8-11 from memory: almost there — keep the reference card nearby.
 - Under 8: spend more time with the lesson. The commands will stick with practice.
 
-**Part C (Reading Output):**
-- If you could explain all 4 outputs: you can read Git. This is the most important skill.
-- If any confused you: go back to the lesson and re-read the relevant section, then look at the output again.
+**Part C (Reading Output) — 4 scenarios:**
+- Explained all 4 outputs: you can read Git. This is the most important skill.
+- Any confused you: go back to the lesson modules on status and diff, then look at the output again.
 
-**Part D (Scenarios):**
-- If you could handle all 7 without Claude: you're independent. That's the goal.
-- If you needed to look things up: fine — you know where to look. Independence doesn't mean memorization.
-- If any scenario stumped you completely: flag it for Session 9. We'll walk through it.
+**Part D (Scenarios) — 7 scenarios:**
+- Handled all 7 without Claude: you're independent. That's the goal.
+- Needed to look things up: fine — you know where to look. Independence doesn't mean memorization.
+- Any scenario stumped you completely: flag it for the next session. We'll walk through it.
 
-**Part E (Commit Messages):**
-- If your "good" messages followed the rules (verb, what, why, under 72 chars): good instincts.
+**Part E (GitHub Website) — 4 exercises:**
+- Found everything and could navigate: you know the visual side.
+- Got lost or couldn't find things: spend 10 minutes clicking around the repo page. Familiarity comes from poking around.
+
+**Part F (GitHub CLI) — 6 questions:**
+- Got 5-6 right: you can do GitHub tasks from the terminal. Fast path.
+- Got 3-4 right: review the `gh` reference card. The commands follow a predictable pattern.
+- Under 3: this is the newest material — it's expected. Practice with `gh pr list` and `gh pr view` until they feel natural.
+
+**Part G (Commit Messages) — 5 exercises:**
+- "Good" messages followed the rules (verb, what, why, under 72 chars): good instincts.
 - Compare your bad examples to the good ones. The difference should be obvious — if it isn't, re-read the commit message section.
 
 ---

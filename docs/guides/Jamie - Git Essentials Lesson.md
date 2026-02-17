@@ -593,6 +593,239 @@ These exercises simulate things going wrong, so you know what to do when there's
 
 ---
 
+## Module 10: The GitHub Website (Visual Navigation)
+
+You've been doing everything in the terminal. Now let's go to the actual GitHub website and see the same information visually. Open your browser and go to your repo page.
+
+### Exercise 10.1 — Find your repository
+
+**Do this:** Go to `github.com/JamieDR/WIYS-Refactoring_2026` in your browser.
+
+**Claude will ask you:**
+1. What tab are you on? (It should say "Code" at the top.)
+2. Can you see the list of files and folders? Do they match what you see in your Codespace?
+3. Find the green "Code" button. What happens when you click it? (This is where the Codespace option lives.)
+
+---
+
+### Exercise 10.2 — Browse commits on the website
+
+**Do this:** Near the top of the file list, you should see something like "XX commits" (a clock icon with a number). Click on it.
+
+**Claude will ask you:**
+1. Does this list look familiar? Where have you seen this same information before? (Hint: what terminal command shows the same thing?)
+2. Click on any commit. What do you see?
+3. The green lines and red lines — what do they mean? (You learned this already in Module 4.)
+
+**The concept:** The GitHub website shows the same information as `git log` and `git show`, just in a visual format. Some people prefer the visual version. Both give you the same data.
+
+---
+
+### Exercise 10.3 — Find branches on the website
+
+**Do this:** Go back to the main repo page. Find the dropdown that says "main" (usually top-left, above the file list). Click on it.
+
+**Claude will ask you:**
+1. What do you see in the dropdown? A list of branches?
+2. Can you find any branches that Claude created? (They'll start with `claude/`)
+3. Pick one and click on it. What changed on the page?
+4. How do you get back to `main`?
+
+**The concept:** The branch dropdown switches which version of the code you're looking at. Same as `git checkout` in the terminal — but visual.
+
+---
+
+### Exercise 10.4 — Explore a Pull Request
+
+**Do this:** Click the "Pull requests" tab at the top of the repo page.
+
+**Claude will ask you:**
+1. Are there any open Pull Requests? Any closed ones? (Check the "Closed" filter.)
+2. Click on any PR (open or closed). What information do you see?
+3. Click the "Files changed" tab inside the PR. What does this show you?
+4. This "Files changed" view is the same as running `git diff main` in the terminal. Can you see the green/red lines?
+
+**Now look at the "Conversation" tab of the same PR.**
+
+**Claude will ask you:**
+1. Who created this PR?
+2. Is there a description? What does it say about the changes?
+3. Can you see the "Merge" button (or was it already merged)? What does merging mean?
+
+**The concept:** Pull Requests are where code review happens. The branch has changes, the PR shows those changes, you review them, then merge (or reject). This is the checkpoint between "work in progress" and "production-ready."
+
+---
+
+### Exercise 10.5 — Look at Issues
+
+**Do this:** Click the "Issues" tab at the top.
+
+**Claude will ask you:**
+1. Are there any issues? What are they about?
+2. Issues are like a to-do list for the project. Who can create them?
+3. If you found a bug in the WIYS system, where would you write it down so it doesn't get forgotten?
+
+---
+
+### Exercise 10.6 — Your Codespace from the website
+
+**Do this:** Go back to the "Code" tab. Click the green "Code" button. Click the "Codespaces" tab in the dropdown.
+
+**Claude will ask you:**
+1. Can you see your existing Codespace listed?
+2. What's the difference between "Create codespace on main" and opening your existing one?
+3. If you had two Codespaces, how would you know which one had your latest work?
+
+**The concept:** Codespaces are managed from the GitHub website. You can create, stop, restart, and delete them from here. Your Codespace is just a virtual computer tied to this repo.
+
+---
+
+## Module 11: GitHub CLI — `gh` (Do GitHub Things From the Terminal)
+
+Now that you know the website, let's learn to do the same things faster — from the terminal. The `gh` command lets you interact with GitHub without opening the browser.
+
+### Exercise 11.1 — Check if gh is available
+
+**Do this:**
+```bash
+gh --version
+```
+
+If it's not installed, we'll install it:
+```bash
+gh auth login
+```
+(Follow the prompts — it'll ask you to authenticate with GitHub.)
+
+**Claude will check:** Is `gh` working? Are you authenticated?
+
+---
+
+### Exercise 11.2 — View the repo
+
+**Do this:**
+```bash
+gh repo view
+```
+
+**Claude will ask you:**
+1. What information does this show?
+2. Does it match what you see on the GitHub website?
+
+---
+
+### Exercise 11.3 — View Pull Requests
+
+**Do this:**
+```bash
+gh pr list
+```
+
+**Claude will ask you:**
+1. Does this match what you saw on the "Pull requests" tab on the website?
+2. Each PR has a number (like #11). What's that number for?
+
+**Now try:**
+```bash
+gh pr list --state closed
+```
+
+**Claude will ask you:** What changed?
+
+**Now pick any PR number and run:**
+```bash
+gh pr view 11
+```
+(Replace 11 with a real PR number from the list.)
+
+**Claude will ask you:**
+1. What information does this show?
+2. Is this the same information as clicking on the PR on the website?
+3. Which way is faster — the browser or the terminal?
+
+---
+
+### Exercise 11.4 — View the diff of a PR
+
+**Do this:**
+```bash
+gh pr diff 11
+```
+(Use a real PR number.)
+
+**Claude will ask you:**
+1. Does this look familiar? (It's the same green/red diff format you saw in `git diff`.)
+2. This is the same as clicking "Files changed" on the website. Which do you prefer?
+
+---
+
+### Exercise 11.5 — View Issues
+
+**Do this:**
+```bash
+gh issue list
+```
+
+**Claude will ask you:**
+1. Does this match the Issues tab on the website?
+2. If you wanted to create a new issue from the terminal, you'd run `gh issue create`. When might that be useful?
+
+---
+
+### Exercise 11.6 — Create a Pull Request from the terminal
+
+This is the most powerful `gh` command. Instead of going to the browser, pushing a branch, and clicking buttons, you can do it all from here.
+
+**Do this** (we're just going to look at the format, not actually create one):
+
+**Claude will explain:** When you have a branch with commits and want to create a PR, you run:
+```bash
+gh pr create --title "Short description" --body "Longer explanation of what and why"
+```
+
+That's it. One command. It creates the PR on GitHub and gives you the URL.
+
+**Claude will ask you:**
+1. What two pieces of information does it need? (title and body)
+2. Who would see this PR after you create it? Where would they see it?
+3. What would still need to happen BEFORE you run this command? (Hint: the branch needs to be pushed to GitHub first.)
+
+---
+
+### Exercise 11.7 — The full workflow with gh
+
+**Claude will ask you to recite the complete workflow from start to finish:**
+
+1. Start on main, pull latest
+2. Create a branch
+3. Make changes, stage, commit
+4. Push the branch to GitHub
+5. Create a PR with `gh pr create`
+6. Share the PR URL for review
+
+**Which steps use `git` commands? Which use `gh` commands?**
+
+**The concept:** `git` manages your code and history. `gh` manages the GitHub social layer — PRs, issues, reviews. They work together but do different jobs.
+
+---
+
+## Quick Reference Card — GitHub CLI
+
+| What you want to do | Command |
+|---|---|
+| View repo info | `gh repo view` |
+| List open PRs | `gh pr list` |
+| List closed PRs | `gh pr list --state closed` |
+| View a specific PR | `gh pr view 11` |
+| View PR diff | `gh pr diff 11` |
+| Create a PR | `gh pr create --title "..." --body "..."` |
+| List issues | `gh issue list` |
+| View a specific issue | `gh issue view 5` |
+| Create an issue | `gh issue create` |
+| Check your auth status | `gh auth status` |
+
+---
+
 ## Quick Reference Card
 
 Keep this open in a tab. Use it until you don't need it anymore.
@@ -623,7 +856,7 @@ Keep this open in a tab. Use it until you don't need it anymore.
 ## Session 9 Plan
 
 1. **You read nothing ahead of time.** Show up, open the terminal.
-2. **We go through Modules 1–9 together.** You type, I ask questions, you answer.
+2. **We go through Modules 1–11 together.** You type, I ask questions, you answer.
 3. **After the walkthrough, you take the exam** (separate document). No help from me.
 4. **You tell me how it went.** What clicked, what didn't.
 5. **Only then do we do any other work.**
