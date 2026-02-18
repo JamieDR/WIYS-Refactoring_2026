@@ -6607,9 +6607,12 @@ function batchRepublishPosts() {
       });
 
       if (result) {
+        // Update column D with the new URL (slug changed, so URL changed)
+        var newUrl = result.link || ('https://wheninyourstate.com/' + newSlug + '/');
+        sheet.getRange(post.row, 4).setValue(newUrl);
         sheet.getRange(post.row, 8).setValue('Republished');
         successCount++;
-        Logger.log('Successfully republished post ' + postId + ' with slug ' + newSlug);
+        Logger.log('Successfully republished post ' + postId + ' with slug ' + newSlug + ' → ' + newUrl);
       } else {
         throw new Error('WordPress API update failed');
       }
