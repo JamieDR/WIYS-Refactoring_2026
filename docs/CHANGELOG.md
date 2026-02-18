@@ -4,6 +4,17 @@ What changed in the system, and when. Written for Jamie as a quick reference.
 
 ---
 
+## Emergency Fix — February 18, 2026
+
+### Bug Fixes
+- **Republish: URL now updates in column D** — after republishing with a `-rep` slug, the new URL is written back to WET column D so the sheet stays current (previously kept the old URL)
+
+### Improvements
+- **AST→WET transfer: Google Doc URL now carried over** — AST column D (Google Doc link) is now transferred to WET column L during the batch transfer, so the doc is accessible for reference on the editing tracker
+- **WET column L repurposed** — was "QA Notes", now holds the Google Doc URL
+
+---
+
 ## Session 4 — February 11, 2026 (continued)
 
 ### Improvements
