@@ -174,7 +174,18 @@ Once content pipeline is proven and working:
 - Or both
 **Also:** Other team is dumping 15+ hashtag-style tags per article. Their boss has been notified. Code now skips `#` tags (committed Feb 17).
 
-## 18. Config sheet — visual map of all CONFIG values and sheet dependencies
+## 18. Batch Schedule — support republishing published articles
+**Sheet:** WP Editing Tracker (batch schedule)
+**Difficulty:** Medium — URL parsing + slug modification + WP API call
+**Problem:** `batchSchedulePosts()` relies on `extractPostIdFromUrl()` to get the WP post ID from the URL in column D. That function handles draft/admin URLs (e.g., `post.php?post=123&action=edit`) but NOT published frontend URLs (e.g., `wheninyourstate.com/some-article-slug/`). Published URLs use a text slug, not a numeric ID, so the function returns null and skips them.
+**Why it's needed:** Sometimes articles don't make it through to MSN and need to be republished. The workflow would be: put the published URL in the sheet, batch schedule picks it up, reschedules it with a new date, and appends `-rep` to the slug so MSN sees it as a new article.
+**What's needed:**
+1. `extractPostIdFromUrl()` needs to handle published URLs — either look up the post ID via the WP REST API using the slug (e.g., `GET /wp/v2/posts?slug=some-article-slug`), or extract the slug and resolve it to an ID
+2. The batch schedule function needs a "republish" path: detect that a post is already published, change its slug by appending `-rep`, and reschedule it to the new date
+3. Consider edge cases: what if `-rep` is already appended (second republish)? Use `-rep2`, `-rep3`? Or always just `-rep`?
+**Depends on:** Nothing — can be done independently
+
+## 19. Config sheet — visual map of all CONFIG values and sheet dependencies
 **System:** New sheet tab in the spreadsheet
 **What:** A visual reference showing CONFIG values organized by sheet name — column mappings, which functions touch each sheet, dependencies between sheets, WordPress IDs, endpoints. Jamie is a visual learner; this replaces digging through code to understand the system.
 **When:** After Phase 3 (column mappings) — the config will be more stable by then.
