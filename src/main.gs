@@ -6479,6 +6479,285 @@ function publishWordPressPostWithDate(wpUrl, date, time) {
   return result !== false;
 }
 
+
+// ============================================================================
+// REPUBLISH PUBLISHED ARTICLES
+// ============================================================================
+// For articles that didn't make it to MSN and need to be republished.
+// Workflow: user puts published URL in column D, sets date/time, sets status to "Republish".
+// This function finds the post by slug, appends -rep to the slug, and reschedules it.
+
+/**
+ * Extract the slug from a published frontend URL.
+ * e.g. "https://wheninyourstate.com/some-article-slug/" → "some-article-slug"
+ * Returns null for admin/draft URLs or if no valid slug found.
+ */
+function extractSlugFromPublishedUrl(url) {
+  if (!url) return null;
+
+  // Skip admin/draft URLs — those have post IDs, not slugs
+  if (url.indexOf('wp-admin') !== -1 || url.indexOf('post.php') !== -1) return null;
+  if (url.indexOf('?p=') !== -1 || url.indexOf('&p=') !== -1) return null;
+
+  // Strip query params and trailing slash
+  url = url.split('?')[0].replace(/\/$/, '');
+
+  // Get the last path segment
+  var parts = url.split('/');
+  var slug = parts[parts.length - 1];
+
+  // Validate: slugs are lowercase alphanumeric with hyphens
+  if (slug && /^[a-z0-9][a-z0-9-]*[a-z0-9]$/.test(slug)) return slug;
+
+  return null;
+}
+
+/**
+ * Look up a WordPress post by its slug via the REST API.
+ * Returns the post object {id, slug, status, ...} or null if not found.
+ */
+function lookupPostBySlug(slug) {
+  var username = CONFIG.WORDPRESS.USERNAME;
+  var appPassword = CONFIG.WORDPRESS.APP_PASSWORD;
+
+  var apiUrl = CONFIG.ENDPOINTS.WP_POSTS + '?slug=' + encodeURIComponent(slug) + '&status=publish,future,draft&_fields=id,slug,status,title,link';
+
+  var options = {
+    method: 'get',
+    headers: {
+      'Authorization': 'Basic ' + Utilities.base64Encode(username + ':' + appPassword)
+    },
+    muteHttpExceptions: true
+  };
+
+  try {
+    var response = UrlFetchApp.fetch(apiUrl, options);
+    if (response.getResponseCode() !== 200) {
+      Logger.log('lookupPostBySlug: API returned ' + response.getResponseCode() + ' for slug: ' + slug);
+      return null;
+    }
+
+    var posts = JSON.parse(response.getContentText());
+    if (!posts || posts.length === 0) {
+      Logger.log('lookupPostBySlug: No post found for slug: ' + slug);
+      return null;
+    }
+
+    return posts[0];
+  } catch (error) {
+    Logger.log('lookupPostBySlug error: ' + error.message);
+    return null;
+  }
+}
+
+/**
+ * Generate the next -rep slug for republishing.
+ * "my-article" → "my-article-rep"
+ * "my-article-rep" → "my-article-rep2"
+ * "my-article-rep2" → "my-article-rep3"
+ */
+function getRepublishSlug(currentSlug) {
+  // Already has -repN suffix?
+  var repMatch = currentSlug.match(/^(.*)-rep(\d+)$/);
+  if (repMatch) {
+    return repMatch[1] + '-rep' + (parseInt(repMatch[2], 10) + 1);
+  }
+
+  // Already has -rep suffix (first republish)?
+  if (currentSlug.match(/-rep$/)) {
+    return currentSlug + '2';
+  }
+
+  // No -rep suffix yet
+  return currentSlug + '-rep';
+}
+
+/**
+ * Batch republish published articles.
+ * Finds all rows with "Republish" status in WET, resolves post by slug,
+ * appends -rep to slug, and reschedules to the new date.
+ */
+function batchRepublishPosts() {
+  var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(CONFIG.SHEETS.WP_EDITING_TRACKER);
+  if (!sheet) {
+    SpreadsheetApp.getUi().alert('WP Editing Tracker sheet not found');
+    return;
+  }
+
+  var lastRow = sheet.getLastRow();
+  var postsToRepublish = [];
+  var now = new Date();
+
+  // Find all rows with "Republish" status
+  for (var row = 5; row <= lastRow; row++) {
+    var status = sheet.getRange(row, 8).getValue(); // Column H
+
+    if (status === 'Republish') {
+      var wpUrl = sheet.getRange(row, 4).getValue();   // Column D
+      var time = sheet.getRange(row, 6).getDisplayValue(); // Column F
+      var date = sheet.getRange(row, 7).getDisplayValue(); // Column G
+
+      if (wpUrl && time && date) {
+        var scheduledDate = new Date(date + ' ' + time);
+
+        postsToRepublish.push({
+          row: row,
+          wpUrl: wpUrl,
+          time: time,
+          date: date,
+          scheduledDate: scheduledDate,
+          isFuture: scheduledDate > now,
+          title: sheet.getRange(row, 3).getValue() || 'No title'
+        });
+      } else {
+        // Mark rows that are missing required data
+        if (!wpUrl) sheet.getRange(row, 8).setValue('Error: No URL');
+        else if (!time || !date) sheet.getRange(row, 8).setValue('Error: Set date/time first');
+      }
+    }
+  }
+
+  if (postsToRepublish.length === 0) {
+    SpreadsheetApp.getUi().alert(
+      'No Posts to Republish',
+      'No posts found with "Republish" status.\n\nTo republish: paste the published article URL in column D, set date/time, then set status to "Republish".',
+      SpreadsheetApp.getUi().ButtonSet.OK
+    );
+    return;
+  }
+
+  // Separate future and past dates
+  var futurePosts = postsToRepublish.filter(function(p) { return p.isFuture; });
+  var pastPosts = postsToRepublish.filter(function(p) { return !p.isFuture; });
+
+  // Build confirmation message
+  var message = 'Found ' + postsToRepublish.length + ' post(s) to republish:\n\n';
+  for (var i = 0; i < postsToRepublish.length; i++) {
+    var p = postsToRepublish[i];
+    message += '• ' + p.title + ' — ' + p.date + ' ' + p.time + (p.isFuture ? ' (schedule)' : ' (publish now)') + '\n';
+  }
+  message += '\nThis will:\n- Look up each post by its published URL\n- Append "-rep" to the slug\n- Reschedule/publish with the new date\n\nProceed?';
+
+  var response = SpreadsheetApp.getUi().alert(
+    'Batch Republish',
+    message,
+    SpreadsheetApp.getUi().ButtonSet.YES_NO
+  );
+
+  if (response !== SpreadsheetApp.getUi().Button.YES) {
+    return;
+  }
+
+  // Process each post
+  var successCount = 0;
+  var errorCount = 0;
+  var errorDetails = [];
+
+  for (var j = 0; j < postsToRepublish.length; j++) {
+    var post = postsToRepublish[j];
+
+    try {
+      sheet.getRange(post.row, 8).setValue('Republishing...');
+      SpreadsheetApp.flush();
+
+      // Step 1: Try to get post ID — first try extractPostIdFromUrl (for admin URLs),
+      // then try slug-based lookup (for published URLs)
+      var postId = extractPostIdFromUrl(post.wpUrl);
+      var currentSlug = null;
+
+      if (postId) {
+        // Admin URL — we have the ID, but need the current slug from the API
+        var username = CONFIG.WORDPRESS.USERNAME;
+        var appPassword = CONFIG.WORDPRESS.APP_PASSWORD;
+        var apiUrl = CONFIG.ENDPOINTS.WP_POSTS + '/' + postId + '?_fields=id,slug,status';
+        var options = {
+          method: 'get',
+          headers: { 'Authorization': 'Basic ' + Utilities.base64Encode(username + ':' + appPassword) },
+          muteHttpExceptions: true
+        };
+        var resp = UrlFetchApp.fetch(apiUrl, options);
+        if (resp.getResponseCode() === 200) {
+          var data = JSON.parse(resp.getContentText());
+          currentSlug = data.slug;
+        }
+      } else {
+        // Published URL — extract slug and look up post
+        var slug = extractSlugFromPublishedUrl(post.wpUrl);
+        if (!slug) {
+          throw new Error('Could not extract slug from URL: ' + post.wpUrl);
+        }
+
+        var postResult = lookupPostBySlug(slug);
+        if (!postResult) {
+          throw new Error('Post not found for slug: ' + slug);
+        }
+
+        postId = postResult.id;
+        currentSlug = postResult.slug;
+      }
+
+      if (!postId || !currentSlug) {
+        throw new Error('Could not resolve post ID or slug from URL');
+      }
+
+      // Step 2: Generate new slug with -rep suffix
+      var newSlug = getRepublishSlug(currentSlug);
+      Logger.log('Republishing post ' + postId + ': slug "' + currentSlug + '" → "' + newSlug + '"');
+
+      // Step 3: Format the date for WordPress
+      var publishDate = new Date(post.date + ' ' + post.time);
+      var year = publishDate.getFullYear();
+      var month = String(publishDate.getMonth() + 1).padStart(2, '0');
+      var day = String(publishDate.getDate()).padStart(2, '0');
+      var hours = String(publishDate.getHours()).padStart(2, '0');
+      var minutes = String(publishDate.getMinutes()).padStart(2, '0');
+      var wpDateString = year + '-' + month + '-' + day + 'T' + hours + ':' + minutes + ':00';
+
+      // Step 4: Update the post — new slug + new date + appropriate status
+      var wpStatus = post.isFuture ? CONFIG.WP_POST_STATUS.FUTURE : CONFIG.WP_POST_STATUS.PUBLISH;
+
+      var result = updateWordPressPost(postId, {
+        slug: newSlug,
+        status: wpStatus,
+        date: wpDateString
+      });
+
+      if (result) {
+        var statusText = post.isFuture ? CONFIG.STATUS.SCHEDULED : CONFIG.STATUS.PUBLISHED;
+        sheet.getRange(post.row, 8).setValue(statusText);
+        successCount++;
+        Logger.log('Successfully republished post ' + postId + ' with slug ' + newSlug);
+      } else {
+        throw new Error('WordPress API update failed');
+      }
+
+      // Delay between API calls
+      Utilities.sleep(500);
+
+    } catch (error) {
+      errorCount++;
+      var errorMsg = 'Row ' + post.row + ' (' + post.title + '): ' + error.message;
+      errorDetails.push(errorMsg);
+      sheet.getRange(post.row, 8).setValue('Republish Failed');
+      Logger.log('Republish error: ' + errorMsg);
+    }
+  }
+
+  // Show results
+  var resultMessage = 'Republish Complete!\n\n';
+  resultMessage += '✅ Successfully republished: ' + successCount + '\n';
+  if (errorCount > 0) {
+    resultMessage += '❌ Errors: ' + errorCount + '\n\n';
+    resultMessage += 'Error details:\n';
+    for (var e = 0; e < errorDetails.length; e++) {
+      resultMessage += '• ' + errorDetails[e] + '\n';
+    }
+  }
+
+  SpreadsheetApp.getUi().alert('Republish Results', resultMessage, SpreadsheetApp.getUi().ButtonSet.OK);
+}
+
+
 // UPDATE WORDPRESS TITLE FROM SHEET
 function updateTitle(e) {
   var sheet = e.range.getSheet();
@@ -8806,7 +9085,7 @@ function onOpen() {
     .addItem('📥 Pull WordPress Titles', 'batchPullWordPressTitles')
     .addSeparator()
     .addItem('✅ Schedule ALL', 'batchSchedulePosts')
-    .addItem('🚀 Batch Set/Schedule', 'batchSetAndSchedule')
+    .addItem('🔄 Republish', 'batchRepublishPosts')
     .addSeparator()
     .addItem('💜 Get WP Drafts for Editing', 'batchTransferToAleksReview')
     .addSeparator()
@@ -12297,6 +12576,12 @@ function listAllFunctions() {
 
     // WP post publish
     ['publishWordPressPostWithDate', 7422, 'Publish WP post with specific date', 'WP API', 'batchSchedulePosts', 'Active'],
+
+    // Republish
+    ['extractSlugFromPublishedUrl', 0, 'Extract slug from published frontend URL', 'None', 'batchRepublishPosts', 'Active utility'],
+    ['lookupPostBySlug', 0, 'Look up WP post by slug via REST API', 'WP API', 'batchRepublishPosts', 'Active utility'],
+    ['getRepublishSlug', 0, 'Generate -rep slug for republishing', 'None', 'batchRepublishPosts', 'Active utility'],
+    ['batchRepublishPosts', 0, 'Batch republish published articles with -rep slug', 'WET, WP API', 'Menu item', 'Active'],
 
     // Title management
     ['updateTitle', 7454, 'Update article title in WET', 'WET, UPL', 'onEdit trigger', 'Active'],
