@@ -6542,7 +6542,8 @@ function batchRepublishPosts() {
     var post = postsToRepublish[j];
 
     try {
-      sheet.getRange(post.row, 8).setValue('Republishing...');
+      // Progress indication via background color (avoids data validation on status column)
+      sheet.getRange(post.row, 8).setBackground('#FFF3CD');
       SpreadsheetApp.flush();
 
       // Step 1: Try to get post ID — first try extractPostIdFromUrl (for admin URLs),
@@ -6620,7 +6621,8 @@ function batchRepublishPosts() {
       errorCount++;
       var errorMsg = 'Row ' + post.row + ' (' + post.title + '): ' + error.message;
       errorDetails.push(errorMsg);
-      sheet.getRange(post.row, 8).setValue('Republish Failed');
+      sheet.getRange(post.row, 8).setBackground('#F8D7DA');
+      sheet.getRange(post.row, 8).setNote('Republish failed: ' + error.message);
       Logger.log('Republish error: ' + errorMsg);
     }
   }
