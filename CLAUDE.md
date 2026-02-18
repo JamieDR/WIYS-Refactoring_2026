@@ -62,6 +62,17 @@ Used daily by a team of 6 people. Connected to a Google Sheet as the main UI.
 - The original codebase file is kept as a reference and never modified
 - All code changes go through the branch → review → merge workflow
 
+## Session Startup (REQUIRED)
+Every fresh session MUST begin by reviewing the project state before doing any work:
+1. **Read docs/developer-log/** — all session logs, most recent first, to understand what's been done
+2. **Read docs/TODO.md** — current backlog and priorities
+3. **Read docs/CHANGELOG.md** — recent changes
+4. **Read docs/session-notes.md** — any in-progress work
+5. **Check git log** — recent commits and branches to understand current state
+6. **Check PR comments** — any open PRs with review feedback
+
+Do NOT start working until you have this context. Jamie shouldn't have to tell you to catch up.
+
 ## Branch Naming
 - **One branch per logical change.** A logical change is something you can describe in one sentence without using "and" to connect unrelated things.
 - **Test:** Would you want to undo these things together? If not, they belong in separate branches.
