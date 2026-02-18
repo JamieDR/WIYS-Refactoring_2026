@@ -6275,37 +6275,31 @@ function batchSchedulePosts() {
     SpreadsheetApp.getUi().alert('WP Editing Tracker sheet not found');
     return;
   }
-  
+
   var lastRow = sheet.getLastRow();
   var postsToSchedule = [];
-  var now = new Date();
-  
+
   // Find all rows with "Date Set" status
   for (var row = 2; row <= lastRow; row++) {
     var status = sheet.getRange(row, 8).getValue(); // Column H
-    
+
     if (status === 'Date Set') {
       var wpUrl = sheet.getRange(row, 4).getValue(); // Column D
       var time = sheet.getRange(row, 6).getDisplayValue(); // Column F
       var date = sheet.getRange(row, 7).getDisplayValue(); // Column G
-      
+
       if (wpUrl && time && date) {
-        // Check if date is in the future
-        var scheduledDate = new Date(date + ' ' + time);
-        
         postsToSchedule.push({
           row: row,
           wpUrl: wpUrl,
           time: time,
           date: date,
-          scheduledDate: scheduledDate,
-          isFuture: scheduledDate > now,
           title: sheet.getRange(row, 3).getValue() || 'No title'
         });
       }
     }
   }
-  
+
   if (postsToSchedule.length === 0) {
     SpreadsheetApp.getUi().alert(
       'No Posts to Schedule',
@@ -6314,169 +6308,69 @@ function batchSchedulePosts() {
     );
     return;
   }
-  
-  // Separate future and past dates
-  var futurePosts = postsToSchedule.filter(function(p) { return p.isFuture; });
-  var pastPosts = postsToSchedule.filter(function(p) { return !p.isFuture; });
-  
-  // Build initial confirmation message
-  var message = 'Found ' + postsToSchedule.length + ' posts ready to process:\n\n';
-  message += '✅ Future dates (will be scheduled): ' + futurePosts.length + '\n';
-  message += '⏰ Past dates (will need confirmation): ' + pastPosts.length + '\n\n';
-  message += 'Continue with scheduling future posts first?';
-  
+
+  // Build confirmation message
+  var message = 'Found ' + postsToSchedule.length + ' post(s) to schedule:\n\n';
+  for (var i = 0; i < postsToSchedule.length; i++) {
+    var p = postsToSchedule[i];
+    message += '• ' + p.title + ' — ' + p.date + ' ' + p.time + '\n';
+  }
+  message += '\nAll posts will be scheduled. Proceed?';
+
   var response = SpreadsheetApp.getUi().alert(
     'Batch Schedule Posts',
     message,
     SpreadsheetApp.getUi().ButtonSet.YES_NO
   );
-  
+
   if (response !== SpreadsheetApp.getUi().Button.YES) {
     return;
   }
-  
-  // STEP 1: Process future posts (existing logic)
+
+  // Process all posts — schedule via mock event to setWordPressSchedule
   var scheduledCount = 0;
-  var scheduleErrorCount = 0;
-  
-  for (var i = 0; i < futurePosts.length; i++) {
-    var post = futurePosts[i];
-    
+  var errorCount = 0;
+
+  for (var j = 0; j < postsToSchedule.length; j++) {
+    var post = postsToSchedule[j];
+
     try {
-      Logger.log('Scheduling future post for row ' + post.row);
-      
+      Logger.log('Scheduling post for row ' + post.row);
+
       // Create mock event
       var mockEvent = {
         range: sheet.getRange(post.row, 8),
         value: 'Schedule'
       };
-      
+
       // Call existing function
       setWordPressSchedule(mockEvent);
-      
+
       // Check if successful
       var newStatus = sheet.getRange(post.row, 8).getValue();
       if (newStatus === CONFIG.STATUS.SCHEDULED) {
         scheduledCount++;
       } else {
-        scheduleErrorCount++;
+        errorCount++;
       }
-      
+
       // Delay between API calls
       Utilities.sleep(500);
-      
+
     } catch (error) {
-      scheduleErrorCount++;
+      errorCount++;
       Logger.log('Error scheduling row ' + post.row + ': ' + error.message);
     }
   }
-  
-  // STEP 2: Handle past-date posts with confirmation dialog
-  var publishedCount = 0;
-  var publishErrorCount = 0;
-  
-  if (pastPosts.length > 0) {
-    // Build confirmation message for past-date posts
-    var pastMessage = 'Posts with past dates ready to publish:\n\n';
-    
-    for (var j = 0; j < pastPosts.length; j++) {
-      var pastPost = pastPosts[j];
-      pastMessage += '• ' + pastPost.title + ': Set for ' + pastPost.date + ' - ' + pastPost.time + '\n';
-    }
-    
-    pastMessage += '\nProceed with publishing these ' + pastPosts.length + ' posts immediately?';
-    
-    var pastResponse = SpreadsheetApp.getUi().alert(
-      'Publish Past-Date Posts',
-      pastMessage,
-      SpreadsheetApp.getUi().ButtonSet.YES_NO
-    );
-    
-    if (pastResponse === SpreadsheetApp.getUi().Button.YES) {
-      // Publish past-date posts
-      for (var k = 0; k < pastPosts.length; k++) {
-        var pastPost = pastPosts[k];
-        
-        try {
-          Logger.log('Publishing past-date post for row ' + pastPost.row);
-          
-          // Publish the post with its original past date
-          var publishResult = publishWordPressPostWithDate(pastPost.wpUrl, pastPost.date, pastPost.time);
-          
-          if (publishResult) {
-            sheet.getRange(pastPost.row, 8).setValue(CONFIG.STATUS.PUBLISHED);
-            publishedCount++;
-            Logger.log('Successfully published past-date post: ' + pastPost.title);
-          } else {
-            publishErrorCount++;
-            Logger.log('Failed to publish past-date post: ' + pastPost.title);
-          }
-          
-          // Delay between API calls
-          Utilities.sleep(500);
-          
-        } catch (error) {
-          publishErrorCount++;
-          Logger.log('Error publishing past-date post ' + pastPost.row + ': ' + error.message);
-        }
-      }
-    } else {
-      Logger.log('User cancelled publishing of past-date posts');
-    }
-  }
-  
-  // Show comprehensive results
-  var resultMessage = 'Batch Processing Complete!\n\n';
-  resultMessage += '📅 SCHEDULED POSTS (Future Dates):\n';
-  resultMessage += '✅ Successfully scheduled: ' + scheduledCount + ' posts\n';
-  if (scheduleErrorCount > 0) {
-    resultMessage += '❌ Schedule errors: ' + scheduleErrorCount + ' posts\n';
-  }
-  
-  if (pastPosts.length > 0) {
-    resultMessage += '\n⏰ PUBLISHED POSTS (Past Dates):\n';
-    resultMessage += '✅ Successfully published: ' + publishedCount + ' posts\n';
-    if (publishErrorCount > 0) {
-      resultMessage += '❌ Publish errors: ' + publishErrorCount + ' posts\n';
-    }
-    if (pastPosts.length > publishedCount + publishErrorCount) {
-      resultMessage += '⏭️ Skipped (user cancelled): ' + (pastPosts.length - publishedCount - publishErrorCount) + ' posts\n';
-    }
-  }
-  
-  SpreadsheetApp.getUi().alert('Results', resultMessage, SpreadsheetApp.getUi().ButtonSet.OK);
-}
 
-// New helper function to publish WordPress post with specific date
-function publishWordPressPostWithDate(wpUrl, date, time) {
-  var postId = extractPostIdFromUrl(wpUrl);
-  if (!postId) {
-    Logger.log('Could not extract post ID from URL: ' + wpUrl);
-    return false;
+  // Show results
+  var resultMessage = 'Batch Schedule Complete!\n\n';
+  resultMessage += '✅ Successfully scheduled: ' + scheduledCount + ' posts\n';
+  if (errorCount > 0) {
+    resultMessage += '❌ Errors: ' + errorCount + ' posts\n';
   }
-  
-  // Parse the date and time
-  var publishDate = new Date(date + ' ' + time);
-  
-  // Format for WordPress
-  var year = publishDate.getFullYear();
-  var month = String(publishDate.getMonth() + 1).padStart(2, '0');
-  var day = String(publishDate.getDate()).padStart(2, '0');
-  var hours = String(publishDate.getHours()).padStart(2, '0');
-  var minutes = String(publishDate.getMinutes()).padStart(2, '0');
-  var seconds = '00';
-  
-  var wpDateString = year + '-' + month + '-' + day + 'T' + hours + ':' + minutes + ':' + seconds;
-  
-  Logger.log('Publishing post with date: ' + wpDateString);
-  
-  // Publish the post with the specified date
-  var result = updateWordPressPost(postId, {
-    status: CONFIG.WP_POST_STATUS.PUBLISH,
-    date: wpDateString
-  });
-  
-  return result !== false;
+
+  SpreadsheetApp.getUi().alert('Results', resultMessage, SpreadsheetApp.getUi().ButtonSet.OK);
 }
 
 
@@ -6586,7 +6480,6 @@ function batchRepublishPosts() {
 
   var lastRow = sheet.getLastRow();
   var postsToRepublish = [];
-  var now = new Date();
 
   // Find all rows with "Republish" status
   for (var row = 5; row <= lastRow; row++) {
@@ -6598,15 +6491,11 @@ function batchRepublishPosts() {
       var date = sheet.getRange(row, 7).getDisplayValue(); // Column G
 
       if (wpUrl && time && date) {
-        var scheduledDate = new Date(date + ' ' + time);
-
         postsToRepublish.push({
           row: row,
           wpUrl: wpUrl,
           time: time,
           date: date,
-          scheduledDate: scheduledDate,
-          isFuture: scheduledDate > now,
           title: sheet.getRange(row, 3).getValue() || 'No title'
         });
       } else {
@@ -6626,17 +6515,13 @@ function batchRepublishPosts() {
     return;
   }
 
-  // Separate future and past dates
-  var futurePosts = postsToRepublish.filter(function(p) { return p.isFuture; });
-  var pastPosts = postsToRepublish.filter(function(p) { return !p.isFuture; });
-
   // Build confirmation message
   var message = 'Found ' + postsToRepublish.length + ' post(s) to republish:\n\n';
   for (var i = 0; i < postsToRepublish.length; i++) {
     var p = postsToRepublish[i];
-    message += '• ' + p.title + ' — ' + p.date + ' ' + p.time + (p.isFuture ? ' (schedule)' : ' (publish now)') + '\n';
+    message += '• ' + p.title + ' — ' + p.date + ' ' + p.time + '\n';
   }
-  message += '\nThis will:\n- Look up each post by its published URL\n- Append "-rep" to the slug\n- Reschedule/publish with the new date\n\nProceed?';
+  message += '\nThis will:\n- Look up each post by its published URL\n- Append "-rep" to the slug\n- Schedule with the new date\n\nProceed?';
 
   var response = SpreadsheetApp.getUi().alert(
     'Batch Republish',
@@ -6713,18 +6598,15 @@ function batchRepublishPosts() {
       var minutes = String(publishDate.getMinutes()).padStart(2, '0');
       var wpDateString = year + '-' + month + '-' + day + 'T' + hours + ':' + minutes + ':00';
 
-      // Step 4: Update the post — new slug + new date + appropriate status
-      var wpStatus = post.isFuture ? CONFIG.WP_POST_STATUS.FUTURE : CONFIG.WP_POST_STATUS.PUBLISH;
-
+      // Step 4: Update the post — new slug + new date, always scheduled
       var result = updateWordPressPost(postId, {
         slug: newSlug,
-        status: wpStatus,
+        status: CONFIG.WP_POST_STATUS.FUTURE,
         date: wpDateString
       });
 
       if (result) {
-        var statusText = post.isFuture ? CONFIG.STATUS.SCHEDULED : CONFIG.STATUS.PUBLISHED;
-        sheet.getRange(post.row, 8).setValue(statusText);
+        sheet.getRange(post.row, 8).setValue(CONFIG.STATUS.SCHEDULED);
         successCount++;
         Logger.log('Successfully republished post ' + postId + ' with slug ' + newSlug);
       } else {
@@ -12572,10 +12454,7 @@ function listAllFunctions() {
     ['getArticlesInWorkspace', 7151, 'Get articles in workspace', 'UPL, AST', 'processWorkspaceLoop', 'Active'],
 
     // Batch schedule
-    ['batchSchedulePosts', 7243, 'Batch schedule posts for publish', 'WET, WP API', 'Menu item', 'Active'],
-
-    // WP post publish
-    ['publishWordPressPostWithDate', 7422, 'Publish WP post with specific date', 'WP API', 'batchSchedulePosts', 'Active'],
+    ['batchSchedulePosts', 0, 'Batch schedule all Date Set posts', 'WET, WP API', 'Menu item', 'Active'],
 
     // Republish
     ['extractSlugFromPublishedUrl', 0, 'Extract slug from published frontend URL', 'None', 'batchRepublishPosts', 'Active utility'],
