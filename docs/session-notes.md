@@ -1,5 +1,32 @@
 # Session Notes — Live Scratchpad
 
+## Emergency Fix — February 18, 2026
+
+### What Was Fixed
+Two quick production fixes for the WP Editing Tracker:
+
+1. **Republish URL update** — `batchRepublishPosts()` now writes the new URL (from WP API response) back to WET column D after republishing. Previously the old URL stayed in the sheet even though the slug changed.
+
+2. **Google Doc URL transfer** — `batchTransferToWPEditingTracker()` now copies AST column D (Google Doc link) to WET column L. This lets the team access the original doc from the editing tracker for QA.
+
+### Column Mapping Change
+- **WET column L** repurposed from "QA Notes" → "Google Doc URL"
+- Sheet inventory doc updated to reflect this
+
+### Transfer Mapping (AST → WET)
+```
+AST → WET
+B → A   (Drafter)
+C → C   (Raw Title)
+D → L   (Google Doc URL)   ← NEW
+E → D   (WP Draft URL)
+H → B   (Article Type)
+I → J   (Base Topic)
+K → K   (Article Summary)
+```
+
+---
+
 ## Current Work: Automated Reference Links in Articles
 
 ### What We're Building

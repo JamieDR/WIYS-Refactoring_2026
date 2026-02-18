@@ -61,10 +61,11 @@ All sheets in the WIYS Production Spreadsheet, their purpose, and their column l
 | 9 | I | Final Title |
 | 10 | J | Base Topic |
 | 11 | K | Article Summary |
-| 12 | L | QA Notes |
+| 12 | L | Google Doc URL |
 
 **Notes:**
 - Column E (#) is a manual daily counter — Jamie uses it to count how many articles are being edited/published that day.
+- Column L was previously labeled "QA Notes" — repurposed to hold the Google Doc link, transferred from AST column D during the AST→WET batch transfer.
 
 ---
 
