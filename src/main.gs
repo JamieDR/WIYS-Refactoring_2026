@@ -6607,7 +6607,7 @@ function batchRepublishPosts() {
       });
 
       if (result) {
-        sheet.getRange(post.row, 8).setValue(CONFIG.STATUS.SCHEDULED);
+        sheet.getRange(post.row, 8).setValue('Republished');
         successCount++;
         Logger.log('Successfully republished post ' + postId + ' with slug ' + newSlug);
       } else {
