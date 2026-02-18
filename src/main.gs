@@ -7258,6 +7258,7 @@ function batchTransferToAleksReview() {
         row: i + 2, // Actual row number in sheet
         columnB: sourceData[i][1],  // Column B (Drafter)
         title: sourceData[i][2],    // Column C (Title)
+        googleDocUrl: sourceData[i][3], // Column D (Google Doc URL)
         wpUrl: sourceData[i][4],    // Column E (WP URL)
         articleType: sourceData[i][7], // Column H (Article Type)
         baseTopic: sourceData[i][8],   // Column I (Original Topic → Base Topic)
@@ -7337,6 +7338,7 @@ function batchTransferToAleksReview() {
       // Article Status Tracker → WP Editing Tracker
       // B → A (Drafter)
       // C → C (Raw Title)
+      // D → L (Google Doc URL)
       // E → D (WP Draft URL)
       // H → B (Article Type)
       // I → J (Base Topic)
@@ -7347,6 +7349,7 @@ function batchTransferToAleksReview() {
       targetSheet.getRange(targetRow, 4).setValue(article.wpUrl);           // E → D
       targetSheet.getRange(targetRow, 10).setValue(article.baseTopic);      // I → J
       targetSheet.getRange(targetRow, 11).setValue(article.articleSummary); // K → K
+      targetSheet.getRange(targetRow, 12).setValue(article.googleDocUrl);   // D → L
       // Status column (H) left blank
       
       // Mark as DONE in Article Status Tracker (Column G)
