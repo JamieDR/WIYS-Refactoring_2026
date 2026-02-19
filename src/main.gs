@@ -6667,6 +6667,20 @@ function updateTitle(e) {
     }
 
     var postId = extractPostIdFromUrl(wpUrl);
+    var existingSlug = null;
+
+    if (!postId) {
+      // Published URL — resolve slug to post ID
+      var slug = extractSlugFromPublishedUrl(wpUrl);
+      if (slug) {
+        var post = lookupPostBySlug(slug);
+        if (post) {
+          postId = post.id;
+          existingSlug = post.slug;
+        }
+      }
+    }
+
     if (!postId) {
       sheet.getRange(row, 8).setValue('New Title Ready');
       Logger.log('Skipping row ' + row + ' - Could not extract post ID from URL');
@@ -6675,7 +6689,12 @@ function updateTitle(e) {
 
     Logger.log('Updating title for post ID: ' + postId + ' → ' + finalTitle);
 
-    var result = updateWordPressPost(postId, { title: finalTitle });
+    // Preserve existing slug so WordPress doesn't auto-regenerate it from the new title
+    var updateData = { title: finalTitle };
+    if (existingSlug) {
+      updateData.slug = existingSlug;
+    }
+    var result = updateWordPressPost(postId, updateData);
 
     if (result) {
       sheet.getRange(row, 8).setValue('Title Updated');
