@@ -6389,6 +6389,8 @@ function batchSchedulePosts() {
 function extractSlugFromPublishedUrl(url) {
   if (!url) return null;
 
+  url = url.toString().trim();
+
   // Skip admin/draft URLs — those have post IDs, not slugs
   if (url.indexOf('wp-admin') !== -1 || url.indexOf('post.php') !== -1) return null;
   if (url.indexOf('?p=') !== -1 || url.indexOf('&p=') !== -1) return null;
@@ -6403,6 +6405,7 @@ function extractSlugFromPublishedUrl(url) {
   // Validate: slugs are lowercase alphanumeric with hyphens
   if (slug && /^[a-z0-9][a-z0-9-]*[a-z0-9]$/.test(slug)) return slug;
 
+  Logger.log('extractSlugFromPublishedUrl: no valid slug found in URL: ' + url + ' (last segment: "' + slug + '")');
   return null;
 }
 
@@ -6672,8 +6675,10 @@ function updateTitle(e) {
     if (!postId) {
       // Published URL — resolve slug to post ID
       var slug = extractSlugFromPublishedUrl(wpUrl);
+      Logger.log('updateTitle fallback: extracted slug = ' + (slug || 'null') + ' from URL: ' + wpUrl);
       if (slug) {
         var post = lookupPostBySlug(slug);
+        Logger.log('updateTitle fallback: lookupPostBySlug returned ' + (post ? 'post ID ' + post.id : 'null'));
         if (post) {
           postId = post.id;
           existingSlug = post.slug;
