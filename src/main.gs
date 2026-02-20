@@ -2831,25 +2831,22 @@ function uploadToWordPress(e) {
       continue;
     }
 
-    // Not linked — short actionable message
-    var a = '"' + pRef.anchor + '"';
+    var s = pRef.slideNum ? 'Slide ' + pRef.slideNum + ' ' : '';
     if (hasSlideTargeting && pRef.slideNum !== null) {
       if (pRef.slideNum > totalSlides) {
-        refIssues.push(a + ' → slide ' + pRef.slideNum + ' doesn\'t exist (only ' + totalSlides + ' slides)');
-      } else if (pRef.slideNum < 5) {
-        refIssues.push(a + ' → slide ' + pRef.slideNum + ' is forbidden, move to 5+');
-      } else if (pRef.slideNum === totalSlides) {
-        refIssues.push(a + ' → last slide, move earlier');
+        refIssues.push(s + pRef.anchor + ' - slide doesn\'t exist');
+      } else if (pRef.slideNum < 5 || pRef.slideNum === totalSlides) {
+        refIssues.push(s + pRef.anchor + ' - move to allowed slide');
       } else if (pRef.matchResult && pRef.matchResult.status === 'anchor_not_in_context') {
-        refIssues.push(a + ' → anchor not found in slide ' + pRef.slideNum + ', fix spelling');
+        refIssues.push(s + pRef.anchor + ' - use new anchor text');
       } else {
-        refIssues.push(a + ' → context not found in slide ' + pRef.slideNum + ', fix wording');
+        refIssues.push(s + pRef.anchor + ' - fix context phrase');
       }
     } else {
       if (pRef.matchResult && pRef.matchResult.status === 'anchor_not_in_context') {
-        refIssues.push(a + ' → anchor not found in context, fix spelling');
+        refIssues.push(pRef.anchor + ' - use new anchor text');
       } else {
-        refIssues.push(a + ' → context not found, fix wording');
+        refIssues.push(pRef.anchor + ' - fix context phrase');
       }
     }
   }
