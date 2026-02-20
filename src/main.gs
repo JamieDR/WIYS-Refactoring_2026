@@ -9153,6 +9153,8 @@ function lockWorksheet() {
       cell.setValue('LOCKED');
       cell.setBackground(CONFIG.COLORS.DARK_RED);
       cell.setFontColor(CONFIG.COLORS.WHITE);
+      cell.setHorizontalAlignment('center');
+      cell.setFontWeight('bold');
 
       // Clear Column N (late-edit flags) from previous cycle
       var lastRow = astSheet.getLastRow();
@@ -9261,8 +9263,10 @@ function unlockWorksheet() {
     if (astSheet) {
       var cell = astSheet.getRange('A2');
       cell.setValue('OPEN');
-      cell.setBackground(CONFIG.COLORS.MEDIUM_ORANGE);
-      cell.setFontColor(CONFIG.COLORS.BLACK);
+      cell.setBackground(CONFIG.COLORS.BLACK);
+      cell.setFontColor(CONFIG.COLORS.MEDIUM_ORANGE);
+      cell.setHorizontalAlignment('center');
+      cell.setFontWeight('bold');
     }
   } catch (vizErr) {
     Logger.log('Warning: Could not update visual indicator: ' + vizErr.message);
@@ -9375,8 +9379,9 @@ function checkLockStatus() {
 /**
  * CHECK FOR LATE EDITS
  * Called during unlockWorksheet() to detect WordPress posts edited after the lock.
- * Reads lock snapshot time, checks each AST article's WP modified timestamp,
- * and writes "LATE - [time]" to Column N for any post edited after the deadline.
+ * Reads lock snapshot time, batch-fetches post modified timestamps via WP REST API
+ * (using ?include=id1,id2,... for up to 100 per call), and writes "LATE - [time]"
+ * to Column N for any post edited after the deadline.
  */
 function checkLateEdits() {
   var snapshotJson = PropertiesService.getScriptProperties().getProperty('LOCK_SNAPSHOT');
@@ -9409,14 +9414,12 @@ function checkLateEdits() {
   // Read columns A through N (14 columns) starting from row 2
   var data = astSheet.getRange(2, 1, lastRow - 1, 14).getValues();
 
-  var username = CONFIG.WORDPRESS.USERNAME;
-  var password = CONFIG.WORDPRESS.APP_PASSWORD;
-  var checked = 0;
-  var lateCount = 0;
-  var errors = 0;
-
   // Only check articles with these statuses (Column G = index 6)
   var checkStatuses = ['Successful WP Upload', 'For Final WP Review - Jamie'];
+
+  // Step 1: Collect all post IDs and their sheet row mapping
+  var postIdToRows = {}; // postId → array of sheet row indices (0-based into data[])
+  var allPostIds = [];
 
   for (var i = 0; i < data.length; i++) {
     var status = String(data[i][6] || '').trim(); // Column G
@@ -9428,51 +9431,79 @@ function checkLateEdits() {
     var postId = extractPostIdFromUrl(String(wpUrl));
     if (!postId) continue;
 
-    checked++;
+    if (!postIdToRows[postId]) {
+      postIdToRows[postId] = [];
+      allPostIds.push(postId);
+    }
+    postIdToRows[postId].push(i);
+  }
+
+  if (allPostIds.length === 0) {
+    Logger.log('checkLateEdits: No articles with WP URLs and matching statuses found.');
+    return { checked: 0, late: 0 };
+  }
+
+  Logger.log('checkLateEdits: Found ' + allPostIds.length + ' post(s) to check.');
+
+  var username = CONFIG.WORDPRESS.USERNAME;
+  var password = CONFIG.WORDPRESS.APP_PASSWORD;
+  var authHeader = 'Basic ' + Utilities.base64Encode(username + ':' + password);
+  var lateCount = 0;
+  var errors = 0;
+
+  // Step 2: Batch fetch in groups of 100 (WP REST API per_page max)
+  var BATCH_SIZE = 100;
+  for (var batch = 0; batch < allPostIds.length; batch += BATCH_SIZE) {
+    var batchIds = allPostIds.slice(batch, batch + BATCH_SIZE);
+    var apiUrl = CONFIG.ENDPOINTS.WP_POSTS + '?include=' + batchIds.join(',') +
+                 '&_fields=id,modified&per_page=' + batchIds.length + '&status=draft';
 
     try {
-      // Lightweight API call — only fetch id and modified timestamp
-      var apiUrl = CONFIG.ENDPOINTS.WP_POSTS + '/' + postId + '?_fields=id,modified';
-      var options = {
+      var response = UrlFetchApp.fetch(apiUrl, {
         method: 'get',
-        headers: {
-          'Authorization': 'Basic ' + Utilities.base64Encode(username + ':' + password)
-        },
+        headers: { 'Authorization': authHeader },
         muteHttpExceptions: true
-      };
+      });
 
-      var response = UrlFetchApp.fetch(apiUrl, options);
       if (response.getResponseCode() !== 200) {
-        Logger.log('checkLateEdits: API error for post ' + postId + ' — HTTP ' + response.getResponseCode());
-        errors++;
+        Logger.log('checkLateEdits: Batch API error — HTTP ' + response.getResponseCode());
+        errors += batchIds.length;
         continue;
       }
 
-      var postData = JSON.parse(response.getContentText());
-      var modifiedTime = new Date(postData.modified);
+      var posts = JSON.parse(response.getContentText());
 
-      if (modifiedTime > lockTime) {
-        // Format the modified time in Manila timezone for display
-        var formattedTime = Utilities.formatDate(modifiedTime, CONFIG.LOCK.SCHEDULE.TIMEZONE, 'MMM dd h:mm a');
-        var lateMessage = 'LATE - ' + formattedTime;
+      // Step 3: Check each returned post against lock time
+      for (var p = 0; p < posts.length; p++) {
+        var post = posts[p];
+        var modifiedTime = new Date(post.modified);
 
-        // Write to Column N (column 14) for this row
-        var sheetRow = i + 2; // +2 because data starts at row 2 and i is 0-indexed
-        astSheet.getRange(sheetRow, 14).setValue(lateMessage);
-        astSheet.getRange(sheetRow, 14).setBackground('#ffcccc'); // Light red highlight
-        lateCount++;
+        if (modifiedTime > lockTime) {
+          var formattedTime = Utilities.formatDate(modifiedTime, CONFIG.LOCK.SCHEDULE.TIMEZONE, 'MMM dd h:mm a');
+          var lateMessage = 'LATE - ' + formattedTime;
 
-        var title = data[i][2] || '(no title)'; // Column C
-        Logger.log('LATE EDIT: "' + title + '" — modified ' + formattedTime + ' (post ' + postId + ')');
+          // Write to every AST row that references this post ID
+          var rows = postIdToRows[String(post.id)] || [];
+          for (var r = 0; r < rows.length; r++) {
+            var sheetRow = rows[r] + 2; // +2 because data starts at row 2
+            astSheet.getRange(sheetRow, 14).setValue(lateMessage);
+            astSheet.getRange(sheetRow, 14).setBackground('#ffcccc');
+
+            var title = data[rows[r]][2] || '(no title)';
+            Logger.log('LATE EDIT: "' + title + '" — modified ' + formattedTime + ' (post ' + post.id + ')');
+          }
+          lateCount++;
+        }
       }
     } catch (err) {
-      Logger.log('checkLateEdits: Error checking post ' + postId + ': ' + err.message);
-      errors++;
+      Logger.log('checkLateEdits: Batch fetch error: ' + err.message);
+      errors += batchIds.length;
     }
   }
 
-  Logger.log('checkLateEdits: Done. Checked ' + checked + ' posts, found ' + lateCount + ' late edit(s), ' + errors + ' error(s).');
-  return { checked: checked, late: lateCount, errors: errors };
+  var callCount = Math.ceil(allPostIds.length / BATCH_SIZE);
+  Logger.log('checkLateEdits: Done. Checked ' + allPostIds.length + ' posts in ' + callCount + ' API call(s), found ' + lateCount + ' late edit(s), ' + errors + ' error(s).');
+  return { checked: allPostIds.length, late: lateCount, errors: errors };
 }
 
 
