@@ -214,6 +214,33 @@ const CONFIG = {
     NOT_FOUND: 'Not found',
     EMPTY_STRING: '',
     IMAGE_ID_FAILED: 0
+  },
+
+  // ===== WORKSHEET LOCK SCHEDULE =====
+  // Controls the nightly lock/unlock of the spreadsheet.
+  // During lock: only PROTECTED_EMAILS can access the spreadsheet.
+  // During unlock: all TEAM_MEMBERS are restored as editors.
+  LOCK: {
+    ENABLED: true,
+    SCHEDULE: {
+      LOCK_HOUR: 22,    // 10 PM Manila time
+      UNLOCK_HOUR: 2,   // 2 AM Manila time
+      TIMEZONE: 'Asia/Manila'
+    },
+    // These emails always retain access during lock period
+    PROTECTED_EMAILS: [
+      'jlcdelosreyes@gmail.com',
+      'workflow@wheninyourstate.com'
+    ],
+    // Team members to restore on unlock — add/remove emails here when team changes
+    // All are restored as editors
+    TEAM_MEMBERS: [
+      // 'charl@example.com',
+      // 'lara@example.com',
+      // 'naintara@example.com',
+      // 'karl@example.com',
+      // Add team member emails here
+    ]
   }
 };
 
@@ -9038,6 +9065,273 @@ function openSheet() {
   cell.setValue('✅✅ OPEN');
   cell.setBackground(CONFIG.COLORS.MEDIUM_ORANGE); // Medium orange
 }
+
+
+/**
+ * ============================================================================
+ * SCHEDULED WORKSHEET LOCK/UNLOCK
+ * ============================================================================
+ * Locks the spreadsheet nightly by removing all editors/viewers except
+ * protected emails (CONFIG.LOCK.PROTECTED_EMAILS). Unlocks by restoring
+ * all team members (CONFIG.LOCK.TEAM_MEMBERS) as editors.
+ *
+ * Schedule: Lock at 10PM Manila, Unlock at 2AM Manila (configurable in CONFIG.LOCK)
+ *
+ * Failsafes:
+ * 1. Spreadsheet owner (workflow@wheninyourstate.com) can never be removed
+ * 2. emergencyUnlock() can be run manually at any time
+ * 3. Lock state stored in Script Properties — survives crashes
+ * 4. Unlock retries per-user — one failure doesn't block others
+ * 5. Lock and unlock triggers are independent
+ * ============================================================================
+ */
+
+
+/**
+ * Locks the worksheet by removing all editors and viewers except protected emails.
+ * Called by a time-driven trigger at CONFIG.LOCK.SCHEDULE.LOCK_HOUR Manila time.
+ * Safe to call manually — will not run if CONFIG.LOCK.ENABLED is false.
+ */
+function lockWorksheet() {
+  if (!CONFIG.LOCK.ENABLED) {
+    Logger.log('Worksheet lock is disabled in CONFIG. Skipping.');
+    return;
+  }
+
+  var ss = SpreadsheetApp.openById(CONFIG.GOOGLE.SPREADSHEET_ID);
+  var protectedEmails = CONFIG.LOCK.PROTECTED_EMAILS.map(function(e) { return e.toLowerCase(); });
+  var errors = [];
+
+  // Store current state before making changes
+  var currentEditors = ss.getEditors().map(function(u) { return u.getEmail(); });
+  var currentViewers = ss.getViewers().map(function(u) { return u.getEmail(); });
+
+  // Save snapshot to Script Properties as backup for recovery
+  var snapshot = {
+    editors: currentEditors,
+    viewers: currentViewers,
+    lockedAt: new Date().toISOString()
+  };
+  PropertiesService.getScriptProperties().setProperty('LOCK_SNAPSHOT', JSON.stringify(snapshot));
+  PropertiesService.getScriptProperties().setProperty('LOCK_STATE', 'locked');
+
+  // Remove editors (except protected and owner)
+  for (var i = 0; i < currentEditors.length; i++) {
+    var email = currentEditors[i].toLowerCase();
+    if (protectedEmails.indexOf(email) === -1) {
+      try {
+        ss.removeEditor(currentEditors[i]);
+        Logger.log('Removed editor: ' + currentEditors[i]);
+      } catch (err) {
+        errors.push('Failed to remove editor ' + currentEditors[i] + ': ' + err.message);
+        Logger.log('ERROR removing editor ' + currentEditors[i] + ': ' + err.message);
+      }
+    }
+  }
+
+  // Remove viewers (except protected and owner)
+  for (var j = 0; j < currentViewers.length; j++) {
+    var viewerEmail = currentViewers[j].toLowerCase();
+    if (protectedEmails.indexOf(viewerEmail) === -1) {
+      try {
+        ss.removeViewer(currentViewers[j]);
+        Logger.log('Removed viewer: ' + currentViewers[j]);
+      } catch (err) {
+        errors.push('Failed to remove viewer ' + currentViewers[j] + ': ' + err.message);
+        Logger.log('ERROR removing viewer ' + currentViewers[j] + ': ' + err.message);
+      }
+    }
+  }
+
+  // Update visual indicator on AST sheet
+  try {
+    var astSheet = ss.getSheetByName(CONFIG.SHEETS.ARTICLE_STATUS_TRACKER);
+    if (astSheet) {
+      var cell = astSheet.getRange('A1');
+      cell.setValue('LOCKED');
+      cell.setBackground(CONFIG.COLORS.DARK_RED);
+      cell.setFontColor(CONFIG.COLORS.WHITE);
+    }
+  } catch (vizErr) {
+    Logger.log('Warning: Could not update visual indicator: ' + vizErr.message);
+  }
+
+  // Log results
+  if (errors.length > 0) {
+    Logger.log('Worksheet locked with ' + errors.length + ' error(s):\n' + errors.join('\n'));
+  } else {
+    Logger.log('Worksheet locked successfully at ' + new Date().toISOString());
+  }
+}
+
+
+/**
+ * Unlocks the worksheet by restoring all team members as editors.
+ * Called by a time-driven trigger at CONFIG.LOCK.SCHEDULE.UNLOCK_HOUR Manila time.
+ * Uses CONFIG.LOCK.TEAM_MEMBERS as the primary source. Falls back to the
+ * snapshot stored in Script Properties if CONFIG has no team members.
+ */
+function unlockWorksheet() {
+  var ss = SpreadsheetApp.openById(CONFIG.GOOGLE.SPREADSHEET_ID);
+  var errors = [];
+  var restored = 0;
+
+  // Determine which emails to restore
+  var emailsToRestore = CONFIG.LOCK.TEAM_MEMBERS.slice(); // copy
+
+  // Fallback: if CONFIG.TEAM_MEMBERS is empty, try the snapshot
+  if (emailsToRestore.length === 0) {
+    var snapshotJson = PropertiesService.getScriptProperties().getProperty('LOCK_SNAPSHOT');
+    if (snapshotJson) {
+      try {
+        var snapshot = JSON.parse(snapshotJson);
+        emailsToRestore = snapshot.editors || [];
+        Logger.log('CONFIG.LOCK.TEAM_MEMBERS is empty — falling back to snapshot (' + emailsToRestore.length + ' editors)');
+      } catch (parseErr) {
+        Logger.log('ERROR: Could not parse lock snapshot: ' + parseErr.message);
+      }
+    }
+  }
+
+  if (emailsToRestore.length === 0) {
+    Logger.log('WARNING: No emails to restore. CONFIG.LOCK.TEAM_MEMBERS is empty and no snapshot found.');
+    // Still update state and visual indicator
+  }
+
+  // Restore each team member as editor
+  for (var i = 0; i < emailsToRestore.length; i++) {
+    var email = emailsToRestore[i];
+    if (!email || email.trim() === '') continue;
+
+    try {
+      ss.addEditor(email.trim());
+      restored++;
+      Logger.log('Restored editor: ' + email);
+    } catch (err) {
+      errors.push('Failed to restore ' + email + ': ' + err.message);
+      Logger.log('ERROR restoring editor ' + email + ': ' + err.message);
+    }
+  }
+
+  // Update lock state
+  PropertiesService.getScriptProperties().setProperty('LOCK_STATE', 'unlocked');
+
+  // Update visual indicator on AST sheet
+  try {
+    var astSheet = ss.getSheetByName(CONFIG.SHEETS.ARTICLE_STATUS_TRACKER);
+    if (astSheet) {
+      var cell = astSheet.getRange('A1');
+      cell.setValue('OPEN');
+      cell.setBackground(CONFIG.COLORS.MEDIUM_ORANGE);
+      cell.setFontColor(CONFIG.COLORS.BLACK);
+    }
+  } catch (vizErr) {
+    Logger.log('Warning: Could not update visual indicator: ' + vizErr.message);
+  }
+
+  // Log results
+  if (errors.length > 0) {
+    Logger.log('Worksheet unlocked with ' + errors.length + ' error(s). Restored: ' + restored + '\nErrors:\n' + errors.join('\n'));
+  } else {
+    Logger.log('Worksheet unlocked successfully. Restored ' + restored + ' editor(s) at ' + new Date().toISOString());
+  }
+}
+
+
+/**
+ * Emergency unlock — run this manually if the scheduled unlock failed.
+ * Always runs regardless of CONFIG.LOCK.ENABLED setting.
+ * Can be triggered from the Script Editor or from a custom menu.
+ */
+function emergencyUnlock() {
+  Logger.log('EMERGENCY UNLOCK triggered manually at ' + new Date().toISOString());
+  unlockWorksheet();
+  Logger.log('Emergency unlock complete. Check logs for any errors.');
+}
+
+
+/**
+ * Creates time-driven triggers for the lock/unlock schedule.
+ * Run this ONCE to set up the schedule. Running again will create duplicate triggers.
+ * Use removeLockSchedule() first if you need to reset the triggers.
+ */
+function setupLockSchedule() {
+  var tz = CONFIG.LOCK.SCHEDULE.TIMEZONE;
+  var lockHour = CONFIG.LOCK.SCHEDULE.LOCK_HOUR;
+  var unlockHour = CONFIG.LOCK.SCHEDULE.UNLOCK_HOUR;
+
+  // Create lock trigger (10 PM Manila by default)
+  ScriptApp.newTrigger('lockWorksheet')
+    .timeBased()
+    .atHour(lockHour)
+    .nearMinute(0)
+    .everyDays(1)
+    .inTimezone(tz)
+    .create();
+
+  // Create unlock trigger (2 AM Manila by default)
+  ScriptApp.newTrigger('unlockWorksheet')
+    .timeBased()
+    .atHour(unlockHour)
+    .nearMinute(0)
+    .everyDays(1)
+    .inTimezone(tz)
+    .create();
+
+  Logger.log('Lock schedule created: Lock at ' + lockHour + ':00, Unlock at ' + unlockHour + ':00 (' + tz + ')');
+}
+
+
+/**
+ * Removes all lock/unlock triggers.
+ * Run this to disable the schedule, or before re-running setupLockSchedule().
+ */
+function removeLockSchedule() {
+  var triggers = ScriptApp.getProjectTriggers();
+  var removed = 0;
+
+  for (var i = 0; i < triggers.length; i++) {
+    var handlerName = triggers[i].getHandlerFunction();
+    if (handlerName === 'lockWorksheet' || handlerName === 'unlockWorksheet') {
+      ScriptApp.deleteTrigger(triggers[i]);
+      removed++;
+      Logger.log('Removed trigger: ' + handlerName);
+    }
+  }
+
+  Logger.log('Removed ' + removed + ' lock/unlock trigger(s).');
+}
+
+
+/**
+ * Shows the current lock state and configuration.
+ * Useful for debugging — run from Script Editor.
+ */
+function checkLockStatus() {
+  var state = PropertiesService.getScriptProperties().getProperty('LOCK_STATE') || 'unknown';
+  var snapshotJson = PropertiesService.getScriptProperties().getProperty('LOCK_SNAPSHOT');
+  var snapshot = snapshotJson ? JSON.parse(snapshotJson) : null;
+
+  var ss = SpreadsheetApp.openById(CONFIG.GOOGLE.SPREADSHEET_ID);
+  var currentEditors = ss.getEditors().map(function(u) { return u.getEmail(); });
+  var currentViewers = ss.getViewers().map(function(u) { return u.getEmail(); });
+
+  Logger.log('=== LOCK STATUS ===');
+  Logger.log('State: ' + state);
+  Logger.log('Enabled: ' + CONFIG.LOCK.ENABLED);
+  Logger.log('Protected emails: ' + CONFIG.LOCK.PROTECTED_EMAILS.join(', '));
+  Logger.log('Team members in CONFIG: ' + (CONFIG.LOCK.TEAM_MEMBERS.length > 0 ? CONFIG.LOCK.TEAM_MEMBERS.join(', ') : '(none configured)'));
+  Logger.log('Current editors: ' + currentEditors.join(', '));
+  Logger.log('Current viewers: ' + currentViewers.join(', '));
+  if (snapshot) {
+    Logger.log('Last snapshot taken: ' + snapshot.lockedAt);
+    Logger.log('Snapshot editors: ' + (snapshot.editors || []).join(', '));
+  } else {
+    Logger.log('No snapshot stored.');
+  }
+  Logger.log('===================');
+}
+
 
 function onColumnLEdit(e) {
   if (!e || !e.range) return;
