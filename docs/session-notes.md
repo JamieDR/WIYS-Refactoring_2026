@@ -1,9 +1,10 @@
 # Session Notes — Live Scratchpad
 
-## NEXT SESSION PRIORITY: Teach Jamie Git
-Jamie wants to learn how to do git commits and pushes himself instead of Claude doing them. This is the "areas to develop" item that's been in every session log since Session 1. Jamie is ready.
-
-**Start here:** Hands-on walkthrough in the Codespace terminal — `git status`, `git add`, `git commit`, `git push`. Use real changes, not practice exercises. Have Jamie do the actual commits for whatever work happens in the session.
+## NEXT SESSION: Git lesson FIRST, then code work
+**Non-negotiable order:**
+1. **Git lesson** — teach Jamie `git status`, `git add`, `git commit`, `git push` hands-on in the Codespace terminal. Practice with real changes until Jamie is comfortable. Do NOT skip this to start coding.
+2. **Progress review** — look at the full picture (9 sessions, refactoring plan, TODO list, what's been shipped vs. what's been deferred). Be honest about whether we're on track or need to redirect. Are we doing too much feature work and not enough refactoring? Is the TODO list growing faster than it's shrinking? Are we solving the right problems?
+3. **Then** continue with code work — Jamie does all git operations for the rest of the session.
 
 ---
 
