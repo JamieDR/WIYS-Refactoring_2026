@@ -88,7 +88,6 @@ Using the Function Inventory as the guide, removed 32 functions that were confir
 - **Config sheet** — TODO #18, centralize configuration in a dedicated sheet
 - **Delete `backfillWETColumnK()`** — one-time script, delete after confirming the backfill worked
 - **Delete `purgeTagCacheFromScriptProperties()`** — one-time script, delete after running
-- **clasp login** — still pending since Session 1
 
 ---
 
@@ -104,5 +103,4 @@ Using the Function Inventory as the guide, removed 32 functions that were confir
 **Areas to develop:**
 - The WET Column K column confusion (D vs E) highlights the risk of working without column mappings — Jamie should push for Phase 3 sooner rather than later
 - Still not using Git directly — all commits/pushes done by Claude
-- clasp login still not done (pending since Session 1) — this is becoming a recurring item
 - Consider learning to read git log output to verify what's been committed — builds confidence in the version control safety net

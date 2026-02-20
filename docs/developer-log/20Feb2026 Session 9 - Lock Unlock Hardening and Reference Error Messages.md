@@ -66,7 +66,6 @@ The reference hyperlink system (built in Session 6) was generating error message
 - **WordPress duplicate tag cleanup** — diagnose and merge duplicate tags
 - **Merge second codebase** — urgent: the "other" Apps Script project needs to be integrated
 - **Delete one-time scripts** — `backfillWETColumnK()`, `purgeTagCacheFromScriptProperties()` after running
-- **clasp login** — still pending since Session 1
 
 ---
 
@@ -80,6 +79,5 @@ The reference hyperlink system (built in Session 6) was generating error message
 
 **Areas to develop:**
 - Still not using Git directly — all commits/pushes done by Claude
-- clasp login still pending (Session 1) — becoming a recurring theme
 - The lock/unlock system went through 12 bug-fix commits — this is normal for a first implementation, but consider writing a simple manual test checklist before deploying future features to catch issues like the naming bug and wrong spreadsheet ID earlier
 - Apps Script editor navigation — learn Ctrl+F for finding functions, and that the dropdown is type-to-filter

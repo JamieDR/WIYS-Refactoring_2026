@@ -102,7 +102,6 @@ Built the full reference hyperlink system for news articles — from parsing Cla
 
 **Areas to develop:**
 - Still not using Git directly — all commits/pushes done by Claude
-- clasp login still not done (pending since Session 1)
 - Developer logs for Sessions 2-4 still need backfilling
 
 ---
