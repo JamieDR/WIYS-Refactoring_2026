@@ -236,15 +236,16 @@ const CONFIG = {
     // Team editors — removed during lock, restored during unlock
     // Add/remove emails here when team members come/go
     TEAM_EDITORS: [
-      'writers@wheninyourstate.com',
-      'jamie@wheninyourstate.com',
-      'rojannemariedeleon@gmail.com',
-      'jamesdrfreelance@gmail.com',
-      'jobs@wheninyourstate.com',
-      'editors@wheninyourstate.com',
-      'chocobocharlotte@gmail.com',
-      'Naintara.online@gmail.com',
-      'laravalencia92@gmail.com'
+      'jlcdelosreyes2019@gmail.com'
+      // 'writers@wheninyourstate.com',
+      // 'jamie@wheninyourstate.com',
+      // 'rojannemariedeleon@gmail.com',
+      // 'jamesdrfreelance@gmail.com',
+      // 'jobs@wheninyourstate.com',
+      // 'editors@wheninyourstate.com',
+      // 'chocobocharlotte@gmail.com',
+      // 'Naintara.online@gmail.com',
+      // 'laravalencia92@gmail.com'
     ],
     // Viewers — never touched by lock/unlock. Listed here for documentation only.
     VIEWERS_DO_NOT_TOUCH: [
