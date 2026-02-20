@@ -218,8 +218,8 @@ const CONFIG = {
 
   // ===== WORKSHEET LOCK SCHEDULE =====
   // Controls the nightly lock/unlock of the spreadsheet.
-  // During lock: only PROTECTED_EMAILS can access the spreadsheet.
-  // During unlock: all TEAM_MEMBERS are restored as editors.
+  // During lock: only PROTECTED_EMAILS retain access. TEAM_EDITORS get removed.
+  // During unlock: all TEAM_EDITORS are restored. VIEWERS are never touched.
   LOCK: {
     ENABLED: true,
     SCHEDULE: {
@@ -227,19 +227,29 @@ const CONFIG = {
       UNLOCK_HOUR: 2,   // 2 AM Manila time
       TIMEZONE: 'Asia/Manila'
     },
-    // These emails always retain access during lock period
+    // These emails ALWAYS retain editor access — never removed during lock
     PROTECTED_EMAILS: [
+      'workflow@wheninyourstate.com',                                          // Owner
       'jlcdelosreyes@gmail.com',
-      'workflow@wheninyourstate.com'
+      'wiys-image-upload-python@wiys-image-download-python.iam.gserviceaccount.com'
     ],
-    // Team members to restore on unlock — add/remove emails here when team changes
-    // All are restored as editors
-    TEAM_MEMBERS: [
-      // 'charl@example.com',
-      // 'lara@example.com',
-      // 'naintara@example.com',
-      // 'karl@example.com',
-      // Add team member emails here
+    // Team editors — removed during lock, restored during unlock
+    // Add/remove emails here when team members come/go
+    TEAM_EDITORS: [
+      'writers@wheninyourstate.com',
+      'jamie@wheninyourstate.com',
+      'rojannemariedeleon@gmail.com',
+      'jamesdrfreelance@gmail.com',
+      'jobs@wheninyourstate.com',
+      'editors@wheninyourstate.com',
+      'chocobocharlotte@gmail.com',
+      'Naintara.online@gmail.com',
+      'laravalencia92@gmail.com'
+    ],
+    // Viewers — never touched by lock/unlock. Listed here for documentation only.
+    VIEWERS_DO_NOT_TOUCH: [
+      'martyspargo@gmail.com',
+      'admin@wheninyourstate.com'
     ]
   }
 };
@@ -9115,7 +9125,7 @@ function lockWorksheet() {
   PropertiesService.getScriptProperties().setProperty('LOCK_SNAPSHOT', JSON.stringify(snapshot));
   PropertiesService.getScriptProperties().setProperty('LOCK_STATE', 'locked');
 
-  // Remove editors (except protected and owner)
+  // Remove editors (except protected and owner) — viewers are never touched
   for (var i = 0; i < currentEditors.length; i++) {
     var email = currentEditors[i].toLowerCase();
     if (protectedEmails.indexOf(email) === -1) {
@@ -9128,20 +9138,7 @@ function lockWorksheet() {
       }
     }
   }
-
-  // Remove viewers (except protected and owner)
-  for (var j = 0; j < currentViewers.length; j++) {
-    var viewerEmail = currentViewers[j].toLowerCase();
-    if (protectedEmails.indexOf(viewerEmail) === -1) {
-      try {
-        ss.removeViewer(currentViewers[j]);
-        Logger.log('Removed viewer: ' + currentViewers[j]);
-      } catch (err) {
-        errors.push('Failed to remove viewer ' + currentViewers[j] + ': ' + err.message);
-        Logger.log('ERROR removing viewer ' + currentViewers[j] + ': ' + err.message);
-      }
-    }
-  }
+  // Note: Viewers (martyspargo@gmail.com, admin@wheninyourstate.com) are intentionally NOT removed
 
   // Update visual indicator on AST sheet
   try {
@@ -9168,8 +9165,8 @@ function lockWorksheet() {
 /**
  * Unlocks the worksheet by restoring all team members as editors.
  * Called by a time-driven trigger at CONFIG.LOCK.SCHEDULE.UNLOCK_HOUR Manila time.
- * Uses CONFIG.LOCK.TEAM_MEMBERS as the primary source. Falls back to the
- * snapshot stored in Script Properties if CONFIG has no team members.
+ * Uses CONFIG.LOCK.TEAM_EDITORS as the primary source. Falls back to the
+ * snapshot stored in Script Properties if CONFIG has no team editors.
  */
 function unlockWorksheet() {
   var ss = SpreadsheetApp.openById(CONFIG.GOOGLE.SPREADSHEET_ID);
@@ -9177,16 +9174,16 @@ function unlockWorksheet() {
   var restored = 0;
 
   // Determine which emails to restore
-  var emailsToRestore = CONFIG.LOCK.TEAM_MEMBERS.slice(); // copy
+  var emailsToRestore = CONFIG.LOCK.TEAM_EDITORS.slice(); // copy
 
-  // Fallback: if CONFIG.TEAM_MEMBERS is empty, try the snapshot
+  // Fallback: if CONFIG.LOCK.TEAM_EDITORS is empty, try the snapshot
   if (emailsToRestore.length === 0) {
     var snapshotJson = PropertiesService.getScriptProperties().getProperty('LOCK_SNAPSHOT');
     if (snapshotJson) {
       try {
         var snapshot = JSON.parse(snapshotJson);
         emailsToRestore = snapshot.editors || [];
-        Logger.log('CONFIG.LOCK.TEAM_MEMBERS is empty — falling back to snapshot (' + emailsToRestore.length + ' editors)');
+        Logger.log('CONFIG.LOCK.TEAM_EDITORS is empty — falling back to snapshot (' + emailsToRestore.length + ' editors)');
       } catch (parseErr) {
         Logger.log('ERROR: Could not parse lock snapshot: ' + parseErr.message);
       }
@@ -9194,22 +9191,40 @@ function unlockWorksheet() {
   }
 
   if (emailsToRestore.length === 0) {
-    Logger.log('WARNING: No emails to restore. CONFIG.LOCK.TEAM_MEMBERS is empty and no snapshot found.');
+    Logger.log('WARNING: No emails to restore. CONFIG.LOCK.TEAM_EDITORS is empty and no snapshot found.');
     // Still update state and visual indicator
   }
 
-  // Restore each team member as editor
+  // Restore each team member as editor — using Drive API to suppress email notifications
+  var fileId = CONFIG.GOOGLE.SPREADSHEET_ID;
   for (var i = 0; i < emailsToRestore.length; i++) {
     var email = emailsToRestore[i];
     if (!email || email.trim() === '') continue;
 
     try {
-      ss.addEditor(email.trim());
+      Drive.Permissions.insert(
+        {
+          role: 'writer',
+          type: 'user',
+          value: email.trim()
+        },
+        fileId,
+        {
+          sendNotificationEmails: false
+        }
+      );
       restored++;
-      Logger.log('Restored editor: ' + email);
+      Logger.log('Restored editor (silent): ' + email);
     } catch (err) {
-      errors.push('Failed to restore ' + email + ': ' + err.message);
-      Logger.log('ERROR restoring editor ' + email + ': ' + err.message);
+      // Fallback to SpreadsheetApp if Drive API fails (e.g., permission already exists)
+      try {
+        ss.addEditor(email.trim());
+        restored++;
+        Logger.log('Restored editor (fallback, may send email): ' + email);
+      } catch (fallbackErr) {
+        errors.push('Failed to restore ' + email + ': ' + err.message + ' | Fallback: ' + fallbackErr.message);
+        Logger.log('ERROR restoring editor ' + email + ': ' + err.message);
+      }
     }
   }
 
