@@ -2821,9 +2821,12 @@ function uploadToWordPress(e) {
     var wasLinked = pRef.matchResult && pRef.matchResult.status === 'linked';
 
     if (wasLinked) {
-      // Log fuzzy match info if not exact
-      if (pRef.matchResult && pRef.matchResult.contextStrategy && pRef.matchResult.contextStrategy !== 'exact') {
-        Logger.log('Ref ' + refNum + ' "' + pRef.anchor + '" matched via ' + pRef.matchResult.contextStrategy);
+      // Log non-standard matches so they're visible for monitoring
+      if (pRef.matchResult.partialAnchor) {
+        Logger.log('Ref ' + refNum + ': partial anchor used — ' + pRef.matchResult.partialAnchor);
+      }
+      if (pRef.matchResult.contextStrategy && pRef.matchResult.contextStrategy !== 'exact') {
+        Logger.log('Ref ' + refNum + ' "' + pRef.anchor + '" context matched via ' + pRef.matchResult.contextStrategy);
       }
       continue;
     }
@@ -3716,16 +3719,38 @@ function applyReferencesToContent(text, references) {
     var contextMatch = fuzzyIndexOf(result, ref.context);
     if (contextMatch.index === -1) continue;
 
-    // Find anchor within context region (with some tolerance for position)
+    // Extract the context region from the result (with small tolerance)
     var regionStart = contextMatch.index;
     var regionEnd = contextMatch.index + contextMatch.length;
-    var anchorMatch = fuzzyIndexOf(
-      result.substring(regionStart, Math.min(regionEnd + 10, result.length)),
-      ref.anchor
-    );
+    var region = result.substring(regionStart, Math.min(regionEnd + 10, result.length));
+
+    // Try full anchor first
+    var anchorMatch = fuzzyIndexOf(region, ref.anchor);
+    var usedPartial = false;
+    var partialAnchorText = null;
+
+    // If full anchor fails, try partial anchor (longest contiguous word subset first)
+    if (anchorMatch.index === -1) {
+      var words = ref.anchor.split(/\s+/);
+      if (words.length >= 2) {
+        // Try all contiguous subsequences, longest first
+        var found = false;
+        for (var len = words.length - 1; len >= 1 && !found; len--) {
+          for (var start = 0; start + len <= words.length && !found; start++) {
+            var partial = words.slice(start, start + len).join(' ');
+            anchorMatch = fuzzyIndexOf(region, partial);
+            if (anchorMatch.index !== -1) {
+              usedPartial = true;
+              partialAnchorText = partial;
+              found = true;
+            }
+          }
+        }
+      }
+    }
 
     if (anchorMatch.index === -1) {
-      // Context found but anchor not within it — record for error reporting
+      // Context found but no anchor match (even partial) — record for error reporting
       if (!ref.matchResult) {
         ref.matchResult = { status: 'anchor_not_in_context', strategy: contextMatch.strategy };
       }
@@ -3748,7 +3773,8 @@ function applyReferencesToContent(text, references) {
     ref.matchResult = {
       status: 'linked',
       contextStrategy: contextMatch.strategy,
-      anchorStrategy: anchorMatch.strategy
+      anchorStrategy: anchorMatch.strategy,
+      partialAnchor: usedPartial ? ('"' + originalAnchorText + '" from "' + ref.anchor + '"') : null
     };
   }
   return result;
