@@ -10,7 +10,7 @@ const CONFIG = {
   // ===== GOOGLE WORKSPACE IDs =====
   GOOGLE: {
     PARENT_FOLDER_ID: '1elEoElaapgO4ANXrzrYrt66p2S4SxVLZ',
-    SPREADSHEET_ID: '1gQmKqIDr07tSaqoDY_R13fQcO3YWB6HgLSEmpTsPYb8'
+    SPREADSHEET_ID: '1vZZvgZZk62w4ivAQjKSsh-SaUGGcvgj1jvk7ulombs4'
   },
 
   // ===== API CREDENTIALS (SHOULD BE MOVED TO SCRIPT PROPERTIES) =====
@@ -9147,7 +9147,7 @@ function lockWorksheet() {
   try {
     var astSheet = ss.getSheetByName(CONFIG.SHEETS.ARTICLE_STATUS_TRACKER);
     if (astSheet) {
-      var cell = astSheet.getRange('A1');
+      var cell = astSheet.getRange('A2');
       cell.setValue('LOCKED');
       cell.setBackground(CONFIG.COLORS.DARK_RED);
       cell.setFontColor(CONFIG.COLORS.WHITE);
@@ -9238,7 +9238,7 @@ function unlockWorksheet() {
   try {
     var astSheet = ss.getSheetByName(CONFIG.SHEETS.ARTICLE_STATUS_TRACKER);
     if (astSheet) {
-      var cell = astSheet.getRange('A1');
+      var cell = astSheet.getRange('A2');
       cell.setValue('OPEN');
       cell.setBackground(CONFIG.COLORS.MEDIUM_ORANGE);
       cell.setFontColor(CONFIG.COLORS.BLACK);
