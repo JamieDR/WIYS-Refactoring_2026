@@ -9340,16 +9340,15 @@ function unlockWorksheet() {
   var errors = [];
   var restored = 0;
 
-  // Check for late edits BEFORE restoring editors (while sheet is still locked)
-  try {
-    var lateResults = checkLateEdits();
-    if (lateResults.late > 0) {
-      Logger.log('Found ' + lateResults.late + ' late edit(s) during lock period.');
-    }
-  } catch (lateErr) {
-    Logger.log('Warning: Late-edit check failed: ' + lateErr.message);
-    // Don't block unlock if late-edit check fails
-  }
+  // DISABLED: Late-edit check — re-enable once lock/unlock is stable
+  // try {
+  //   var lateResults = checkLateEdits();
+  //   if (lateResults.late > 0) {
+  //     Logger.log('Found ' + lateResults.late + ' late edit(s) during lock period.');
+  //   }
+  // } catch (lateErr) {
+  //   Logger.log('Warning: Late-edit check failed: ' + lateErr.message);
+  // }
 
   // Determine which emails to restore
   var emailsToRestore = CONFIG.LOCK.TEAM_EDITORS.slice(); // copy
