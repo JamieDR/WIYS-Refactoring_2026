@@ -185,7 +185,12 @@ Once content pipeline is proven and working:
 3. Consider edge cases: what if `-rep` is already appended (second republish)? Use `-rep2`, `-rep3`? Or always just `-rep`?
 **Depends on:** Nothing — can be done independently
 
-## 19. Config sheet — visual map of all CONFIG values and sheet dependencies
+## 19. Improve code navigation — organize functions when splitting monolith
+**System:** Codebase (Phase 5)
+**What:** When the monolith gets split into separate `.gs` files in Phase 5, organize functions logically within each file (alphabetical within logical groups). This replaces the idea of alphabetizing the current single file, which would destroy git blame history and create an unreviewable diff.
+**When:** Phase 5 (monolith split).
+
+## 20. Config sheet — visual map of all CONFIG values and sheet dependencies
 **System:** New sheet tab in the spreadsheet
 **What:** A visual reference showing CONFIG values organized by sheet name — column mappings, which functions touch each sheet, dependencies between sheets, WordPress IDs, endpoints. Jamie is a visual learner; this replaces digging through code to understand the system.
 **When:** After Phase 3 (column mappings) — the config will be more stable by then.
