@@ -30,10 +30,10 @@ Used daily by a team of 6 people. Connected to a Google Sheet as the main UI.
 - Google Workspace: Sheets (main UI), Docs (article drafts), Drive (file storage)
 
 ## Development Workflow
-- **All code editing happens in GitHub Codespaces**, never in the Apps Script editor directly
-- Code is pushed to Google Apps Script using `clasp push` from the Codespace terminal
-- Jamie has never edited in the Apps Script editor since this project started — always Codespaces + clasp
-- The Apps Script editor is only used for: running functions, checking triggers, viewing logs
+- **Everything happens in GitHub Codespaces** — Jamie does not use the Apps Script editor at all
+- Code is edited in Codespaces and pushed to Google Apps Script using `clasp push`
+- Functions are run, triggers are checked, and logs are viewed from Codespaces — not the Apps Script editor
+- Jamie has never used the Apps Script editor since this project started
 
 ## Repository Structure
 ```
