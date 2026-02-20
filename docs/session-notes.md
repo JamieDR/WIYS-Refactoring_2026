@@ -1,5 +1,12 @@
 # Session Notes — Live Scratchpad
 
+## NEXT SESSION PRIORITY: Teach Jamie Git
+Jamie wants to learn how to do git commits and pushes himself instead of Claude doing them. This is the "areas to develop" item that's been in every session log since Session 1. Jamie is ready.
+
+**Start here:** Hands-on walkthrough in the Codespace terminal — `git status`, `git add`, `git commit`, `git push`. Use real changes, not practice exercises. Have Jamie do the actual commits for whatever work happens in the session.
+
+---
+
 ## Lock/Unlock System — Status as of Feb 20, 2026
 
 ### Current State
