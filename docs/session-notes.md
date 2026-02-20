@@ -1,72 +1,42 @@
 # Session Notes — Live Scratchpad
 
-## Emergency Fix — February 18, 2026
+## Lock/Unlock System — Status as of Feb 20, 2026
 
-### What Was Fixed
-Two quick production fixes for the WP Editing Tracker:
+### Current State
+- `setupLockSchedule()` creates time-based triggers for `lockWorksheet()` and `unlockWorksheet()`
+- `removeLockSchedule()` clears all lock/unlock/verification triggers
+- Both are in the Editing menu for manual use too
+- `checkLateEdits` is **disabled** in the unlock function — re-enable once lock/unlock is confirmed stable
+- `sendLockUnlockAlert()` emails jlcdelosreyes and workflow on failures
+- Staggered verification triggers re-check lock state after a delay
 
-1. **Republish URL update** — `batchRepublishPosts()` now writes the new URL (from WP API response) back to WET column D after republishing. Previously the old URL stayed in the sheet even though the slug changed.
+### Team Editors in CONFIG
+lara, naintara, charl, marie, plus James (protected — never locked out)
 
-2. **Google Doc URL transfer** — `batchTransferToWPEditingTracker()` now copies AST column D (Google Doc link) to WET column L. This lets the team access the original doc from the editing tracker for QA.
-
-### Column Mapping Change
-- **WET column L** repurposed from "QA Notes" → "Google Doc URL"
-- Sheet inventory doc updated to reflect this
-
-### Transfer Mapping (AST → WET)
-```
-AST → WET
-B → A   (Drafter)
-C → C   (Raw Title)
-D → L   (Google Doc URL)   ← NEW
-E → D   (WP Draft URL)
-H → B   (Article Type)
-I → J   (Base Topic)
-K → K   (Article Summary)
-```
+### To Re-enable Late Edit Detection
+Uncomment the `checkLateEdits()` call inside `unlockWorksheet()`. It cross-references WP drafts against the editing tracker to flag articles that weren't published before the lock.
 
 ---
 
-## Current Work: Automated Reference Links in Articles
+## Reference Hyperlink System — Status as of Feb 20, 2026
 
-### What We're Building
-Automated pipeline to add hyperlinked references to WordPress articles:
-1. Research prompt (Prompt 1) finds and verifies primary source URLs
-2. Article writer prompt (Prompt 2) picks exact phrases + short anchors for each URL
-3. Code in GAS applies hyperlinks in Google Docs during "Create GDoc" step
-4. "Paste Article Sections" preserves hyperlinks
-5. WordPress upload outputs `<a>` tags, external links get `rel="nofollow"`
+### What's Built (code complete)
+- `parseReferences()` — parses `Slide X -- context | anchor | url` format
+- `applyReferencesToContent()` — fuzzy phrase matching + partial anchor fallback
+- `createSlideshowContent()` — applies references per-slide with MSN rules (slides 5 to second-to-last, max 1 per slide)
+- Error messages use `ref error:` prefix, ESL-friendly wording, context snippets
 
-### Design Decisions Made
-- **Links only in slides 5 through second-to-last** (never slides 1-4 or last slide)
-- **Primary sources only** (government sites, official orgs, not news articles reporting on them)
-- **Verify URLs are live** (no 404s, 403s, etc.) — done in research phase
-- **3-part reference format** in Prompt 2: `full phrase from article | anchor word(s) | url`
-  - Full phrase = unique locator (full sentence/clause from the article)
-  - Anchor = 1-3 words within that phrase that get hyperlinked
-  - URL = the verified source
-- **Prompt 1 format** is simpler: `source description | url` (article doesn't exist yet)
-- **External links get nofollow**, wheninyourstate.com links don't
-- **Max 5-8 references per article**, don't force them
-- **No Claude API used** — the writing model picks the anchors, code just applies them
-- **First occurrence only** if anchor appears multiple times (SEO best practice)
-
-### Where We Left Off
-About to write the **final clean versions** of both prompt additions:
-1. Additions to Prompt 1 (Research/Outline) — REFERENCES section in OUTPUT 2
-2. Additions to Prompt 2 (Article Writer) — REFERENCE RULES, updated output format, updated sample article, updated self-check
-
-Jamie said "yes" to writing the final clean versions.
+### What's Pending (Jamie's side)
+- Final clean versions of prompt additions for Prompt 1 and Prompt 2
+- Jamie said "yes" to writing them but hasn't confirmed they're done yet
 
 ### Prompt Changes Summary
 **Prompt 1 additions:**
 - Add REFERENCES list to OUTPUT 2 (after PLACE TO VISIT, before "Handoff ready")
 - Add REFERENCE RULES: primary sources only, verify live URLs, 3-8 per article
-- Update "Handoff ready" line
 
 **Prompt 2 additions:**
 - Add REFERENCES to FORMATTING section
-- Add REFERENCE RULES section (3-part format: phrase | anchor | url)
+- Add REFERENCE RULES section (3-part format: `Slide X -- phrase | anchor | url`)
 - Add self-check item #14
 - Update OUTPUT section to include REFERENCES after TAGS
-- Update sample article to include example REFERENCES

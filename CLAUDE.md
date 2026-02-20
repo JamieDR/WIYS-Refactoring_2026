@@ -23,11 +23,17 @@ Used daily by a team of 6 people. Connected to a Google Sheet as the main UI.
 - **Session developer logs.** Maintain honest assessment of Jamie's progress in docs/developer-log/.
 
 ## Tech Stack
-- Google Apps Script (main codebase, ~16,400 lines in single file)
+- Google Apps Script (main codebase, ~14,600 lines in single file)
 - Python (batch operations that bypass Apps Script execution limits — run on Jamie's PC currently)
 - WordPress REST API (wheninyourstate.com)
 - External APIs: Shutterstock, Claude AI, Wikimedia, DPLA, USGS, Library of Congress, NYPL, Flickr
 - Google Workspace: Sheets (main UI), Docs (article drafts), Drive (file storage)
+
+## Development Workflow
+- **All code editing happens in GitHub Codespaces** — never in the Apps Script editor
+- Code is pushed to Google Apps Script using `clasp push` from the Codespace terminal
+- The Apps Script editor is only used for: running functions, checking triggers, viewing logs
+- clasp login is done and working — do not flag it as pending
 
 ## Repository Structure
 ```
