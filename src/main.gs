@@ -6580,6 +6580,8 @@ function batchSchedulePosts() {
 function extractSlugFromPublishedUrl(url) {
   if (!url) return null;
 
+  url = url.toString().trim();
+
   // Skip admin/draft URLs — those have post IDs, not slugs
   if (url.indexOf('wp-admin') !== -1 || url.indexOf('post.php') !== -1) return null;
   if (url.indexOf('?p=') !== -1 || url.indexOf('&p=') !== -1) return null;
@@ -6594,6 +6596,7 @@ function extractSlugFromPublishedUrl(url) {
   // Validate: slugs are lowercase alphanumeric with hyphens
   if (slug && /^[a-z0-9][a-z0-9-]*[a-z0-9]$/.test(slug)) return slug;
 
+  Logger.log('extractSlugFromPublishedUrl: no valid slug found in URL: ' + url + ' (last segment: "' + slug + '")');
   return null;
 }
 
@@ -6863,8 +6866,10 @@ function updateTitle(e) {
     if (!postId) {
       // Published URL — resolve slug to post ID
       var slug = extractSlugFromPublishedUrl(wpUrl);
+      Logger.log('updateTitle fallback: extracted slug = ' + (slug || 'null') + ' from URL: ' + wpUrl);
       if (slug) {
         var post = lookupPostBySlug(slug);
+        Logger.log('updateTitle fallback: lookupPostBySlug returned ' + (post ? 'post ID ' + post.id : 'null'));
         if (post) {
           postId = post.id;
           existingSlug = post.slug;
@@ -9204,6 +9209,8 @@ function onOpen() {
     .addItem('📊 Send to Article Status Tracker', 'transferDraftsToArticleTracker')
     .addSeparator()
     .addItem('🗑️ Delete Done', 'deleteDoneRows')
+    .addSeparator()
+    .addItem('🔗 Open Selected URLs in Tabs', 'openSelectedUrls')
     .addToUi();
 
 
@@ -13470,4 +13477,47 @@ function listAllFunctions() {
   sheet.setFrozenRows(1);
 
   Logger.log('Created Function Inventory with ' + data.length + ' functions. Color key: green=CRITICAL, red=DUPLICATE, yellow=OLD, purple=ONE-TIME');
+}
+
+
+// ============================================================
+// OPEN SELECTED URLs IN BROWSER TABS
+// ============================================================
+// Reads URLs from the currently selected cells and opens each
+// one in a new browser tab via a client-side HTML dialog.
+// Requires pop-ups to be allowed for docs.google.com.
+// ============================================================
+
+function openSelectedUrls() {
+  var ui = SpreadsheetApp.getUi();
+  var range = SpreadsheetApp.getActiveSpreadsheet().getActiveRange();
+
+  if (!range) {
+    ui.alert('No selection', 'Please highlight the cells containing URLs first.', ui.ButtonSet.OK);
+    return;
+  }
+
+  var values = range.getValues();
+  var urls = [];
+
+  for (var i = 0; i < values.length; i++) {
+    for (var j = 0; j < values[i].length; j++) {
+      var cell = values[i][j].toString().trim();
+      if (cell && (cell.indexOf('http://') === 0 || cell.indexOf('https://') === 0)) {
+        urls.push(cell);
+      }
+    }
+  }
+
+  if (urls.length === 0) {
+    ui.alert('No URLs found', 'None of the selected cells contain URLs (must start with http:// or https://).', ui.ButtonSet.OK);
+    return;
+  }
+
+  var template = HtmlService.createTemplateFromFile('OpenUrls');
+  template.urls = urls;
+  var html = template.evaluate()
+      .setWidth(350)
+      .setHeight(180);
+  ui.showModelessDialog(html, 'Opening ' + urls.length + ' URLs...');
 }

@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <style>
+      body { font-family: Arial, sans-serif; padding: 12px; }
+      #status { font-size: 14px; margin-bottom: 8px; }
+      #count { font-size: 13px; color: #666; }
+      .warning { color: #c00; font-weight: bold; }
+      .done { color: #080; font-weight: bold; }
+    </style>
+  </head>
+  <body>
+    <div id="status">Opening URLs...</div>
+    <div id="count"></div>
+
+    <script>
+      var urls = <?!= JSON.stringify(urls) ?>;
+      var opened = 0;
+      var total = urls.length;
+
+      function updateStatus(text, className) {
+        var el = document.getElementById('status');
+        el.textContent = text;
+        el.className = className || '';
+      }
+
+      function updateCount() {
+        document.getElementById('count').textContent = opened + ' of ' + total + ' opened';
+      }
+
+      function openNext() {
+        if (opened >= total) {
+          updateStatus('Done — opened ' + total + ' tab' + (total === 1 ? '' : 's') + '.', 'done');
+          return;
+        }
+
+        var win = window.open(urls[opened], '_blank');
+
+        if (!win) {
+          updateStatus('Pop-up blocked after ' + opened + ' tab' + (opened === 1 ? '' : 's') +
+            '. Allow pop-ups for docs.google.com in your browser, then try again.', 'warning');
+          return;
+        }
+
+        opened++;
+        updateCount();
+        setTimeout(openNext, 300);
+      }
+
+      openNext();
+    </script>
+  </body>
+</html>

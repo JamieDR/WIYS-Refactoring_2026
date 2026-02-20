@@ -61,6 +61,14 @@ Used daily by a team of 6 people. Connected to a Google Sheet as the main UI.
 - **Phase 4:** Clean architecture for new features
 - **Phase 5:** Split monolith into separate .gs files (organizational only, no behavior changes)
 
+## Design Principle — Minimize Clicks
+Every automation in this system exists to reduce manual work. The goal for any user-facing action:
+- **Ideal:** 1-2 clicks to complete a task
+- **Acceptable:** 3-4 clicks maximum
+- **Too many:** If a workflow requires 5+ clicks, it needs redesign
+
+When building or modifying features, always ask: "How many clicks does this take?" If the answer is more than 4, find a way to reduce it — batch operations, smart defaults, auto-detection, or combining steps. The spreadsheet is the UI; every menu item, every button, every triggered function should do as much as possible per click.
+
 ## Key Rules
 - NEVER change functionality during refactoring — behavior must stay identical
 - NEVER push to main without Jamie's approval
