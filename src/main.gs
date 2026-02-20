@@ -2840,13 +2840,15 @@ function uploadToWordPress(e) {
       } else if (pRef.matchResult && pRef.matchResult.status === 'anchor_not_in_context') {
         refIssues.push(s + pRef.anchor + ' - use new anchor text');
       } else {
-        refIssues.push(s + pRef.anchor + ' - text not found, check ref wording');
+        var snippet = pRef.context.length > 60 ? pRef.context.substring(0, 60) + '...' : pRef.context;
+        refIssues.push(s + pRef.anchor + ' - "' + snippet + '" not found in slide');
       }
     } else {
       if (pRef.matchResult && pRef.matchResult.status === 'anchor_not_in_context') {
         refIssues.push(pRef.anchor + ' - use new anchor text');
       } else {
-        refIssues.push(pRef.anchor + ' - text not found, check ref wording');
+        var snippet = pRef.context.length > 60 ? pRef.context.substring(0, 60) + '...' : pRef.context;
+        refIssues.push(pRef.anchor + ' - "' + snippet + '" not found in slide');
       }
     }
   }
