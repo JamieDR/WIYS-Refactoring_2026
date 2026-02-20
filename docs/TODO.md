@@ -163,6 +163,24 @@ Once content pipeline is proven and working:
 
 ---
 
+## 20. State laws scraper/researcher — topic sourcing tool
+**Platform:** Google Apps Script (new sheet tab) + external data sources
+**Difficulty:** Medium-large — new feature, API integration, sheet UI
+**What:** A tool that finds interesting new state laws — either implemented, filed as bills, or proposed — in the current year. These become potential article topics for wheninyourstate.com.
+**Output:** Results collated in a dedicated sheet tab so Jamie can browse and choose which ones to turn into articles.
+**Possible data sources:**
+- LegiScan API (tracks all 50 state legislatures, free tier available)
+- State legislature RSS feeds
+- News APIs filtered for "new law" / "bill signed" / "state legislation"
+- Web scraping of state legislature sites
+**Key features:**
+- Filter by state, topic category, or date range
+- Flag laws that are unusual, surprising, or have broad human interest (good article potential)
+- One-click transfer of selected topics to the Topic List sheet
+**Status:** Not yet scoped — needs research into best data sources and API costs.
+
+---
+
 # Backlog (Parked for Later)
 
 ## 17. Tag taxonomy cleanup — synonym/reuse problem
