@@ -3,7 +3,7 @@
 
 **Duration:** ~3 hours
 **Branch:** `claude/refactor-codebase-review-DHo8o`
-**Commits:** Not individually tracked in git (work done in Apps Script editor, pulled into repo later)
+**Commits:** Not individually tracked in git (committed as part of later batch pushes)
 
 ---
 
