@@ -231,6 +231,7 @@ const CONFIG = {
     PROTECTED_EMAILS: [
       'workflow@wheninyourstate.com',                                          // Owner
       'jlcdelosreyes@gmail.com',
+      'jamesdrfreelance@gmail.com',
       'wiys-image-upload-python@wiys-image-download-python.iam.gserviceaccount.com'
     ],
     // Team editors — removed during lock, restored during unlock
@@ -9144,7 +9145,7 @@ function lockWorksheet() {
   }
   // Note: Viewers (martyspargo@gmail.com, admin@wheninyourstate.com) are intentionally NOT removed
 
-  // Update visual indicator on AST sheet
+  // Update visual indicator on AST sheet and clear previous late-edit flags
   try {
     var astSheet = ss.getSheetByName(CONFIG.SHEETS.ARTICLE_STATUS_TRACKER);
     if (astSheet) {
@@ -9152,6 +9153,14 @@ function lockWorksheet() {
       cell.setValue('LOCKED');
       cell.setBackground(CONFIG.COLORS.DARK_RED);
       cell.setFontColor(CONFIG.COLORS.WHITE);
+
+      // Clear Column N (late-edit flags) from previous cycle
+      var lastRow = astSheet.getLastRow();
+      if (lastRow >= 2) {
+        astSheet.getRange(2, 14, lastRow - 1, 1).clearContent();
+        astSheet.getRange(2, 14, lastRow - 1, 1).setBackground(null);
+        Logger.log('Cleared Column N late-edit flags (' + (lastRow - 1) + ' rows).');
+      }
     }
   } catch (vizErr) {
     Logger.log('Warning: Could not update visual indicator: ' + vizErr.message);
@@ -9176,6 +9185,17 @@ function unlockWorksheet() {
   var ss = SpreadsheetApp.openById(CONFIG.GOOGLE.SPREADSHEET_ID);
   var errors = [];
   var restored = 0;
+
+  // Check for late edits BEFORE restoring editors (while sheet is still locked)
+  try {
+    var lateResults = checkLateEdits();
+    if (lateResults.late > 0) {
+      Logger.log('Found ' + lateResults.late + ' late edit(s) during lock period.');
+    }
+  } catch (lateErr) {
+    Logger.log('Warning: Late-edit check failed: ' + lateErr.message);
+    // Don't block unlock if late-edit check fails
+  }
 
   // Determine which emails to restore
   var emailsToRestore = CONFIG.LOCK.TEAM_EDITORS.slice(); // copy
@@ -9349,6 +9369,104 @@ function checkLockStatus() {
     Logger.log('No snapshot stored.');
   }
   Logger.log('===================');
+}
+
+
+/**
+ * CHECK FOR LATE EDITS
+ * Called during unlockWorksheet() to detect WordPress posts edited after the lock.
+ * Reads lock snapshot time, checks each AST article's WP modified timestamp,
+ * and writes "LATE - [time]" to Column N for any post edited after the deadline.
+ */
+function checkLateEdits() {
+  var snapshotJson = PropertiesService.getScriptProperties().getProperty('LOCK_SNAPSHOT');
+  if (!snapshotJson) {
+    Logger.log('checkLateEdits: No lock snapshot found — skipping late-edit check.');
+    return { checked: 0, late: 0 };
+  }
+
+  var snapshot;
+  try {
+    snapshot = JSON.parse(snapshotJson);
+  } catch (e) {
+    Logger.log('checkLateEdits: Could not parse lock snapshot — skipping.');
+    return { checked: 0, late: 0 };
+  }
+
+  var lockTime = new Date(snapshot.lockedAt);
+  Logger.log('checkLateEdits: Lock time was ' + lockTime.toISOString());
+
+  var ss = SpreadsheetApp.openById(CONFIG.GOOGLE.SPREADSHEET_ID);
+  var astSheet = ss.getSheetByName(CONFIG.SHEETS.ARTICLE_STATUS_TRACKER);
+  if (!astSheet) {
+    Logger.log('checkLateEdits: AST sheet not found.');
+    return { checked: 0, late: 0 };
+  }
+
+  var lastRow = astSheet.getLastRow();
+  if (lastRow < 2) return { checked: 0, late: 0 };
+
+  // Read columns A through N (14 columns) starting from row 2
+  var data = astSheet.getRange(2, 1, lastRow - 1, 14).getValues();
+
+  var username = CONFIG.WORDPRESS.USERNAME;
+  var password = CONFIG.WORDPRESS.APP_PASSWORD;
+  var checked = 0;
+  var lateCount = 0;
+  var errors = 0;
+
+  for (var i = 0; i < data.length; i++) {
+    var wpUrl = data[i][4]; // Column E (0-indexed: 4)
+    if (!wpUrl || String(wpUrl).trim() === '') continue;
+
+    var postId = extractPostIdFromUrl(String(wpUrl));
+    if (!postId) continue;
+
+    checked++;
+
+    try {
+      // Lightweight API call — only fetch id and modified timestamp
+      var apiUrl = CONFIG.ENDPOINTS.WP_POSTS + '/' + postId + '?_fields=id,modified';
+      var options = {
+        method: 'get',
+        headers: {
+          'Authorization': 'Basic ' + Utilities.base64Encode(username + ':' + password)
+        },
+        muteHttpExceptions: true
+      };
+
+      var response = UrlFetchApp.fetch(apiUrl, options);
+      if (response.getResponseCode() !== 200) {
+        Logger.log('checkLateEdits: API error for post ' + postId + ' — HTTP ' + response.getResponseCode());
+        errors++;
+        continue;
+      }
+
+      var postData = JSON.parse(response.getContentText());
+      var modifiedTime = new Date(postData.modified);
+
+      if (modifiedTime > lockTime) {
+        // Format the modified time in Manila timezone for display
+        var formattedTime = Utilities.formatDate(modifiedTime, CONFIG.LOCK.SCHEDULE.TIMEZONE, 'MMM dd h:mm a');
+        var lateMessage = 'LATE - ' + formattedTime;
+
+        // Write to Column N (column 14) for this row
+        var sheetRow = i + 2; // +2 because data starts at row 2 and i is 0-indexed
+        astSheet.getRange(sheetRow, 14).setValue(lateMessage);
+        astSheet.getRange(sheetRow, 14).setBackground('#ffcccc'); // Light red highlight
+        lateCount++;
+
+        var title = data[i][2] || '(no title)'; // Column C
+        Logger.log('LATE EDIT: "' + title + '" — modified ' + formattedTime + ' (post ' + postId + ')');
+      }
+    } catch (err) {
+      Logger.log('checkLateEdits: Error checking post ' + postId + ': ' + err.message);
+      errors++;
+    }
+  }
+
+  Logger.log('checkLateEdits: Done. Checked ' + checked + ' posts, found ' + lateCount + ' late edit(s), ' + errors + ' error(s).');
+  return { checked: checked, late: lateCount, errors: errors };
 }
 
 
