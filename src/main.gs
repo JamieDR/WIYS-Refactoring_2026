@@ -2831,31 +2831,25 @@ function uploadToWordPress(e) {
       continue;
     }
 
-    // Not linked — figure out WHY and give actionable guidance
+    // Not linked — short actionable message
+    var a = '"' + pRef.anchor + '"';
     if (hasSlideTargeting && pRef.slideNum !== null) {
-      // Check if slide number is in the forbidden zone
       if (pRef.slideNum > totalSlides) {
-        refIssues.push('Ref ' + refNum + ' "' + pRef.anchor + '" targets slide ' + pRef.slideNum +
-          ' (doesn\'t exist — article only has ' + totalSlides + ' slides). Fix slide number.');
+        refIssues.push(a + ' → slide ' + pRef.slideNum + ' doesn\'t exist (only ' + totalSlides + ' slides)');
       } else if (pRef.slideNum < 5) {
-        refIssues.push('Ref ' + refNum + ' "' + pRef.anchor + '" targets slide ' + pRef.slideNum +
-          ' (forbidden — MSN requires links only on slides 5+). Move to slide 5 or later.');
+        refIssues.push(a + ' → slide ' + pRef.slideNum + ' is forbidden, move to 5+');
       } else if (pRef.slideNum === totalSlides) {
-        refIssues.push('Ref ' + refNum + ' "' + pRef.anchor + '" targets slide ' + pRef.slideNum +
-          ' (last slide — no links allowed). Move to an earlier slide.');
+        refIssues.push(a + ' → last slide, move earlier');
       } else if (pRef.matchResult && pRef.matchResult.status === 'anchor_not_in_context') {
-        refIssues.push('Ref ' + refNum + ' "' + pRef.anchor + '" — context found in slide ' + pRef.slideNum +
-          ' but anchor text not found within it. Check anchor spelling.');
+        refIssues.push(a + ' → anchor not found in slide ' + pRef.slideNum + ', fix spelling');
       } else {
-        refIssues.push('Ref ' + refNum + ' "' + pRef.anchor + '" — context phrase not found in slide ' + pRef.slideNum +
-          '. Check that the context text matches the article exactly.');
+        refIssues.push(a + ' → context not found in slide ' + pRef.slideNum + ', fix wording');
       }
     } else {
-      // Old format (no slide targeting) or context just not found
       if (pRef.matchResult && pRef.matchResult.status === 'anchor_not_in_context') {
-        refIssues.push('Ref ' + refNum + ' "' + pRef.anchor + '" — context found but anchor text not found within it. Check anchor spelling.');
+        refIssues.push(a + ' → anchor not found in context, fix spelling');
       } else {
-        refIssues.push('Ref ' + refNum + ' "' + pRef.anchor + '" — context phrase not found in any slide. Check wording matches article text.');
+        refIssues.push(a + ' → context not found, fix wording');
       }
     }
   }
