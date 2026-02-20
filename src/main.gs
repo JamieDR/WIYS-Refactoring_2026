@@ -2831,7 +2831,7 @@ function uploadToWordPress(e) {
       continue;
     }
 
-    var s = pRef.slideNum ? 'Slide ' + pRef.slideNum + ' ' : '';
+    var s = pRef.slideNum ? 'Slide ' + pRef.slideNum + ': ' : '';
     if (hasSlideTargeting && pRef.slideNum !== null) {
       if (pRef.slideNum > totalSlides) {
         refIssues.push(s + pRef.anchor + ' - slide doesn\'t exist');
@@ -2840,13 +2840,13 @@ function uploadToWordPress(e) {
       } else if (pRef.matchResult && pRef.matchResult.status === 'anchor_not_in_context') {
         refIssues.push(s + pRef.anchor + ' - use new anchor text');
       } else {
-        refIssues.push(s + pRef.anchor + ' - not found in article, rewrite ref');
+        refIssues.push(s + pRef.anchor + ' - text not found, check ref wording');
       }
     } else {
       if (pRef.matchResult && pRef.matchResult.status === 'anchor_not_in_context') {
         refIssues.push(pRef.anchor + ' - use new anchor text');
       } else {
-        refIssues.push(pRef.anchor + ' - not found in article, rewrite ref');
+        refIssues.push(pRef.anchor + ' - text not found, check ref wording');
       }
     }
   }
