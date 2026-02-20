@@ -9083,7 +9083,7 @@ function openSheet() {
  * ============================================================================
  * Locks the spreadsheet nightly by removing all editors/viewers except
  * protected emails (CONFIG.LOCK.PROTECTED_EMAILS). Unlocks by restoring
- * all team members (CONFIG.LOCK.TEAM_MEMBERS) as editors.
+ * all team editors (CONFIG.LOCK.TEAM_EDITORS) as editors.
  *
  * Schedule: Lock at 10PM Manila, Unlock at 2AM Manila (configurable in CONFIG.LOCK)
  *
@@ -9335,7 +9335,7 @@ function checkLockStatus() {
   Logger.log('State: ' + state);
   Logger.log('Enabled: ' + CONFIG.LOCK.ENABLED);
   Logger.log('Protected emails: ' + CONFIG.LOCK.PROTECTED_EMAILS.join(', '));
-  Logger.log('Team members in CONFIG: ' + (CONFIG.LOCK.TEAM_MEMBERS.length > 0 ? CONFIG.LOCK.TEAM_MEMBERS.join(', ') : '(none configured)'));
+  Logger.log('Team editors in CONFIG: ' + (CONFIG.LOCK.TEAM_EDITORS.length > 0 ? CONFIG.LOCK.TEAM_EDITORS.join(', ') : '(none configured)'));
   Logger.log('Current editors: ' + currentEditors.join(', '));
   Logger.log('Current viewers: ' + currentViewers.join(', '));
   if (snapshot) {
