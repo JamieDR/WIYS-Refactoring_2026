@@ -9265,66 +9265,75 @@ function lockWorksheet() {
     return;
   }
 
-  var ss = SpreadsheetApp.openById(CONFIG.GOOGLE.SPREADSHEET_ID);
-  var protectedEmails = CONFIG.LOCK.PROTECTED_EMAILS.map(function(e) { return e.toLowerCase(); });
-  var errors = [];
-
-  // Store current state before making changes
-  var currentEditors = ss.getEditors().map(function(u) { return u.getEmail(); });
-  var currentViewers = ss.getViewers().map(function(u) { return u.getEmail(); });
-
-  // Save snapshot to Script Properties as backup for recovery
-  var snapshot = {
-    editors: currentEditors,
-    viewers: currentViewers,
-    lockedAt: new Date().toISOString()
-  };
-  PropertiesService.getScriptProperties().setProperty('LOCK_SNAPSHOT', JSON.stringify(snapshot));
-  PropertiesService.getScriptProperties().setProperty('LOCK_STATE', 'locked');
-
-  // Remove every email in TEAM_EDITORS directly (getEditors() doesn't always return all editors)
-  var teamEditors = CONFIG.LOCK.TEAM_EDITORS;
-  for (var i = 0; i < teamEditors.length; i++) {
-    var email = teamEditors[i].trim();
-    if (!email) continue;
-    try {
-      ss.removeEditor(email);
-      Logger.log('Removed editor: ' + email);
-    } catch (err) {
-      errors.push('Failed to remove editor ' + email + ': ' + err.message);
-      Logger.log('ERROR removing editor ' + email + ': ' + err.message);
-    }
-  }
-  // Note: Viewers (martyspargo@gmail.com, admin@wheninyourstate.com) are intentionally NOT removed
-
-  // Update visual indicator on AST sheet and clear previous late-edit flags
   try {
-    var astSheet = ss.getSheetByName(CONFIG.SHEETS.ARTICLE_STATUS_TRACKER);
-    if (astSheet) {
-      var cell = astSheet.getRange('A2');
-      cell.setValue('LOCKED');
-      cell.setBackground(CONFIG.COLORS.DARK_RED);
-      cell.setFontColor(CONFIG.COLORS.WHITE);
-      cell.setHorizontalAlignment('center');
-      cell.setFontWeight('bold');
+    var ss = SpreadsheetApp.openById(CONFIG.GOOGLE.SPREADSHEET_ID);
+    var protectedEmails = CONFIG.LOCK.PROTECTED_EMAILS.map(function(e) { return e.toLowerCase(); });
+    var errors = [];
 
-      // Clear Column N (late-edit flags) from previous cycle
-      var lastRow = astSheet.getLastRow();
-      if (lastRow >= 2) {
-        astSheet.getRange(2, 14, lastRow - 1, 1).clearContent();
-        astSheet.getRange(2, 14, lastRow - 1, 1).setBackground(null);
-        Logger.log('Cleared Column N late-edit flags (' + (lastRow - 1) + ' rows).');
+    // Store current state before making changes
+    var currentEditors = ss.getEditors().map(function(u) { return u.getEmail(); });
+    var currentViewers = ss.getViewers().map(function(u) { return u.getEmail(); });
+
+    // Save snapshot to Script Properties as backup for recovery
+    var snapshot = {
+      editors: currentEditors,
+      viewers: currentViewers,
+      lockedAt: new Date().toISOString()
+    };
+    PropertiesService.getScriptProperties().setProperty('LOCK_SNAPSHOT', JSON.stringify(snapshot));
+    PropertiesService.getScriptProperties().setProperty('LOCK_STATE', 'locked');
+
+    // Remove every email in TEAM_EDITORS directly (getEditors() doesn't always return all editors)
+    var teamEditors = CONFIG.LOCK.TEAM_EDITORS;
+    for (var i = 0; i < teamEditors.length; i++) {
+      var email = teamEditors[i].trim();
+      if (!email) continue;
+      try {
+        ss.removeEditor(email);
+        Logger.log('Removed editor: ' + email);
+      } catch (err) {
+        errors.push('Failed to remove editor ' + email + ': ' + err.message);
+        Logger.log('ERROR removing editor ' + email + ': ' + err.message);
       }
     }
-  } catch (vizErr) {
-    Logger.log('Warning: Could not update visual indicator: ' + vizErr.message);
-  }
+    // Note: Viewers (martyspargo@gmail.com, admin@wheninyourstate.com) are intentionally NOT removed
 
-  // Log results
-  if (errors.length > 0) {
-    Logger.log('Worksheet locked with ' + errors.length + ' error(s):\n' + errors.join('\n'));
-  } else {
-    Logger.log('Worksheet locked successfully at ' + new Date().toISOString());
+    // Update visual indicator on AST sheet and clear previous late-edit flags
+    try {
+      var astSheet = ss.getSheetByName(CONFIG.SHEETS.ARTICLE_STATUS_TRACKER);
+      if (astSheet) {
+        var cell = astSheet.getRange('A2');
+        cell.setValue('LOCKED');
+        cell.setBackground(CONFIG.COLORS.DARK_RED);
+        cell.setFontColor(CONFIG.COLORS.WHITE);
+        cell.setHorizontalAlignment('center');
+        cell.setFontWeight('bold');
+
+        // Clear Column N (late-edit flags) from previous cycle
+        var lastRow = astSheet.getLastRow();
+        if (lastRow >= 2) {
+          astSheet.getRange(2, 14, lastRow - 1, 1).clearContent();
+          astSheet.getRange(2, 14, lastRow - 1, 1).setBackground(null);
+          Logger.log('Cleared Column N late-edit flags (' + (lastRow - 1) + ' rows).');
+        }
+      }
+    } catch (vizErr) {
+      Logger.log('Warning: Could not update visual indicator: ' + vizErr.message);
+    }
+
+    // Schedule verification checks
+    scheduleVerificationChecks();
+
+    // Log results
+    if (errors.length > 0) {
+      Logger.log('Worksheet locked with ' + errors.length + ' error(s):\n' + errors.join('\n'));
+    } else {
+      Logger.log('Worksheet locked successfully at ' + new Date().toISOString());
+    }
+
+  } catch (fatal) {
+    Logger.log('FATAL: lockWorksheet crashed: ' + fatal.message);
+    sendLockUnlockAlert('lock', 'lockWorksheet() crashed: ' + fatal.message);
   }
 }
 
@@ -9336,112 +9345,108 @@ function lockWorksheet() {
  * snapshot stored in Script Properties if CONFIG has no team editors.
  */
 function unlockWorksheet() {
-  var ss = SpreadsheetApp.openById(CONFIG.GOOGLE.SPREADSHEET_ID);
-  var errors = [];
-  var restored = 0;
-
-  // DISABLED: Late-edit check — re-enable once lock/unlock is stable
-  // try {
-  //   var lateResults = checkLateEdits();
-  //   if (lateResults.late > 0) {
-  //     Logger.log('Found ' + lateResults.late + ' late edit(s) during lock period.');
-  //   }
-  // } catch (lateErr) {
-  //   Logger.log('Warning: Late-edit check failed: ' + lateErr.message);
-  // }
-
-  // Determine which emails to restore
-  var emailsToRestore = CONFIG.LOCK.TEAM_EDITORS.slice(); // copy
-
-  // Fallback: if CONFIG.LOCK.TEAM_EDITORS is empty, try the snapshot
-  if (emailsToRestore.length === 0) {
-    var snapshotJson = PropertiesService.getScriptProperties().getProperty('LOCK_SNAPSHOT');
-    if (snapshotJson) {
-      try {
-        var snapshot = JSON.parse(snapshotJson);
-        emailsToRestore = snapshot.editors || [];
-        Logger.log('CONFIG.LOCK.TEAM_EDITORS is empty — falling back to snapshot (' + emailsToRestore.length + ' editors)');
-      } catch (parseErr) {
-        Logger.log('ERROR: Could not parse lock snapshot: ' + parseErr.message);
-      }
-    }
-  }
-
-  if (emailsToRestore.length === 0) {
-    Logger.log('WARNING: No emails to restore. CONFIG.LOCK.TEAM_EDITORS is empty and no snapshot found.');
-    // Still update state and visual indicator
-  }
-
-  // Restore each team member as editor — using Drive API to suppress email notifications
-  var fileId = CONFIG.GOOGLE.SPREADSHEET_ID;
-  for (var i = 0; i < emailsToRestore.length; i++) {
-    var email = emailsToRestore[i];
-    if (!email || email.trim() === '') continue;
-
-    try {
-      Drive.Permissions.insert(
-        {
-          role: 'writer',
-          type: 'user',
-          value: email.trim()
-        },
-        fileId,
-        {
-          sendNotificationEmails: false
-        }
-      );
-      restored++;
-      Logger.log('Restored editor (silent): ' + email);
-    } catch (err) {
-      // Fallback to SpreadsheetApp if Drive API fails (e.g., permission already exists)
-      try {
-        ss.addEditor(email.trim());
-        restored++;
-        Logger.log('Restored editor (fallback, may send email): ' + email);
-      } catch (fallbackErr) {
-        errors.push('Failed to restore ' + email + ': ' + err.message + ' | Fallback: ' + fallbackErr.message);
-        Logger.log('ERROR restoring editor ' + email + ': ' + err.message);
-      }
-    }
-  }
-
-  // Update lock state
-  PropertiesService.getScriptProperties().setProperty('LOCK_STATE', 'unlocked');
-
-  // Update visual indicator on AST sheet
   try {
-    var astSheet = ss.getSheetByName(CONFIG.SHEETS.ARTICLE_STATUS_TRACKER);
-    if (astSheet) {
-      var cell = astSheet.getRange('A2');
-      cell.setValue('OPEN');
-      cell.setBackground(CONFIG.COLORS.BLACK);
-      cell.setFontColor(CONFIG.COLORS.MEDIUM_ORANGE);
-      cell.setHorizontalAlignment('center');
-      cell.setFontWeight('bold');
-    }
-  } catch (vizErr) {
-    Logger.log('Warning: Could not update visual indicator: ' + vizErr.message);
-  }
+    var ss = SpreadsheetApp.openById(CONFIG.GOOGLE.SPREADSHEET_ID);
+    var errors = [];
+    var restored = 0;
 
-  // Log results and alert on failure
-  if (errors.length > 0) {
-    Logger.log('Worksheet unlocked with ' + errors.length + ' error(s). Restored: ' + restored + '\nErrors:\n' + errors.join('\n'));
-    var subject = 'WIYS Unlock Failed — ' + errors.length + ' error(s)';
-    var body = 'The automatic unlock ran but had errors.\n\n'
-      + 'Restored: ' + restored + ' editor(s)\n'
-      + 'Failed: ' + errors.length + '\n\n'
-      + errors.join('\n') + '\n\n'
-      + 'You may need to run emergencyUnlock() from the Script Editor.';
-    var alertEmails = ['jlcdelosreyes@gmail.com', 'workflow@wheninyourstate.com'];
-    for (var a = 0; a < alertEmails.length; a++) {
-      try {
-        MailApp.sendEmail(alertEmails[a], subject, body);
-      } catch (mailErr) {
-        Logger.log('Could not send alert to ' + alertEmails[a] + ': ' + mailErr.message);
+    // DISABLED: Late-edit check — re-enable once lock/unlock is stable
+    // try {
+    //   var lateResults = checkLateEdits();
+    //   if (lateResults.late > 0) {
+    //     Logger.log('Found ' + lateResults.late + ' late edit(s) during lock period.');
+    //   }
+    // } catch (lateErr) {
+    //   Logger.log('Warning: Late-edit check failed: ' + lateErr.message);
+    // }
+
+    // Determine which emails to restore
+    var emailsToRestore = CONFIG.LOCK.TEAM_EDITORS.slice(); // copy
+
+    // Fallback: if CONFIG.LOCK.TEAM_EDITORS is empty, try the snapshot
+    if (emailsToRestore.length === 0) {
+      var snapshotJson = PropertiesService.getScriptProperties().getProperty('LOCK_SNAPSHOT');
+      if (snapshotJson) {
+        try {
+          var snapshot = JSON.parse(snapshotJson);
+          emailsToRestore = snapshot.editors || [];
+          Logger.log('CONFIG.LOCK.TEAM_EDITORS is empty — falling back to snapshot (' + emailsToRestore.length + ' editors)');
+        } catch (parseErr) {
+          Logger.log('ERROR: Could not parse lock snapshot: ' + parseErr.message);
+        }
       }
     }
-  } else {
-    Logger.log('Worksheet unlocked successfully. Restored ' + restored + ' editor(s) at ' + new Date().toISOString());
+
+    if (emailsToRestore.length === 0) {
+      Logger.log('WARNING: No emails to restore. CONFIG.LOCK.TEAM_EDITORS is empty and no snapshot found.');
+      // Still update state and visual indicator
+    }
+
+    // Restore each team member as editor — using Drive API to suppress email notifications
+    var fileId = CONFIG.GOOGLE.SPREADSHEET_ID;
+    for (var i = 0; i < emailsToRestore.length; i++) {
+      var email = emailsToRestore[i];
+      if (!email || email.trim() === '') continue;
+
+      try {
+        Drive.Permissions.insert(
+          {
+            role: 'writer',
+            type: 'user',
+            value: email.trim()
+          },
+          fileId,
+          {
+            sendNotificationEmails: false
+          }
+        );
+        restored++;
+        Logger.log('Restored editor (silent): ' + email);
+      } catch (err) {
+        // Fallback to SpreadsheetApp if Drive API fails (e.g., permission already exists)
+        try {
+          ss.addEditor(email.trim());
+          restored++;
+          Logger.log('Restored editor (fallback, may send email): ' + email);
+        } catch (fallbackErr) {
+          errors.push('Failed to restore ' + email + ': ' + err.message + ' | Fallback: ' + fallbackErr.message);
+          Logger.log('ERROR restoring editor ' + email + ': ' + err.message);
+        }
+      }
+    }
+
+    // Update lock state
+    PropertiesService.getScriptProperties().setProperty('LOCK_STATE', 'unlocked');
+
+    // Update visual indicator on AST sheet
+    try {
+      var astSheet = ss.getSheetByName(CONFIG.SHEETS.ARTICLE_STATUS_TRACKER);
+      if (astSheet) {
+        var cell = astSheet.getRange('A2');
+        cell.setValue('OPEN');
+        cell.setBackground(CONFIG.COLORS.BLACK);
+        cell.setFontColor(CONFIG.COLORS.MEDIUM_ORANGE);
+        cell.setHorizontalAlignment('center');
+        cell.setFontWeight('bold');
+      }
+    } catch (vizErr) {
+      Logger.log('Warning: Could not update visual indicator: ' + vizErr.message);
+    }
+
+    // Schedule verification checks
+    scheduleVerificationChecks();
+
+    // Log results and alert on failure
+    if (errors.length > 0) {
+      Logger.log('Worksheet unlocked with ' + errors.length + ' error(s). Restored: ' + restored + '\nErrors:\n' + errors.join('\n'));
+      sendLockUnlockAlert('unlock', 'Restored ' + restored + ' editor(s), but ' + errors.length + ' failed:\n' + errors.join('\n'));
+    } else {
+      Logger.log('Worksheet unlocked successfully. Restored ' + restored + ' editor(s) at ' + new Date().toISOString());
+    }
+
+  } catch (fatal) {
+    Logger.log('FATAL: unlockWorksheet crashed: ' + fatal.message);
+    sendLockUnlockAlert('unlock', 'unlockWorksheet() crashed: ' + fatal.message);
   }
 }
 
@@ -9491,7 +9496,7 @@ function setupLockSchedule() {
 
 
 /**
- * Removes all lock/unlock triggers.
+ * Removes all lock/unlock and verification triggers.
  * Run this to disable the schedule, or before re-running setupLockSchedule().
  */
 function removeLockSchedule() {
@@ -9500,14 +9505,161 @@ function removeLockSchedule() {
 
   for (var i = 0; i < triggers.length; i++) {
     var handlerName = triggers[i].getHandlerFunction();
-    if (handlerName === 'lockWorksheet' || handlerName === 'unlockWorksheet') {
+    if (handlerName === 'lockWorksheet' || handlerName === 'unlockWorksheet' || handlerName === 'verifyLockState') {
       ScriptApp.deleteTrigger(triggers[i]);
       removed++;
       Logger.log('Removed trigger: ' + handlerName);
     }
   }
 
-  Logger.log('Removed ' + removed + ' lock/unlock trigger(s).');
+  Logger.log('Removed ' + removed + ' lock/unlock/verification trigger(s).');
+}
+
+
+/**
+ * Sends an alert email to jlcdelosreyes and workflow when lock/unlock fails.
+ * @param {string} action - 'lock' or 'unlock'
+ * @param {string} details - what went wrong
+ */
+function sendLockUnlockAlert(action, details) {
+  var subject = 'WIYS Auto-' + action + ' FAILED';
+  var body = 'The automatic ' + action + ' had a problem.\n\n'
+    + details + '\n\n'
+    + 'You may need to run emergency' + (action === 'unlock' ? 'Unlock' : 'Lock') + '() from the Script Editor.\n'
+    + 'Verification checks are scheduled — the system will retry automatically.';
+  var alertEmails = ['jlcdelosreyes@gmail.com', 'workflow@wheninyourstate.com'];
+  for (var i = 0; i < alertEmails.length; i++) {
+    try {
+      MailApp.sendEmail(alertEmails[i], subject, body);
+    } catch (mailErr) {
+      Logger.log('Could not send alert to ' + alertEmails[i] + ': ' + mailErr.message);
+    }
+  }
+}
+
+
+/**
+ * Schedules verification checks at 5, 10, 15, 20, 25, 30 minutes after lock/unlock.
+ * Each check calls verifyLockState(). Checks stop as soon as the state is verified.
+ */
+function scheduleVerificationChecks() {
+  // Clean up any leftover verification triggers from a previous cycle
+  cleanupVerificationTriggers();
+
+  PropertiesService.getScriptProperties().setProperty('LOCK_STATE_VERIFIED', 'false');
+  PropertiesService.getScriptProperties().deleteProperty('LOCK_VERIFY_ALERTED');
+
+  var intervals = [5, 10, 15, 20, 25, 30]; // minutes
+  for (var i = 0; i < intervals.length; i++) {
+    ScriptApp.newTrigger('verifyLockState')
+      .timeBased()
+      .after(intervals[i] * 60 * 1000)
+      .create();
+  }
+  Logger.log('Scheduled ' + intervals.length + ' verification checks.');
+}
+
+
+/**
+ * Deletes all one-shot verification triggers (handler = verifyLockState).
+ */
+function cleanupVerificationTriggers() {
+  var triggers = ScriptApp.getProjectTriggers();
+  var removed = 0;
+  for (var i = 0; i < triggers.length; i++) {
+    if (triggers[i].getHandlerFunction() === 'verifyLockState') {
+      ScriptApp.deleteTrigger(triggers[i]);
+      removed++;
+    }
+  }
+  if (removed > 0) {
+    Logger.log('Cleaned up ' + removed + ' verification trigger(s).');
+  }
+}
+
+
+/**
+ * Verification check — called by one-shot triggers after lock/unlock.
+ * Checks whether the spreadsheet's actual editor state matches LOCK_STATE.
+ * If verified, cleans up remaining triggers. If wrong, attempts to fix and alerts once.
+ */
+function verifyLockState() {
+  var props = PropertiesService.getScriptProperties();
+
+  // Already verified by an earlier check? Clean up and exit.
+  if (props.getProperty('LOCK_STATE_VERIFIED') === 'true') {
+    cleanupVerificationTriggers();
+    return;
+  }
+
+  var expectedState = props.getProperty('LOCK_STATE'); // 'locked' or 'unlocked'
+  if (!expectedState) {
+    Logger.log('verifyLockState: No LOCK_STATE set, skipping.');
+    return;
+  }
+
+  var ss = SpreadsheetApp.openById(CONFIG.GOOGLE.SPREADSHEET_ID);
+  var currentEditors = ss.getEditors().map(function(u) { return u.getEmail().toLowerCase(); });
+  var teamEmails = CONFIG.LOCK.TEAM_EDITORS.map(function(e) { return e.trim().toLowerCase(); });
+
+  // Count how many team editors are currently in the editors list
+  var teamEditorsPresent = 0;
+  for (var i = 0; i < teamEmails.length; i++) {
+    if (teamEmails[i] && currentEditors.indexOf(teamEmails[i]) !== -1) {
+      teamEditorsPresent++;
+    }
+  }
+
+  var shouldBeUnlocked = expectedState === 'unlocked';
+  var isActuallyUnlocked = teamEditorsPresent > 0;
+  var stateCorrect = shouldBeUnlocked === isActuallyUnlocked;
+
+  if (stateCorrect) {
+    props.setProperty('LOCK_STATE_VERIFIED', 'true');
+    cleanupVerificationTriggers();
+    Logger.log('Verified: sheet is ' + expectedState + ' (' + teamEditorsPresent + '/' + teamEmails.length + ' team editors present).');
+    return;
+  }
+
+  // State is wrong — attempt to fix it
+  Logger.log('Verification FAILED: expected ' + expectedState + ', team editors present: ' + teamEditorsPresent + '/' + teamEmails.length);
+
+  if (shouldBeUnlocked) {
+    // Re-add missing editors
+    for (var i = 0; i < CONFIG.LOCK.TEAM_EDITORS.length; i++) {
+      var email = CONFIG.LOCK.TEAM_EDITORS[i].trim();
+      if (!email) continue;
+      if (currentEditors.indexOf(email.toLowerCase()) === -1) {
+        try {
+          ss.addEditor(email);
+          Logger.log('Verification fix: restored ' + email);
+        } catch (e) {
+          Logger.log('Verification fix failed for ' + email + ': ' + e.message);
+        }
+      }
+    }
+  } else {
+    // Re-remove editors that shouldn't be there
+    for (var i = 0; i < CONFIG.LOCK.TEAM_EDITORS.length; i++) {
+      var email = CONFIG.LOCK.TEAM_EDITORS[i].trim();
+      if (!email) continue;
+      try {
+        ss.removeEditor(email);
+        Logger.log('Verification fix: removed ' + email);
+      } catch (e) {
+        Logger.log('Verification fix failed for ' + email + ': ' + e.message);
+      }
+    }
+  }
+
+  // Send alert email — only once per cycle
+  if (props.getProperty('LOCK_VERIFY_ALERTED') !== 'true') {
+    props.setProperty('LOCK_VERIFY_ALERTED', 'true');
+    sendLockUnlockAlert(expectedState,
+      'Verification found the sheet was NOT in "' + expectedState + '" state.\n'
+      + 'Team editors present: ' + teamEditorsPresent + ' of ' + teamEmails.length + '\n'
+      + 'The system attempted an automatic fix. Next verification check will confirm.');
+  }
 }
 
 
