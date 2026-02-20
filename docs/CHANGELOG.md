@@ -4,6 +4,28 @@ What changed in the system, and when. Written for Jamie as a quick reference.
 
 ---
 
+## Session 9 — February 20, 2026
+
+### Bug Fixes
+- **Lock/unlock system: 12 bug fixes** — naming bug (`TEAM_MEMBERS` → `TEAM_EDITORS`), wrong spreadsheet ID, lock removal approach (was calling `removeEditor()` on sheet owner), lock indicator moved to A2
+- **Reference error messages: ESL-friendly rewrite** — fuzzy matching for phrase lookup, partial anchor fallback, `ref error:` prefix format, context snippets showing expected vs. actual text
+
+### Improvements
+- **Lock/unlock failsafes** — top-level try/catch on both lock and unlock, staggered verification triggers to re-check state, email alerts to jlcdelosreyes and workflow on failure
+- **Late-edit detection** — added (then temporarily disabled) logic to detect unpublished articles at unlock time by cross-referencing WP draft statuses against the editing tracker
+- **Lock/Unlock in Editing menu** — manual lock/unlock added as menu items alongside the scheduled triggers
+- **Team editors populated** — added lara, naintara, charl, marie to `CONFIG.TEAM_EDITORS`
+
+### Merged PRs
+- **PR #14** — batch update published URLs
+- **PR #15** — scheduled worksheet lock/unlock
+
+### Notes
+- `checkLateEdits` disabled in unlock until core lock/unlock is proven stable — re-enable once confirmed working
+- Reference error messages went through 7 iterations to get the wording right for the ESL team
+
+---
+
 ## Emergency Fix — February 18, 2026
 
 ### Bug Fixes
