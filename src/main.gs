@@ -9423,9 +9423,23 @@ function unlockWorksheet() {
     Logger.log('Warning: Could not update visual indicator: ' + vizErr.message);
   }
 
-  // Log results
+  // Log results and alert on failure
   if (errors.length > 0) {
     Logger.log('Worksheet unlocked with ' + errors.length + ' error(s). Restored: ' + restored + '\nErrors:\n' + errors.join('\n'));
+    var subject = 'WIYS Unlock Failed — ' + errors.length + ' error(s)';
+    var body = 'The automatic unlock ran but had errors.\n\n'
+      + 'Restored: ' + restored + ' editor(s)\n'
+      + 'Failed: ' + errors.length + '\n\n'
+      + errors.join('\n') + '\n\n'
+      + 'You may need to run emergencyUnlock() from the Script Editor.';
+    var alertEmails = ['jlcdelosreyes@gmail.com', 'workflow@wheninyourstate.com'];
+    for (var a = 0; a < alertEmails.length; a++) {
+      try {
+        MailApp.sendEmail(alertEmails[a], subject, body);
+      } catch (mailErr) {
+        Logger.log('Could not send alert to ' + alertEmails[a] + ': ' + mailErr.message);
+      }
+    }
   } else {
     Logger.log('Worksheet unlocked successfully. Restored ' + restored + ' editor(s) at ' + new Date().toISOString());
   }
