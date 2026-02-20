@@ -9415,7 +9415,13 @@ function checkLateEdits() {
   var lateCount = 0;
   var errors = 0;
 
+  // Only check articles with these statuses (Column G = index 6)
+  var checkStatuses = ['Successful WP Upload', 'For Final WP Review - Jamie'];
+
   for (var i = 0; i < data.length; i++) {
+    var status = String(data[i][6] || '').trim(); // Column G
+    if (checkStatuses.indexOf(status) === -1) continue;
+
     var wpUrl = data[i][4]; // Column E (0-indexed: 4)
     if (!wpUrl || String(wpUrl).trim() === '') continue;
 
