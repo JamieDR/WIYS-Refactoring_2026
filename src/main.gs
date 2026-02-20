@@ -9128,17 +9128,17 @@ function lockWorksheet() {
   PropertiesService.getScriptProperties().setProperty('LOCK_SNAPSHOT', JSON.stringify(snapshot));
   PropertiesService.getScriptProperties().setProperty('LOCK_STATE', 'locked');
 
-  // Remove editors (except protected and owner) — viewers are never touched
-  for (var i = 0; i < currentEditors.length; i++) {
-    var email = currentEditors[i].toLowerCase();
-    if (protectedEmails.indexOf(email) === -1) {
-      try {
-        ss.removeEditor(currentEditors[i]);
-        Logger.log('Removed editor: ' + currentEditors[i]);
-      } catch (err) {
-        errors.push('Failed to remove editor ' + currentEditors[i] + ': ' + err.message);
-        Logger.log('ERROR removing editor ' + currentEditors[i] + ': ' + err.message);
-      }
+  // Remove every email in TEAM_EDITORS directly (getEditors() doesn't always return all editors)
+  var teamEditors = CONFIG.LOCK.TEAM_EDITORS;
+  for (var i = 0; i < teamEditors.length; i++) {
+    var email = teamEditors[i].trim();
+    if (!email) continue;
+    try {
+      ss.removeEditor(email);
+      Logger.log('Removed editor: ' + email);
+    } catch (err) {
+      errors.push('Failed to remove editor ' + email + ': ' + err.message);
+      Logger.log('ERROR removing editor ' + email + ': ' + err.message);
     }
   }
   // Note: Viewers (martyspargo@gmail.com, admin@wheninyourstate.com) are intentionally NOT removed
