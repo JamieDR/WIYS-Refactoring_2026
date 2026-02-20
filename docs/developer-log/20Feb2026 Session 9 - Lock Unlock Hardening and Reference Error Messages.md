@@ -46,13 +46,27 @@ The reference hyperlink system (built in Session 6) was generating error message
 6. **Context snippets** — when a reference isn't found, the error shows a snippet of what was expected vs. what's in the slide.
 7. **Slide-specific callout** — errors reference the specific slide number for quick location.
 
-#### 4. Backlog Update
-- Added TODO #19: organize functions logically when splitting the monolith in Phase 5.
+#### 4. Documentation Cleanup
+- **Backfilled developer logs** for Sessions 2, 3, and 4 (had been missing since those sessions)
+- **Added Development Workflow** section to CLAUDE.md — all editing in Codespaces + clasp, never the Apps Script editor
+- **Removed stale clasp login references** from Sessions 6-9 logs — clasp has been working since the start
+- Added TODO #19: organize functions logically when splitting the monolith in Phase 5
+
+#### 5. Branch Cleanup — All Unmerged Branches Resolved
+Identified 5 unmerged branches from previous sessions and Jamie merged them all (PRs #18-#23):
+- **PR #18** — Session 2 emergency fix (`claude/refactor-codebase-review-H7wBp`)
+- **PR #19** — Git lesson materials (`claude/clarify-git-clasp-status-DUHkn`)
+- **PR #20** — Learning labs + TODOs (`claude/resume-session-Vjq91`)
+- **PR #21** — Open URLs in tabs feature (`claude/open-urls-in-tabs-SlpBh`)
+- **PR #22** — Diagnostic logging for slug fallback (`claude/batch-update-published-urls-d9hn8`)
+- **PR #23** — This session's doc updates (`claude/review-recent-edits-dY1z4`)
+
+**Result:** Zero unmerged commits across all branches. Main is fully up to date.
 
 ---
 
 ### Code Stats
-- **Commits:** 24 (12 lock/unlock, 7 reference errors, 2 PR merges, 1 backlog, 2 other)
+- **Commits:** 29 (12 lock/unlock, 7 reference errors, 2 PR merges, 5 doc updates, 1 backlog, 2 other)
 - **Functions added:** `sendLockUnlockAlert()`, late-edit detection logic, verification trigger setup
 - **Functions modified:** `lockWorksheet()`, `unlockWorksheet()`, `checkLockStatus()`, `applyReferencesToContent()`, `parseReferences()`
 - **CONFIG changes:** `TEAM_EDITORS` populated with full team, `SPREADSHEET_ID` corrected
@@ -76,8 +90,9 @@ The reference hyperlink system (built in Session 6) was generating error message
 - Iterated on the reference error messages by getting feedback from the team and relaying what was confusing — acting as a real product manager between the code and the users
 - Noticed that `removeLockSchedule` wasn't showing in the Apps Script editor dropdown — engaged with the tooling even if not fully comfortable with it yet
 - Keeping the session focused on hardening existing work rather than starting new features — maturity in recognizing that "shipped" doesn't mean "done"
+- **Merged 6 PRs independently** using the GitHub website — resolved a merge conflict (clasp login line) by correctly choosing "accept current change". First time handling conflict resolution solo.
+- Caught inaccuracies in the developer logs (clasp login status, Apps Script editor usage) and pushed back until they were corrected — holding documentation to the same standard as code
 
 **Areas to develop:**
-- Still not using Git directly — all commits/pushes done by Claude
 - The lock/unlock system went through 12 bug-fix commits — this is normal for a first implementation, but consider writing a simple manual test checklist before deploying future features to catch issues like the naming bug and wrong spreadsheet ID earlier
 - Apps Script editor navigation — learn Ctrl+F for finding functions, and that the dropdown is type-to-filter

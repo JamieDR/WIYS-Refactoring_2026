@@ -20,6 +20,15 @@ What changed in the system, and when. Written for Jamie as a quick reference.
 - **PR #14** — batch update published URLs
 - **PR #15** — scheduled worksheet lock/unlock
 
+### Documentation
+- **Developer logs backfilled** — Sessions 2, 3, and 4 now have complete logs (were missing since Feb)
+- **CLAUDE.md: Development Workflow** — documents that all editing is Codespaces + clasp, never the Apps Script editor
+- **Stale references cleaned** — removed "clasp login pending" from all session logs
+
+### Branch Cleanup
+- **PRs #18–#23 merged** — all unmerged branches from previous sessions resolved. Main fully up to date.
+- PR #18: Session 2 emergency fix, PR #19: Git lesson materials, PR #20: learning labs + TODOs, PR #21: Open URLs in tabs, PR #22: diagnostic logging, PR #23: Session 9 doc updates
+
 ### Notes
 - `checkLateEdits` disabled in unlock until core lock/unlock is proven stable — re-enable once confirmed working
 - Reference error messages went through 7 iterations to get the wording right for the ESL team
