@@ -9036,6 +9036,9 @@ function onOpen() {
     .addItem('💜 Get WP Drafts for Editing', 'batchTransferToAleksReview')
     .addSeparator()
     .addItem('🎉 Record Published/Scheduled', 'recordAllReady')
+    .addSeparator()
+    .addItem('🔒 Lock Worksheet', 'lockWorksheet')
+    .addItem('🔓 Unlock Worksheet', 'unlockWorksheet')
     .addToUi();
 
   ui.createMenu('      **Drafting')
