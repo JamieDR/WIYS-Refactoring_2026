@@ -2809,15 +2809,56 @@ function uploadToWordPress(e) {
   var parsedReferences = parseReferences(rawReferences);
   var slideshowContent = createSlideshowContent(updatedSlides, relatedArticles, parsedReferences);
 
-  // Check for unmatched references and log to sheet
-  var unmatchedRefs = [];
+  // Analyze reference results — generate specific, actionable error messages
+  var refIssues = [];
+  var hasSlideTargeting = parsedReferences.length > 0 && parsedReferences[0].slideNum !== null;
+  var totalSlides = updatedSlides.length;
+
   for (var ri = 0; ri < parsedReferences.length; ri++) {
-    if (slideshowContent.indexOf('>' + parsedReferences[ri].anchor + '</a>') === -1) {
-      unmatchedRefs.push((ri + 1) + '. ' + parsedReferences[ri].anchor);
+    var pRef = parsedReferences[ri];
+    var refNum = ri + 1;
+    // Check if this ref was successfully linked — use matchResult (more reliable than HTML search)
+    var wasLinked = pRef.matchResult && pRef.matchResult.status === 'linked';
+
+    if (wasLinked) {
+      // Log fuzzy match info if not exact
+      if (pRef.matchResult && pRef.matchResult.contextStrategy && pRef.matchResult.contextStrategy !== 'exact') {
+        Logger.log('Ref ' + refNum + ' "' + pRef.anchor + '" matched via ' + pRef.matchResult.contextStrategy);
+      }
+      continue;
+    }
+
+    // Not linked — figure out WHY and give actionable guidance
+    if (hasSlideTargeting && pRef.slideNum !== null) {
+      // Check if slide number is in the forbidden zone
+      if (pRef.slideNum > totalSlides) {
+        refIssues.push('Ref ' + refNum + ' "' + pRef.anchor + '" targets slide ' + pRef.slideNum +
+          ' (doesn\'t exist — article only has ' + totalSlides + ' slides). Fix slide number.');
+      } else if (pRef.slideNum < 5) {
+        refIssues.push('Ref ' + refNum + ' "' + pRef.anchor + '" targets slide ' + pRef.slideNum +
+          ' (forbidden — MSN requires links only on slides 5+). Move to slide 5 or later.');
+      } else if (pRef.slideNum === totalSlides) {
+        refIssues.push('Ref ' + refNum + ' "' + pRef.anchor + '" targets slide ' + pRef.slideNum +
+          ' (last slide — no links allowed). Move to an earlier slide.');
+      } else if (pRef.matchResult && pRef.matchResult.status === 'anchor_not_in_context') {
+        refIssues.push('Ref ' + refNum + ' "' + pRef.anchor + '" — context found in slide ' + pRef.slideNum +
+          ' but anchor text not found within it. Check anchor spelling.');
+      } else {
+        refIssues.push('Ref ' + refNum + ' "' + pRef.anchor + '" — context phrase not found in slide ' + pRef.slideNum +
+          '. Check that the context text matches the article exactly.');
+      }
+    } else {
+      // Old format (no slide targeting) or context just not found
+      if (pRef.matchResult && pRef.matchResult.status === 'anchor_not_in_context') {
+        refIssues.push('Ref ' + refNum + ' "' + pRef.anchor + '" — context found but anchor text not found within it. Check anchor spelling.');
+      } else {
+        refIssues.push('Ref ' + refNum + ' "' + pRef.anchor + '" — context phrase not found in any slide. Check wording matches article text.');
+      }
     }
   }
-  if (unmatchedRefs.length > 0) {
-    Logger.log('⚠️ Unmatched references for "' + articleTitle + '": ' + unmatchedRefs.join(', '));
+
+  if (refIssues.length > 0) {
+    Logger.log('⚠️ Reference issues for "' + articleTitle + '":\n' + refIssues.join('\n'));
   }
 
   var postPayload = {
@@ -2859,12 +2900,12 @@ function uploadToWordPress(e) {
     Logger.log('✅ Applied ' + tagIds.length + ' tags');
     Logger.log('✅ Added ' + relatedArticles.length + ' related 2025 articles to last slide');
     if (parsedReferences.length > 0) {
-      Logger.log('✅ Applied ' + (parsedReferences.length - unmatchedRefs.length) + '/' + parsedReferences.length + ' reference hyperlinks');
+      Logger.log('✅ Applied ' + (parsedReferences.length - refIssues.length) + '/' + parsedReferences.length + ' reference hyperlinks');
     }
-    // Flag unmatched references in AST NOTES column (L) so they're visible
-    if (unmatchedRefs.length > 0) {
+    // Flag reference issues in AST NOTES column (L) with actionable messages
+    if (refIssues.length > 0) {
       var existingNotes = statusSheet.getRange(articleRowInStatus, 12).getValue() || '';
-      var refWarning = 'Unmatched refs: ' + unmatchedRefs.join(', ');
+      var refWarning = refIssues.join(' // ');
       var newNotes = existingNotes ? existingNotes + ' | ' + refWarning : refWarning;
       statusSheet.getRange(articleRowInStatus, 12).setValue(newNotes);
     }
@@ -3581,11 +3622,15 @@ function parseReferences(rawText) {
     // Split by pipe: context | anchor | URL
     var parts = cleaned.split('|');
     if (parts.length >= 3) {
+      // Clean context and anchor through cleanForDisplay to align with content encoding
+      // (content goes through cleanForDisplay too — this prevents mismatches from
+      // HTML entities, curly quotes, em dashes, etc.)
       refs.push({
         slideNum: slideNum,
-        context: parts[0].trim(),
-        anchor: parts[1].trim(),
-        url: parts[parts.length - 1].trim()
+        context: cleanForDisplay(parts[0].trim()),
+        anchor: cleanForDisplay(parts[1].trim()),
+        url: parts[parts.length - 1].trim(),
+        matchResult: null  // Will be set during linking for error reporting
       });
     }
   }
@@ -3593,12 +3638,70 @@ function parseReferences(rawText) {
 }
 
 /**
+ * Collapse whitespace in text and build a position map back to the original.
+ * Returns { text: normalizedString, map: [originalIndex, ...] }
+ * where map[normalizedIdx] = originalIdx.
+ */
+function collapseWhitespaceWithMap(text) {
+  var result = '';
+  var map = [];
+  var lastWasSpace = false;
+  for (var i = 0; i < text.length; i++) {
+    var ch = text.charAt(i);
+    if (/\s/.test(ch)) {
+      if (!lastWasSpace && result.length > 0) {
+        result += ' ';
+        map.push(i);
+        lastWasSpace = true;
+      }
+    } else {
+      result += ch;
+      map.push(i);
+      lastWasSpace = false;
+    }
+  }
+  return { text: result, map: map };
+}
+
+/**
+ * Find a search string inside text using layered matching strategies.
+ * Returns { index: position in ORIGINAL text, length: match length in original, strategy: string }
+ * or { index: -1, strategy: 'none' } if not found.
+ */
+function fuzzyIndexOf(text, search) {
+  if (!text || !search) return { index: -1, strategy: 'none' };
+
+  // Layer 1: Exact match
+  var idx = text.indexOf(search);
+  if (idx !== -1) return { index: idx, length: search.length, strategy: 'exact' };
+
+  // Layer 2: Case-insensitive match
+  idx = text.toLowerCase().indexOf(search.toLowerCase());
+  if (idx !== -1) return { index: idx, length: search.length, strategy: 'case-insensitive' };
+
+  // Layer 3: Whitespace-normalized case-insensitive match
+  // Handles "ParkPlanning" vs "Park Planning", extra spaces, etc.
+  var norm = collapseWhitespaceWithMap(text);
+  var normSearch = search.replace(/\s+/g, ' ').trim();
+  idx = norm.text.toLowerCase().indexOf(normSearch.toLowerCase());
+  if (idx !== -1 && idx + normSearch.length - 1 < norm.map.length) {
+    var origStart = norm.map[idx];
+    var origEndIdx = idx + normSearch.length - 1;
+    var origEnd = norm.map[origEndIdx] + 1;
+    return { index: origStart, length: origEnd - origStart, strategy: 'whitespace-normalized' };
+  }
+
+  return { index: -1, strategy: 'none' };
+}
+
+/**
  * Apply reference hyperlinks to a paragraph of text.
- * Uses the long context phrase to locate the correct position,
- * then hyperlinks just the short anchor text within it.
+ * Uses layered fuzzy matching: exact → case-insensitive → whitespace-normalized.
+ * Finds the context phrase first, then locates the anchor text within it.
  * External URLs (not wheninyourstate.com) get rel="nofollow".
+ * Sets ref.matchResult for error reporting.
  * @param {string} text - Paragraph text to process
- * @param {Array} references - Array of {context, anchor, url} objects
+ * @param {Array} references - Array of {context, anchor, url, matchResult} objects
  * @returns {string} Text with anchor text replaced by <a> tags
  */
 function applyReferencesToContent(text, references) {
@@ -3606,17 +3709,47 @@ function applyReferencesToContent(text, references) {
   var result = text;
   for (var i = 0; i < references.length; i++) {
     var ref = references[i];
-    // Find where context phrase appears in this text
-    var contextIdx = result.indexOf(ref.context);
-    if (contextIdx === -1) continue;
-    // Find anchor text within the context region only
-    var anchorIdx = result.indexOf(ref.anchor, contextIdx);
-    if (anchorIdx === -1 || anchorIdx > contextIdx + ref.context.length) continue;
+    // Skip if already matched in a previous paragraph
+    if (ref.matchResult && ref.matchResult.status === 'linked') continue;
+
+    // Find context phrase using layered matching
+    var contextMatch = fuzzyIndexOf(result, ref.context);
+    if (contextMatch.index === -1) continue;
+
+    // Find anchor within context region (with some tolerance for position)
+    var regionStart = contextMatch.index;
+    var regionEnd = contextMatch.index + contextMatch.length;
+    var anchorMatch = fuzzyIndexOf(
+      result.substring(regionStart, Math.min(regionEnd + 10, result.length)),
+      ref.anchor
+    );
+
+    if (anchorMatch.index === -1) {
+      // Context found but anchor not within it — record for error reporting
+      if (!ref.matchResult) {
+        ref.matchResult = { status: 'anchor_not_in_context', strategy: contextMatch.strategy };
+      }
+      continue;
+    }
+
+    // Calculate absolute position of anchor in result string
+    var anchorAbsIdx = regionStart + anchorMatch.index;
+    var anchorLen = anchorMatch.length;
+    var originalAnchorText = result.substring(anchorAbsIdx, anchorAbsIdx + anchorLen);
+
     // Build hyperlink — nofollow for external URLs
     var rel = ref.url.indexOf('wheninyourstate.com') === -1 ? ' rel="nofollow"' : '';
-    var link = '<a href="' + ref.url + '"' + rel + '>' + ref.anchor + '</a>';
+    var link = '<a href="' + ref.url + '"' + rel + '>' + originalAnchorText + '</a>';
+
     // Replace at exact position
-    result = result.substring(0, anchorIdx) + link + result.substring(anchorIdx + ref.anchor.length);
+    result = result.substring(0, anchorAbsIdx) + link + result.substring(anchorAbsIdx + anchorLen);
+
+    // Record success for error reporting
+    ref.matchResult = {
+      status: 'linked',
+      contextStrategy: contextMatch.strategy,
+      anchorStrategy: anchorMatch.strategy
+    };
   }
   return result;
 }
