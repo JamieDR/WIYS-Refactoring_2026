@@ -1,0 +1,535 @@
+/***********************************************
+ * 1) createDailyTrigger(): 
+ *    Schedules the function to run daily at 5 AM.
+ ***********************************************/
+function createDailyTrigger() {
+  // Run this once to install the daily trigger
+  ScriptApp.newTrigger('scrapeAllTravelNewsWithSummary')
+    .timeBased()
+    .everyDays(1)
+    .atHour(5)
+    .create();
+}
+
+/***********************************************
+ * 2) isWithin24Hours:
+ *    Checks if dateString >= 2025-01-01 AND 
+ *    within the last 24 hours from now.
+ ***********************************************/
+function isWithin24Hours(dateString) {
+  var itemDate = new Date(dateString);
+  
+  // Must be on or after 2025-01-01
+  var january2025 = new Date(2025, 0, 1);
+  if (itemDate < january2025) {
+    return false;
+  }
+  
+  // And within the last 24 hours
+  var now = new Date();
+  var twentyFourHoursAgo = new Date(now.getTime() - 24*60*60*1000);
+  return (itemDate >= twentyFourHoursAgo);
+}
+
+/***********************************************
+ * 3) extractSummary:
+ *    Extracts up to 2 sentences (max 300 chars),
+ *    removing HTML tags & URLs.
+ ***********************************************/
+function extractSummary(description) {
+  if (!description) return '';
+  
+  var cleanText = description
+    .replace(/<[^>]*>/g, '')
+    .replace(/https?:\/\/\S+/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  
+  var sentences = cleanText.match(/[^\.!\?]+[\.!\?]+/g);
+  if (!sentences) {
+    return cleanText.substring(0, 300);
+  }
+  
+  return sentences.slice(0, 2).join(' ').substring(0, 300);
+}
+
+/***********************************************
+ * 4) setupTravelNewsTrackerSheet:
+ *    Ensures "Travel News Tracker" exists,
+ *    and has a header in row 1 (A–G). 
+ *    Does NOT clear old data.
+ ***********************************************/
+function setupTravelNewsTrackerSheet() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName('Travel News Tracker');
+  
+  if (!sheet) {
+    sheet = ss.insertSheet('Travel News Tracker');
+  }
+  
+  // If row 1 is empty, set the headers
+  var headerRow = sheet.getRange(1, 1, 1, 7).getValues()[0];
+  var isEmptyHeader = headerRow.every(function(cell) { return cell === '' });
+  
+  if (isEmptyHeader) {
+    sheet.getRange(1, 1, 1, 7).setValues([[
+      "Action",       // col A
+      "Date",         // col B
+      "Source",       // col C
+      "State/Region", // col D
+      "Title",        // col E
+      "Link",         // col F
+      "Summary"       // col G
+    ]]);
+  }
+  
+  return sheet;
+}
+
+/***********************************************
+ * 5) getAllExistingLinks:
+ *    Reads col F (Link) in "Travel News Tracker"
+ *    from row 2 down, returns a Set of links.
+ ***********************************************/
+function getAllExistingLinks(sheet) {
+  var lastRow = sheet.getLastRow();
+  if (lastRow < 2) {
+    return new Set(); // No data yet
+  }
+  // Column F = 6
+  var linkRange = sheet.getRange(2, 6, lastRow - 1, 1).getValues();
+  var linkSet = new Set();
+  linkRange.forEach(function(row) {
+    var linkVal = row[0];
+    if (linkVal) {
+      linkSet.add(linkVal.toString().trim());
+    }
+  });
+  return linkSet;
+}
+
+/***********************************************
+ * 6) applyDataValidationToRow:
+ *    Sets the "Delete"/"With Potential" dropdown
+ *    in column A for the newly added row.
+ ***********************************************/
+function applyDataValidationToRow(sheet, rowIndex) {
+  var rule = SpreadsheetApp.newDataValidation()
+    .requireValueInList(["Delete", "With Potential"], true)
+    .setAllowInvalid(false)
+    .build();
+  sheet.getRange(rowIndex, 1).setDataValidation(rule);
+}
+
+/***********************************************
+ * 7) sendSummaryEmail:
+ *    Emails the user how many new articles 
+ *    were added and their titles.
+ ***********************************************/
+function sendSummaryEmail(newTitles) {
+  var recipient = "wheninyourstate@gmail.com";
+  var subject = "Daily Travel News Scrape";
+  var nowString = new Date().toLocaleString();
+  
+  var body;
+  if (newTitles.length > 0) {
+    body = newTitles.length + " news articles added at " + nowString + "\n\n" +
+           "Here are the titles:\n" +
+           newTitles.map(function(t, i) {
+             return (i+1) + ") " + t;
+           }).join("\n");
+  } else {
+    body = "No new articles were added at " + nowString + ".";
+  }
+  
+  MailApp.sendEmail(recipient, subject, body);
+}
+
+/***********************************************
+ * 8) scrapeAllTravelNewsWithSummary:
+ *    Main function. Does NOT clear sheet, 
+ *    only appends new items. Skips duplicates 
+ *    by checking links, sets correct State/Region, 
+ *    and emails you a summary.
+ ***********************************************/
+function scrapeAllTravelNewsWithSummary() {
+  var newsApiKey = 'OfyU7Av3tma5yqgVljw5rTtbHy9pZ0AC78xWpmZ';
+  
+  // 1) Ensure sheet exists, get existing links
+  var sheet = setupTravelNewsTrackerSheet();
+  var existingLinks = getAllExistingLinks(sheet);
+  
+  // We'll collect newly added titles in this array
+  var newlyAddedTitles = [];
+  
+  /***********************************************
+   * Helper: append a new row 
+   * (B–G => date, source, region, title, link, summary)
+   ***********************************************/
+  function appendTravelNewsRow(dateVal, sourceVal, regionVal, titleVal, linkVal, summaryVal) {
+    var lastRow = sheet.getLastRow();
+    sheet.getRange(lastRow + 1, 2, 1, 6).setValues([[
+      dateVal,
+      sourceVal,
+      regionVal,
+      titleVal,
+      linkVal,
+      summaryVal
+    ]]);
+    
+    // Apply data validation for col A
+    applyDataValidationToRow(sheet, lastRow + 1);
+    
+    newlyAddedTitles.push(titleVal);
+  }
+  
+  /***********************************************
+   * 2) State RSS Feeds
+   ***********************************************/
+  var stateRssFeeds = [
+    'https://news.google.com/rss/search?q=alabama+travel&hl=en-US&gl=US&ceid=US:en',
+    'https://news.google.com/rss/search?q=alaska+travel&hl=en-US&gl=US&ceid=US:en',
+    'https://news.google.com/rss/search?q=arizona+travel&hl=en-US&gl=US&ceid=US:en',
+    'https://news.google.com/rss/search?q=arkansas+travel&hl=en-US&gl=US&ceid=US:en',
+    'https://news.google.com/rss/search?q=california+travel&hl=en-US&gl=US&ceid=US:en',
+    'https://news.google.com/rss/search?q=colorado+travel&hl=en-US&gl=US&ceid=US:en',
+    'https://news.google.com/rss/search?q=connecticut+travel&hl=en-US&gl=US&ceid=US:en',
+    'https://news.google.com/rss/search?q=delaware+travel&hl=en-US&gl=US&ceid=US:en',
+    'https://news.google.com/rss/search?q=florida+travel&hl=en-US&gl=US&ceid=US:en',
+    'https://news.google.com/rss/search?q=georgia+travel&hl=en-US&gl=US&ceid=US:en',
+    'https://news.google.com/rss/search?q=hawaii+travel&hl=en-US&gl=US&ceid=US:en',
+    'https://news.google.com/rss/search?q=idaho+travel&hl=en-US&gl=US&ceid=US:en',
+    'https://news.google.com/rss/search?q=illinois+travel&hl=en-US&gl=US&ceid=US:en',
+    'https://news.google.com/rss/search?q=indiana+travel&hl=en-US&gl=US&ceid=US:en',
+    'https://news.google.com/rss/search?q=iowa+travel&hl=en-US&gl=US&ceid=US:en',
+    'https://news.google.com/rss/search?q=kansas+travel&hl=en-US&gl=US&ceid=US:en',
+    'https://news.google.com/rss/search?q=kentucky+travel&hl=en-US&gl=US&ceid=US:en',
+    'https://news.google.com/rss/search?q=louisiana+travel&hl=en-US&gl=US&ceid=US:en',
+    'https://news.google.com/rss/search?q=maine+travel&hl=en-US&gl=US&ceid=US:en',
+    'https://news.google.com/rss/search?q=maryland+travel&hl=en-US&gl=US&ceid=US:en',
+    'https://news.google.com/rss/search?q=massachusetts+travel&hl=en-US&gl=US&ceid=US:en',
+    'https://news.google.com/rss/search?q=michigan+travel&hl=en-US&gl=US&ceid=US:en',
+    'https://news.google.com/rss/search?q=minnesota+travel&hl=en-US&gl=US&ceid=US:en',
+    'https://news.google.com/rss/search?q=mississippi+travel&hl=en-US&gl=US&ceid=US:en',
+    'https://news.google.com/rss/search?q=missouri+travel&hl=en-US&gl=US&ceid=US:en',
+    'https://news.google.com/rss/search?q=montana+travel&hl=en-US&gl=US&ceid=US:en',
+    'https://news.google.com/rss/search?q=nebraska+travel&hl=en-US&gl=US&ceid=US:en',
+    'https://news.google.com/rss/search?q=nevada+travel&hl=en-US&gl=US&ceid=US:en',
+    'https://news.google.com/rss/search?q=new+hampshire+travel&hl=en-US&gl=US&ceid=US:en',
+    'https://news.google.com/rss/search?q=new+jersey+travel&hl=en-US&gl=US&ceid=US:en',
+    'https://news.google.com/rss/search?q=new+mexico+travel&hl=en-US&gl=US&ceid=US:en',
+    'https://news.google.com/rss/search?q=new+york+travel&hl=en-US&gl=US&ceid=US:en',
+    'https://news.google.com/rss/search?q=north+carolina+travel&hl=en-US&gl=US&ceid=US:en',
+    'https://news.google.com/rss/search?q=north+dakota+travel&hl=en-US&gl=US&ceid=US:en',
+    'https://news.google.com/rss/search?q=ohio+travel&hl=en-US&gl=US&ceid=US:en',
+    'https://news.google.com/rss/search?q=oklahoma+travel&hl=en-US&gl=US&ceid=US:en',
+    'https://news.google.com/rss/search?q=oregon+travel&hl=en-US&gl=US&ceid=US:en',
+    'https://news.google.com/rss/search?q=pennsylvania+travel&hl=en-US&gl=US&ceid=US:en',
+    'https://news.google.com/rss/search?q=rhode+island+travel&hl=en-US&gl=US&ceid=US:en',
+    'https://news.google.com/rss/search?q=south+carolina+travel&hl=en-US&gl=US&ceid=US:en',
+    'https://news.google.com/rss/search?q=south+dakota+travel&hl=en-US&gl=US&ceid=US:en',
+    'https://news.google.com/rss/search?q=tennessee+travel&hl=en-US&gl=US&ceid=US:en',
+    'https://news.google.com/rss/search?q=texas+travel&hl=en-US&gl=US&ceid=US:en',
+    'https://news.google.com/rss/search?q=utah+travel&hl=en-US&gl=US&ceid=US:en',
+    'https://news.google.com/rss/search?q=vermont+travel&hl=en-US&gl=US&ceid=US:en',
+    'https://news.google.com/rss/search?q=virginia+travel&hl=en-US&gl=US&ceid=US:en',
+    'https://news.google.com/rss/search?q=washington+travel&hl=en-US&gl=US&ceid=US:en',
+    'https://news.google.com/rss/search?q=west+virginia+travel&hl=en-US&gl=US&ceid=US:en',
+    'https://news.google.com/rss/search?q=wisconsin+travel&hl=en-US&gl=US&ceid=US:en',
+    'https://news.google.com/rss/search?q=wyoming+travel&hl=en-US&gl=US&ceid=US:en'
+  ];
+  
+  // We also include US News
+  var extraFeeds = [
+    'https://www.usnews.com/rss/travel-editorial'
+  ];
+  
+  /***********************************************
+   * Helper to map the feed URL to Region
+   ***********************************************/
+  function getStateRegionFromUrl(rssUrl) {
+    // Default
+    var regionVal = "U.S. State";
+    
+    if (rssUrl.indexOf("alabama") > -1)     regionVal = "Alabama";
+    else if (rssUrl.indexOf("alaska") > -1) regionVal = "Alaska";
+    else if (rssUrl.indexOf("arizona") > -1) regionVal = "Arizona";
+    else if (rssUrl.indexOf("arkansas") > -1) regionVal = "Arkansas";
+    else if (rssUrl.indexOf("california") > -1) regionVal = "California";
+    else if (rssUrl.indexOf("colorado") > -1) regionVal = "Colorado";
+    else if (rssUrl.indexOf("connecticut") > -1) regionVal = "Connecticut";
+    else if (rssUrl.indexOf("delaware") > -1) regionVal = "Delaware";
+    else if (rssUrl.indexOf("florida") > -1) regionVal = "Florida";
+    else if (rssUrl.indexOf("georgia") > -1) regionVal = "Georgia";
+    else if (rssUrl.indexOf("hawaii") > -1) regionVal = "Hawaii";
+    else if (rssUrl.indexOf("idaho") > -1) regionVal = "Idaho";
+    else if (rssUrl.indexOf("illinois") > -1) regionVal = "Illinois";
+    else if (rssUrl.indexOf("indiana") > -1) regionVal = "Indiana";
+    else if (rssUrl.indexOf("iowa") > -1) regionVal = "Iowa";
+    else if (rssUrl.indexOf("kansas") > -1) regionVal = "Kansas";
+    else if (rssUrl.indexOf("kentucky") > -1) regionVal = "Kentucky";
+    else if (rssUrl.indexOf("louisiana") > -1) regionVal = "Louisiana";
+    else if (rssUrl.indexOf("maine") > -1) regionVal = "Maine";
+    else if (rssUrl.indexOf("maryland") > -1) regionVal = "Maryland";
+    else if (rssUrl.indexOf("massachusetts") > -1) regionVal = "Massachusetts";
+    else if (rssUrl.indexOf("michigan") > -1) regionVal = "Michigan";
+    else if (rssUrl.indexOf("minnesota") > -1) regionVal = "Minnesota";
+    else if (rssUrl.indexOf("mississippi") > -1) regionVal = "Mississippi";
+    else if (rssUrl.indexOf("missouri") > -1) regionVal = "Missouri";
+    else if (rssUrl.indexOf("montana") > -1) regionVal = "Montana";
+    else if (rssUrl.indexOf("nebraska") > -1) regionVal = "Nebraska";
+    else if (rssUrl.indexOf("nevada") > -1) regionVal = "Nevada";
+    else if (rssUrl.indexOf("new+hampshire") > -1) regionVal = "New Hampshire";
+    else if (rssUrl.indexOf("new+jersey") > -1) regionVal = "New Jersey";
+    else if (rssUrl.indexOf("new+mexico") > -1) regionVal = "New Mexico";
+    else if (rssUrl.indexOf("new+york") > -1) regionVal = "New York";
+    else if (rssUrl.indexOf("north+carolina") > -1) regionVal = "North Carolina";
+    else if (rssUrl.indexOf("north+dakota") > -1) regionVal = "North Dakota";
+    else if (rssUrl.indexOf("ohio") > -1) regionVal = "Ohio";
+    else if (rssUrl.indexOf("oklahoma") > -1) regionVal = "Oklahoma";
+    else if (rssUrl.indexOf("oregon") > -1) regionVal = "Oregon";
+    else if (rssUrl.indexOf("pennsylvania") > -1) regionVal = "Pennsylvania";
+    else if (rssUrl.indexOf("rhode+island") > -1) regionVal = "Rhode Island";
+    else if (rssUrl.indexOf("south+carolina") > -1) regionVal = "South Carolina";
+    else if (rssUrl.indexOf("south+dakota") > -1) regionVal = "South Dakota";
+    else if (rssUrl.indexOf("tennessee") > -1) regionVal = "Tennessee";
+    else if (rssUrl.indexOf("texas") > -1) regionVal = "Texas";
+    else if (rssUrl.indexOf("utah") > -1) regionVal = "Utah";
+    else if (rssUrl.indexOf("vermont") > -1) regionVal = "Vermont";
+    else if (rssUrl.indexOf("virginia") > -1) regionVal = "Virginia";
+    else if (rssUrl.indexOf("washington") > -1) regionVal = "Washington";
+    else if (rssUrl.indexOf("west+virginia") > -1) regionVal = "West Virginia";
+    else if (rssUrl.indexOf("wisconsin") > -1) regionVal = "Wisconsin";
+    else if (rssUrl.indexOf("wyoming") > -1) regionVal = "Wyoming";
+    
+    return regionVal;
+  }
+  
+  // 3) Process each state feed
+  stateRssFeeds.forEach(function(rssUrl) {
+    try {
+      var response = UrlFetchApp.fetch(rssUrl);
+      var xml = XmlService.parse(response.getContentText());
+      var root = xml.getRootElement();
+      var channel = root.getChild('channel');
+      if (!channel) return;
+      
+      var items = channel.getChildren('item');
+      var regionVal = getStateRegionFromUrl(rssUrl); // <--- actual state or region
+      var sourceVal = "Google News RSS";             // <--- let's label the source
+      
+      items.forEach(function(item) {
+        var pubDate     = item.getChildText('pubDate');
+        var title       = item.getChildText('title') || "(No Title)";
+        var link        = item.getChildText('link')  || "";
+        var description = item.getChildText('description') || "";
+        
+        if (!pubDate || !isWithin24Hours(pubDate)) {
+          return; // skip if no date or not in last 24h
+        }
+        // skip if link is blank or already in sheet
+        if (!link || existingLinks.has(link)) {
+          return;
+        }
+        
+        var summary = extractSummary(description);
+        
+        // Append to the sheet
+        appendTravelNewsRow(
+          pubDate,
+          sourceVal,
+          regionVal,
+          title,
+          link,
+          summary
+        );
+        existingLinks.add(link); // so we don't add duplicates in same run
+      });
+      
+    } catch(err) {
+      Logger.log("Error fetching RSS for: " + rssUrl + " => " + err);
+    }
+  });
+  
+  /***********************************************
+   * 4) Additional Feeds
+   ***********************************************/
+  extraFeeds.forEach(function(feedUrl) {
+    try {
+      var response = UrlFetchApp.fetch(feedUrl);
+      var xml = XmlService.parse(response.getContentText());
+      var root = xml.getRootElement();
+      var channel = root.getChild('channel');
+      if (!channel) return;
+      
+      var items = channel.getChildren('item');
+      var sourceVal = (feedUrl.indexOf("usnews") > -1) ? "US News" : "News Source";
+      // We'll just call region "National" for these
+      var regionVal = "National";
+      
+      items.forEach(function(item) {
+        var pubDate     = item.getChildText('pubDate');
+        var title       = item.getChildText('title') || "(No Title)";
+        var link        = item.getChildText('link')  || "";
+        var description = item.getChildText('description') || "";
+        
+        if (!pubDate || !isWithin24Hours(pubDate)) {
+          return;
+        }
+        if (!link || existingLinks.has(link)) {
+          return;
+        }
+        
+        var summary = extractSummary(description);
+        
+        appendTravelNewsRow(
+          pubDate,
+          sourceVal,
+          regionVal,
+          title,
+          link,
+          summary
+        );
+        existingLinks.add(link);
+      });
+      
+    } catch(err) {
+      Logger.log("Error fetching extra feed: " + feedUrl + " => " + err);
+    }
+  });
+  
+  /***********************************************
+   * 5) NewsAPI
+   ***********************************************/
+  try {
+    var newsUrl = 'https://newsapi.org/v2/top-headlines?country=us&category=travel&pageSize=300&apiKey=' + newsApiKey;
+    var newsResponse = UrlFetchApp.fetch(newsUrl);
+    var newsData = JSON.parse(newsResponse.getContentText());
+    
+    newsData.articles.forEach(function(article) {
+      var publishedAt = article.publishedAt;
+      if (!publishedAt || !isWithin24Hours(publishedAt)) {
+        return;
+      }
+      
+      var linkVal = article.url || "";
+      if (!linkVal || existingLinks.has(linkVal)) {
+        return;
+      }
+      
+      var sourceVal = article.source && article.source.name
+                      ? article.source.name : "NewsAPI Source";
+      var regionVal = "National";
+      var titleVal  = article.title     || "(No Title)";
+      var summaryVal= extractSummary(article.description || "");
+      
+      appendTravelNewsRow(
+        publishedAt,
+        sourceVal,
+        regionVal,
+        titleVal,
+        linkVal,
+        summaryVal
+      );
+      existingLinks.add(linkVal);
+    });
+    
+  } catch(err) {
+    Logger.log("NewsAPI error: " + err);
+  }
+  
+  // 6) Send summary email
+  sendSummaryEmail(newlyAddedTitles);
+}
+
+/**
+ * Installable onEdit-like function for Travel News.
+ * 
+ * Steps to enable:
+ * 1) Paste this into your Apps Script project.
+ * 2) Remove or comment out any other `onEdit(e)` function
+ *    (you can still keep your NPS onEdit as a simple trigger).
+ * 3) In Apps Script, go to "Triggers", add a new trigger:
+ *    - Choose function: onEditTravelNews
+ *    - Event source: From spreadsheet
+ *    - Event type: On edit
+ *    - Save/authorize if prompted
+ * 
+ * Now this function will fire whenever someone edits
+ * the sheet, just like an onEdit. We call it an
+ * "installable onEdit" trigger.
+ */
+function onEditTravelNews(e) {
+  var sheet = e.range.getSheet();
+  var row = e.range.getRow();
+  var col = e.range.getColumn();
+  
+  // Only run if editing "Travel News Tracker", col A, row >= 2
+  if (
+    sheet.getName() === 'Travel News Tracker' &&
+    col === 1 &&
+    row >= 2
+  ) {
+    var action = e.range.getValue();  // Should be "Delete" or "With Potential"
+    
+    if (action === 'Delete') {
+      // Simply delete the row
+      sheet.deleteRow(row);
+      
+    } else if (action === 'With Potential') {
+      // Move B–G => Potential Topics
+      var potSheet = getPotentialTopicsSheet();
+      var rowValues = sheet.getRange(row, 2, 1, 6).getValues()[0];
+      
+      // rowValues = [Date, Source, Region, Title, Link, Summary]
+      // We want Potential Topics columns: 
+      //   B => Date (rowValues[0])
+      //   C => Region (rowValues[2])
+      //   D => Title (rowValues[3])
+      //   E => Link  (rowValues[4])
+      //   F => Summary (rowValues[5])
+      var dateVal    = rowValues[0];
+      var regionVal  = rowValues[2];
+      var titleVal   = rowValues[3];
+      var linkVal    = rowValues[4];
+      var summaryVal = rowValues[5];
+      
+      // Append to Potential Topics
+      var lastRowPot = potSheet.getLastRow();
+      potSheet.getRange(lastRowPot + 1, 2, 1, 5).setValues([[
+        dateVal,
+        regionVal,
+        titleVal,
+        linkVal,
+        summaryVal
+      ]]);
+      
+      // Delete from main sheet
+      sheet.deleteRow(row);
+    }
+  }
+}
+
+/**
+ * Optional helper: gets or creates a sheet named "Potential Topics"
+ * with standard headers (A–F).
+ */
+function getPotentialTopicsSheet() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var potSheet = ss.getSheetByName('Potential Topics');
+  if (!potSheet) {
+    potSheet = ss.insertSheet('Potential Topics');
+  }
+  
+  // If row 1 is blank, set a standard header
+  var headerCheck = potSheet.getRange(1, 1, 1, 6).getValues()[0];
+  var isEmptyHeader = headerCheck.every(function(val){return val === ''});
+  if (isEmptyHeader) {
+    potSheet.getRange(1, 1, 1, 6).setValues([[
+      "Action", "Date", "Source",
+      "Title", "Link", "Summary"
+    ]]);
+  }
+  
+  return potSheet;
+}
