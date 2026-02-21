@@ -40,7 +40,7 @@ All tabs: **newest first** (reverse chronological). Fresh stories at the top.
 | D | Summary (Claude Haiku-generated — who, what, when, where) |
 | E | Status (dropdown: blank / Approved / Delete) |
 
-**Breaking / Trending tab (adds outlet count):**
+**Breaking / Trending tab (adds outlet list):**
 
 | Column | Content |
 |--------|---------|
@@ -48,11 +48,12 @@ All tabs: **newest first** (reverse chronological). Fresh stories at the top.
 | B | State |
 | C | Title (hyperlinked, black font) |
 | D | Summary |
-| E | Outlets (count — e.g., "1" for single source, "6" for widely covered) |
+| E | Outlets (e.g., "AP, CNN, BBC, NBC" — each name hyperlinked in blue to that outlet's article) |
 | F | Status |
 
 Duplicate stories across outlets are merged into one row. The Outlets column
-shows how many sources are reporting it — high numbers = trending.
+lists every outlet covering the story, each hyperlinked to their version —
+click through to compare coverage and verify facts.
 **Trending threshold: 3+ major outlets** reporting the same story. All sources
 feeding this tab (AP, Reuters, CNN, BBC, NBC, CBS, ABC, Telegraph, Washington
 Examiner) qualify as major, so any 3+ within this tab = trending.
