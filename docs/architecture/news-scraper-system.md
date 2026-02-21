@@ -33,7 +33,19 @@ Lives in the same Google Sheet the team already works in (ID: 1gQmKqIDr07tSaqoDY
 | E | URL |
 | F | Summary |
 
-### Batch Operations (menu items)
+### New Laws 2026 Tab (separate tab, same spreadsheet)
+Dedicated to legislation, bills, acts, and executive orders — by state.
+
+| Column | Content |
+|--------|---------|
+| A | Status (dropdown: blank / Approved / Delete) |
+| B | State |
+| C | Law/Bill Name |
+| D | Type (Law / Bill / Executive Order / Regulation) |
+| E | URL |
+| F | Summary |
+
+### Batch Operations (menu items, shared across both tabs)
 - **Transfer Approved** — moves all "Approved" rows to destination sheet (TBD), then clears them
 - **Delete Marked** — removes all "Delete" rows in one click
 
