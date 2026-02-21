@@ -716,8 +716,22 @@ function getExistingUrls(sheet) {
 function writeArticlesToSheet(articles, sheet) {
   if (!articles || articles.length === 0) return;
 
-  // Insert rows at top (below header) to make room for new articles
-  sheet.insertRowsAfter(1, articles.length);
+  // Insert rows at top (below header) to make room for new articles.
+  // insertRowsAfter copies formatting from the reference row, so we insert
+  // after row 2 (first data row) to get data formatting, not header formatting.
+  // If the sheet only has a header (no row 2), fall back to row 1.
+  var lastRow = sheet.getLastRow();
+  var insertAfterRow = (lastRow >= 2) ? 2 : 1;
+  sheet.insertRowsAfter(insertAfterRow, articles.length);
+
+  // If we had to insert after the header row (fresh sheet), clear the
+  // header formatting that Google Sheets auto-copied onto the new rows.
+  if (insertAfterRow === 1) {
+    var newRange = sheet.getRange(2, 1, articles.length, SCRAPER.HEADERS.length);
+    newRange.setFontWeight('normal');
+    newRange.setBackground(null);
+    newRange.setFontColor('#000000');
+  }
 
   // Build the data array
   var rows = [];
@@ -1256,8 +1270,18 @@ function writeNewLawsToSheet(bills, sheet) {
 
   var cols = SCRAPER.NEW_LAWS_COLUMNS;
 
-  // Insert rows at top (below header)
-  sheet.insertRowsAfter(1, bills.length);
+  // Insert rows at top (below header).
+  // Insert after row 2 (data row) to inherit data formatting, not header formatting.
+  var lastRow = sheet.getLastRow();
+  var insertAfterRow = (lastRow >= 2) ? 2 : 1;
+  sheet.insertRowsAfter(insertAfterRow, bills.length);
+
+  if (insertAfterRow === 1) {
+    var newRange = sheet.getRange(2, 1, bills.length, SCRAPER.NEW_LAWS_HEADERS.length);
+    newRange.setFontWeight('normal');
+    newRange.setBackground(null);
+    newRange.setFontColor('#000000');
+  }
 
   // Build data array
   var rows = [];
