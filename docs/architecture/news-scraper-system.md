@@ -8,16 +8,16 @@ Replaces 6-9 hours/day of manual topic research with automated scraping, filteri
 ```
 Sources (RSS / Gmail / APIs)
     ↓
-Keyword Blacklist Filter (FREE)
+Keyword Blacklist Filter (FREE — auto-discard junk)
     ↓
-Keyword Whitelist Flag (FREE)
+Claude Haiku Summary (who/what/when/where — ~$1-2/day)
     ↓
-Claude Haiku Batch Scoring (pennies/day)
-    ↓
-Google Sheet (triage by status column)
+Google Sheet (Jamie handpicks — Approved / Delete)
     ↓
 Batch Transfer → Content Pipeline
 ```
+No auto-scoring or relevance filtering. Everything that passes the blacklist
+lands in the sheet. Jamie decides what's relevant.
 
 ## Spreadsheet Structure
 
@@ -184,7 +184,7 @@ These sites don't offer RSS feeds. Subscribe to their newsletters and scrape fro
 
 ## Filtering Pipeline
 
-### Layer 1: Keyword Blacklist (zero tokens — auto-skip)
+### Layer 1: Keyword Blacklist (free — auto-discard)
 
 Articles matching these keywords in title or summary are automatically discarded.
 
@@ -255,48 +255,17 @@ Sites that consistently produce unusable content — auto-skip regardless of tit
 - accident, crash, fatality (unless major national news)
 - recall notice (product recalls)
 
-### Layer 2: Keyword Whitelist (zero tokens — auto-flag as high priority)
+### Layer 2: Claude Haiku Summary (who, what, when, where)
 
-Articles matching these keywords are auto-flagged as likely relevant.
-
-**Travel & Destinations:**
-- national park, state park, public lands, road trip
-- hidden gem, must visit, bucket list
-- historic site, American history, landmark, monument
-- scenic byway, trail, hiking, outdoor recreation
-- reopens, newly renovated, grand opening, new attraction
-
-**Policy & Impact:**
-- new law, signed into law, legislation, effective 2026
-- Social Security, Medicare, Medicaid, tax change, policy change
-- cost of living, housing market, job market
-- travel rule, TSA, airline, airport, visa
-
-**State/Local News:**
-- state park, governor signed, state legislature
-- local landmark, town history, community
-
-### Layer 3: Claude Haiku Batch Scoring (tokens — minimized)
-
-For articles that pass the blacklist but aren't caught by the whitelist.
+For every article that passes the blacklist, Claude Haiku generates a 1-2 sentence
+summary. No scoring, no filtering — everything lands in the sheet for Jamie to review.
 
 **Method:**
-- Batch 50 titles + summaries into a single API call
-- Use Claude Haiku (cheapest model)
-- Score each 1-10 for WIYS relevance
-- Only articles scoring 6+ make it to the sheet
+- Batch article titles + content into API calls
+- Claude Haiku generates a short factual summary (who, what, when, where)
+- Fallback: publisher snippet if full text can't be fetched (paywalls, etc.)
 
-**Scoring Criteria (prompt for Haiku):**
-- Is this relevant to American travel, destinations, or places?
-- Does this affect Americans' lives, wallets, or decisions?
-- Is this evergreen enough to publish? (not stale within 24 hours)
-- Is this factual news or a travel feature (not opinion/editorial)?
-- Would this interest Americans aged 40-79?
-
-**Cost Estimate:**
-- ~250 articles/day through Haiku scoring
-- ~15 words per title × 250 = 3,750 tokens input per batch
-- Estimated cost: < $0.01/day
+**Cost Estimate:** ~$1-2/day for all tabs combined
 
 ---
 
