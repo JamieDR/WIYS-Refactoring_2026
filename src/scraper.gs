@@ -946,18 +946,30 @@ var ENACTED_ACTIONS = [
 ];
 
 /**
- * Fetch bills from Open States API v3 for a single state.
- * Returns bills that had legislative action since the cutoff date.
- * @param {string} state - Full state name (e.g. "Arizona")
+ * Keywords that surface enacted legislation in Open States full-text search.
+ * Each keyword becomes one API query across ALL states — much more efficient
+ * than querying 50 states individually (5-10 requests vs 50+).
+ */
+var NEW_LAW_KEYWORDS = [
+  'signed into law',
+  'takes effect',
+  'enacted',
+  'new law',
+  'becomes law'
+];
+
+/**
+ * Fetch bills from Open States API v3 using keyword search across all states.
+ * @param {string} keyword - Search keyword (e.g. "signed into law")
  * @param {string} apiKey - Open States API key
- * @param {string} sinceDate - ISO date string (e.g. "2026-01-01")
+ * @param {string} sinceDate - ISO date string (e.g. "2025-01-01")
  * @param {number} page - Page number (default 1)
  * @returns {Object|null} API response with .results and .pagination, or null on error
  */
-function fetchOpenStatesBills(state, apiKey, sinceDate, page) {
+function fetchOpenStatesBills(keyword, apiKey, sinceDate, page) {
   var baseUrl = 'https://v3.openstates.org/bills';
   var params = [
-    'jurisdiction=' + encodeURIComponent(state),
+    'q=' + encodeURIComponent(keyword),
     'action_since=' + sinceDate,
     'include=actions',
     'include=abstracts',
@@ -1062,8 +1074,24 @@ function getBillSummary(bill) {
 }
 
 /**
- * Scrape enacted legislation from all 50 states via Open States API.
- * Filters for bills that became law in 2026, writes to the New Laws 2026 tab.
+ * Extract state name from an Open States bill's jurisdiction field.
+ * @param {Object} bill - Bill object from Open States API
+ * @returns {string} State name (e.g. "Arizona") or empty string
+ */
+function getStateFromBill(bill) {
+  if (bill.jurisdiction && bill.jurisdiction.name) {
+    return bill.jurisdiction.name;
+  }
+  return '';
+}
+
+/**
+ * Scrape enacted legislation via keyword searches across all states.
+ * Uses NEW_LAW_KEYWORDS to find bills related to new laws taking effect in 2026.
+ * Searches from 2025-01-01 to catch 2025 laws that take effect in 2026.
+ * Filters for enacted bills only, then writes to the New Laws 2026 tab.
+ *
+ * Uses ~5-15 API requests per run (vs 50+ for per-state approach).
  */
 function scrapeNewLaws() {
   var apiKey = PropertiesService.getScriptProperties().getProperty('OPENSTATES_API_KEY');
@@ -1099,57 +1127,46 @@ function scrapeNewLaws() {
   }
   Logger.log('📋 ' + Object.keys(existingBills).length + ' existing bills in New Laws tab');
 
-  var sinceDate = '2026-01-01';
+  // Search from 2025 to catch laws signed in 2025 that take effect in 2026
+  var sinceDate = '2025-01-01';
   var newBills = [];
   var requestCount = 0;
 
-  for (var i = 0; i < US_STATES.length; i++) {
-    var state = US_STATES[i];
+  for (var i = 0; i < NEW_LAW_KEYWORDS.length; i++) {
+    var keyword = NEW_LAW_KEYWORDS[i];
+    Logger.log('🔍 Searching: "' + keyword + '"');
 
-    // Rate limit: 10 requests/minute — sleep 6 seconds between requests
-    if (requestCount > 0 && requestCount % 9 === 0) {
-      Logger.log('⏳ Pausing 60s for rate limit (10/min)...');
-      Utilities.sleep(60000);
-    }
-
-    var data = fetchOpenStatesBills(state, apiKey, sinceDate, 1);
+    // Fetch first page
+    var data = fetchOpenStatesBills(keyword, apiKey, sinceDate, 1);
     requestCount++;
 
     if (!data || !data.results) {
-      Logger.log('  ⚠️ ' + state + ': no results');
+      Logger.log('  ⚠️ No results for "' + keyword + '"');
+      Utilities.sleep(6000);  // Rate limit spacing
       continue;
     }
 
-    var stateEnacted = 0;
-    for (var j = 0; j < data.results.length; j++) {
-      var bill = data.results[j];
-      var enactedAction = findEnactedAction(bill);
-      if (!enactedAction) continue;  // Skip bills that haven't been enacted
+    Logger.log('  📄 ' + keyword + ': ' + (data.pagination ? data.pagination.total_items : data.results.length) + ' total results');
 
-      // Dedup check
-      var dedupKey = state + '|' + (bill.identifier || '');
-      if (existingBills[dedupKey]) continue;
+    // Process results from this page
+    var pageResults = processNewLawResults(data.results, existingBills);
+    newBills = newBills.concat(pageResults);
 
-      newBills.push({
-        state: state,
-        identifier: bill.identifier || '',
-        title: bill.title || '',
-        summary: getBillSummary(bill),
-        billStatus: formatBillStatus(enactedAction),
-        statusDate: enactedAction.date || bill.latest_action_date || '',
-        openstatesUrl: bill.openstates_url || ''
-      });
+    // Paginate if there are more pages (up to 3 pages per keyword to stay within budget)
+    var maxPages = Math.min(data.pagination ? data.pagination.max_page : 1, 3);
+    for (var page = 2; page <= maxPages; page++) {
+      Utilities.sleep(6000);  // Rate limit: 10/min
+      var pageData = fetchOpenStatesBills(keyword, apiKey, sinceDate, page);
+      requestCount++;
 
-      existingBills[dedupKey] = true;
-      stateEnacted++;
+      if (!pageData || !pageData.results || pageData.results.length === 0) break;
+
+      var moreResults = processNewLawResults(pageData.results, existingBills);
+      newBills = newBills.concat(moreResults);
     }
 
-    if (stateEnacted > 0) {
-      Logger.log('  📜 ' + state + ': ' + stateEnacted + ' enacted bills');
-    }
-
-    // Respect 1 request/second minimum spacing
-    Utilities.sleep(1000);
+    // Rate limit spacing between keywords
+    Utilities.sleep(6000);
   }
 
   Logger.log('🔍 Total new enacted bills found: ' + newBills.length + ' (used ' + requestCount + ' API requests)');
@@ -1198,6 +1215,41 @@ function scrapeNewLaws() {
   // Write to sheet
   writeNewLawsToSheet(newBills, sheet);
   Logger.log('✅ Wrote ' + newBills.length + ' enacted bills to New Laws 2026');
+}
+
+/**
+ * Process an array of bill results from the API.
+ * Filters for enacted bills, deduplicates, extracts state from jurisdiction.
+ * @param {Array} results - Array of bill objects from API response
+ * @param {Object} existingBills - Dedup map (modified in place)
+ * @returns {Array} Array of processed bill objects ready for sheet writing
+ */
+function processNewLawResults(results, existingBills) {
+  var bills = [];
+  for (var j = 0; j < results.length; j++) {
+    var bill = results[j];
+    var enactedAction = findEnactedAction(bill);
+    if (!enactedAction) continue;  // Skip bills that haven't been enacted
+
+    var state = getStateFromBill(bill);
+
+    // Dedup check
+    var dedupKey = state + '|' + (bill.identifier || '');
+    if (existingBills[dedupKey]) continue;
+
+    bills.push({
+      state: state,
+      identifier: bill.identifier || '',
+      title: bill.title || '',
+      summary: getBillSummary(bill),
+      billStatus: formatBillStatus(enactedAction),
+      statusDate: enactedAction.date || bill.latest_action_date || '',
+      openstatesUrl: bill.openstates_url || ''
+    });
+
+    existingBills[dedupKey] = true;
+  }
+  return bills;
 }
 
 /**
