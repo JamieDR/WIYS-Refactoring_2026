@@ -101,6 +101,15 @@ For services with structured APIs.
 | DOT Main | `https://www.transportation.gov/rss` | Page exists, exact XML URL needs confirmation |
 | FAA Press | RSS link exists on newsroom page | Exact URL needs extraction |
 
+#### RSS Feeds — State Tourism Boards (mostly no RSS)
+Only 4 of 50 states have confirmed RSS feeds. The rest need the Gmail newsletter approach.
+| Source | RSS URL |
+|--------|---------|
+| Visit Delaware | `https://visitdelaware.com/blog/rss` |
+| I Love NY | `https://www.iloveny.com/blog/rss/` |
+| Travel Kansas | `https://travelks.com/blog` (blog RSS) |
+| Indiana Dunes | `https://indianadunes.com/blog/rss` |
+
 #### Gmail Newsletter Approach (no RSS available)
 These sites don't offer RSS feeds. Subscribe to their newsletters and scrape from Gmail.
 - National Geographic Travel
@@ -110,7 +119,7 @@ These sites don't offer RSS feeds. Subscribe to their newsletters and scrape fro
 - TSA (email subscription only)
 - US Fish & Wildlife Service (email subscription only)
 - Brand USA (email subscription only)
-- Most state tourism boards (very few have RSS)
+- 46 of 50 state tourism boards (no RSS — use their email newsletters)
 
 #### APIs
 | Source | API | Notes |
