@@ -106,6 +106,32 @@ For services with structured APIs.
 | CDC Travel Notices | `https://wwwnc.cdc.gov/travel/rss/notices.xml` | Mostly international |
 | USDA Forest Service | `https://www.fs.usda.gov/rss/{region-code}` | Per-region (r4, r6, r10, etc.) |
 
+#### RSS Feeds — Major National Outlets (confirmed working)
+Use section-specific feeds (travel, US news) to pre-filter at the source level.
+
+**Travel feeds:**
+| Source | RSS URL |
+|--------|---------|
+| New York Times Travel | `https://rss.nytimes.com/services/xml/rss/nyt/Travel.xml` |
+| CNN Travel | `http://rss.cnn.com/rss/cnn_travel.rss` |
+| Fox News Travel | `https://moxie.foxnews.com/google-publisher/travel.xml` |
+| The Guardian Travel | `https://www.theguardian.com/travel/rss` |
+| AP News Travel | `https://apnews.com/hub/travel.rss` (unofficial) |
+
+**US News feeds (for policy, laws, state-level news):**
+| Source | RSS URL |
+|--------|---------|
+| CNN US | `http://rss.cnn.com/rss/cnn_us.rss` |
+| Fox News US | `https://moxie.foxnews.com/google-publisher/us.xml` |
+| NYT US | `https://rss.nytimes.com/services/xml/rss/nyt/US.xml` |
+| NPR National | `https://feeds.npr.org/1003/rss.xml` |
+| CBS News US | `https://www.cbsnews.com/latest/rss/us` |
+| Guardian US News | `https://www.theguardian.com/us-news/rss` |
+| Washington Post National | `https://feeds.washingtonpost.com/rss/national` |
+| The Hill Policy | `https://thehill.com/policy/feed/` |
+
+**Not available:** Reuters (discontinued RSS in 2020), USA Today (legacy Feedburner URLs, unreliable)
+
 #### RSS Feeds — Needs Verification
 | Source | RSS URL | Issue |
 |--------|---------|-------|
