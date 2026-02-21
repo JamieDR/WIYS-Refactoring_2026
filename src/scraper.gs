@@ -721,21 +721,16 @@ function writeArticlesToSheet(articles, sheet) {
   if (!articles || articles.length === 0) return;
 
   // Insert rows at top (below header) to make room for new articles.
-  // insertRowsAfter copies formatting from the reference row, so we insert
-  // after row 2 (first data row) to get data formatting, not header formatting.
-  // If the sheet only has a header (no row 2), fall back to row 1.
-  var lastRow = sheet.getLastRow();
-  var insertAfterRow = (lastRow >= 2) ? 2 : 1;
-  sheet.insertRowsAfter(insertAfterRow, articles.length);
+  // Always insert after row 1 (header) so old data shifts down and is preserved.
+  // insertRowsAfter copies formatting from the reference row — inserting after
+  // the header copies header formatting, so we clean it up afterward.
+  sheet.insertRowsAfter(1, articles.length);
 
-  // If we had to insert after the header row (fresh sheet), clear the
-  // header formatting that Google Sheets auto-copied onto the new rows.
-  if (insertAfterRow === 1) {
-    var newRange = sheet.getRange(2, 1, articles.length, SCRAPER.HEADERS.length);
-    newRange.setFontWeight('normal');
-    newRange.setBackground(null);
-    newRange.setFontColor('#000000');
-  }
+  // Clear header formatting that Google Sheets auto-copied onto the new rows.
+  var newRange = sheet.getRange(2, 1, articles.length, SCRAPER.HEADERS.length);
+  newRange.setFontWeight('normal');
+  newRange.setBackground(null);
+  newRange.setFontColor('#000000');
 
   // Build the data array
   var rows = [];
@@ -1855,4 +1850,119 @@ function removeScraperSchedule() {
   } catch (e) {
     // No UI context
   }
+}
+
+
+// ============================================================================
+// SCRAPER SPREADSHEET MENU
+// ============================================================================
+// The scraper menu lives on the scraper spreadsheet (not the main WIYS sheet).
+// Run setupScraperMenuTrigger() ONCE to install the onOpen trigger.
+
+/**
+ * Build the News Scraper menu on the scraper spreadsheet.
+ * Called by an installable onOpen trigger (see setupScraperMenuTrigger).
+ */
+function onOpenScraperSheet() {
+  var ui = SpreadsheetApp.getUi();
+  ui.createMenu('News Scraper')
+    .addItem('🔄 Run Scrapers Now', 'runScrapersManual')
+    .addItem('📜 Run New Laws Scraper Only', 'scrapeNewLawsManual')
+    .addItem('📰 Transfer Approved → Enhanced Drafter', 'transferScraperToED')
+    .addSeparator()
+    .addItem('🔴 Show Breaking Only', 'filterBreakingOnly')
+    .addItem('🟢 Show Relevant Only', 'filterRelevantOnly')
+    .addItem('🟡 Show Evergreen Only', 'filterEvergreenOnly')
+    .addItem('👁️ Show All (clear filter)', 'showAllArticles')
+    .addSeparator()
+    .addItem('🗑️ Delete Marked Rows', 'deleteMarkedRows')
+    .addItem('🔢 Update Unreviewed Counts', 'updateUnreviewedCounts')
+    .addItem('🧹 Clear All Entries (all 3 tabs)', 'clearAllScraperEntries')
+    .addSeparator()
+    .addItem('⚙️ Set Up Scraper Sheet', 'setupScraperSheet')
+    .addItem('🔑 Set Open States API Key', 'setOpenStatesApiKey')
+    .addItem('📅 Enable Auto-Scrape (every 4h)', 'setupScraperSchedule')
+    .addItem('⏹️ Disable Auto-Scrape', 'removeScraperSchedule')
+    .addToUi();
+}
+
+/**
+ * ONE-TIME SETUP: Install an onOpen trigger so the scraper spreadsheet
+ * gets the News Scraper menu automatically when opened.
+ * Run this once from the Apps Script editor. Safe to re-run (removes duplicates).
+ */
+function setupScraperMenuTrigger() {
+  // Remove any existing onOpenScraperSheet triggers to avoid duplicates
+  var triggers = ScriptApp.getProjectTriggers();
+  for (var i = 0; i < triggers.length; i++) {
+    if (triggers[i].getHandlerFunction() === 'onOpenScraperSheet') {
+      ScriptApp.deleteTrigger(triggers[i]);
+    }
+  }
+
+  // Create new installable onOpen trigger for the scraper spreadsheet
+  ScriptApp.newTrigger('onOpenScraperSheet')
+    .forSpreadsheet(SCRAPER.SPREADSHEET_ID)
+    .onOpen()
+    .create();
+
+  Logger.log('✅ Scraper menu trigger installed for spreadsheet: ' + SCRAPER.SPREADSHEET_ID);
+
+  try {
+    SpreadsheetApp.getUi().alert(
+      'Scraper Menu Installed',
+      'The News Scraper menu will now appear when you open the scraper spreadsheet.\n\n' +
+      'Close and reopen the scraper spreadsheet to see it.',
+      SpreadsheetApp.getUi().ButtonSet.OK
+    );
+  } catch (e) {
+    // No UI context — running from script editor
+  }
+}
+
+/**
+ * Clear all entries (rows 2+) from Breaking/Trending, Government/Policy, and New Laws tabs.
+ * Headers are preserved. Use this to reset the scraper tabs for a fresh start.
+ */
+function clearAllScraperEntries() {
+  var ui = SpreadsheetApp.getUi();
+  var confirm = ui.alert(
+    'Clear All Scraper Entries',
+    'This will delete ALL entries from:\n' +
+    '• Breaking / Trending\n' +
+    '• Government / Policy\n' +
+    '• New Laws 2026\n\n' +
+    'Headers will be kept. This cannot be undone.\n\nContinue?',
+    ui.ButtonSet.YES_NO
+  );
+
+  if (confirm !== ui.Button.YES) return;
+
+  var ss = SpreadsheetApp.openById(SCRAPER.SPREADSHEET_ID);
+  var allSheets = ss.getSheets();
+  var tabNames = Object.values(SCRAPER.TABS);
+  var cleared = [];
+
+  for (var t = 0; t < tabNames.length; t++) {
+    var baseName = tabNames[t];
+    for (var s = 0; s < allSheets.length; s++) {
+      var sheetName = allSheets[s].getName();
+      // Match base name with or without count suffix (e.g. "Breaking / Trending (12)")
+      if (sheetName === baseName || sheetName.indexOf(baseName) === 0) {
+        var sheet = allSheets[s];
+        var lastRow = sheet.getLastRow();
+        if (lastRow >= 2) {
+          sheet.deleteRows(2, lastRow - 1);
+        }
+        // Reset tab name (remove count suffix)
+        if (sheet.getName() !== baseName) {
+          sheet.setName(baseName);
+        }
+        cleared.push(baseName);
+        break;
+      }
+    }
+  }
+
+  ui.alert('Cleared', 'Entries removed from: ' + cleared.join(', '), ui.ButtonSet.OK);
 }

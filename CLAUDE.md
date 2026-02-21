@@ -69,6 +69,13 @@ Every automation in this system exists to reduce manual work. The goal for any u
 
 When building or modifying features, always ask: "How many clicks does this take?" If the answer is more than 4, find a way to reduce it — batch operations, smart defaults, auto-detection, or combining steps. The spreadsheet is the UI; every menu item, every button, every triggered function should do as much as possible per click.
 
+## Tool Usage Limits (Prevent Timeouts)
+- **Commit after every file edit.** Don't batch commits at the end — if the session times out, uncommitted work is lost.
+- **Maximum 3 files changed per session.** If a task touches more files, split it across sessions/branches.
+- **Skip startup reads when task context is provided.** If Jamie says what to work on, go straight to it — don't re-read every log file.
+- **Parallel tool calls.** Read multiple files in one round instead of sequentially.
+- **Jamie: point to specific functions/lines** when starting a task, so fewer exploratory searches are needed.
+
 ## Key Rules
 - NEVER change functionality during refactoring — behavior must stay identical
 - NEVER push to main without Jamie's approval
