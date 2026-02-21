@@ -28,7 +28,9 @@ the "Transfer Approved" step (one-way push).
 ### Sort Order
 All tabs: **newest first** (reverse chronological). Fresh stories at the top.
 
-### Column Layout (shared across all tabs)
+### Column Layout
+
+**Standard layout (most tabs):**
 
 | Column | Content |
 |--------|---------|
@@ -38,11 +40,25 @@ All tabs: **newest first** (reverse chronological). Fresh stories at the top.
 | D | Summary (Claude Haiku-generated — who, what, when, where) |
 | E | Status (dropdown: blank / Approved / Delete) |
 
-### Tabs (10 total)
+**Breaking / Trending tab (adds outlet count):**
+
+| Column | Content |
+|--------|---------|
+| A | Date |
+| B | State |
+| C | Title (hyperlinked, black font) |
+| D | Summary |
+| E | Outlets (count — e.g., "1" for single source, "6" for widely covered) |
+| F | Status |
+
+Duplicate stories across outlets are merged into one row. The Outlets column
+shows how many sources are reporting it — high numbers = trending.
+
+### Tabs (11 total)
 
 | # | Tab Name | Sources | What you're scanning for |
 |---|----------|---------|------------------------|
-| 1 | **Breaking News** | AP, Reuters, CNN, BBC, NBC, CBS, ABC, The Telegraph, Washington Examiner | Big national stories with state angles |
+| 1 | **Breaking / Trending** | AP, Reuters, CNN, BBC, NBC, CBS, ABC, The Telegraph, Washington Examiner | Big national stories; outlet count shows what's trending |
 | 2 | **Analysis / Deep Dives** | Vox, The Atlantic, Time, The Independent, The Guardian, HuffPost | Trend pieces, explainers, opinion that sparks article ideas |
 | 3 | **Business & Retail** | Business Insider, Fortune, local biz journals, retail/chain news | Store openings, closures, expansions, layoffs, "X coming to your state" |
 | 4 | **Money & Taxes** | IRS.gov, USA Today Money, gov economic data | Tax changes, cost of living, economic impact on real people — NOT stocks/markets |
@@ -52,6 +68,7 @@ All tabs: **newest first** (reverse chronological). Fresh stories at the top.
 | 8 | **Travel News** | TheTravel, outlet travel sections | Timely — openings, closures, advisories |
 | 9 | **Travel Features** | Condé Nast Traveler, AFAR, Atlas Obscura, Smithsonian, BBC Travel, Islands | Evergreen destination inspiration |
 | 10 | **New Laws 2026** | LegiScan, legislature feeds | Bills, acts, executive orders by state |
+| 11 | **Social Buzz** | Reddit (state subreddits, r/news, r/travel), Google Trends (by state) | What real people are talking about right now |
 
 ### Summary Generation
 - **Primary:** Claude Haiku generates a 1-2 sentence summary (who, what, when, where) from article content
