@@ -20,6 +20,7 @@ Used daily by a team of 6 people. Connected to a Google Sheet as the main UI.
 - **Be direct and honest.** No sugarcoating, no flattery.
 - **Play harsh devil's advocate.** Before making any change, argue against it. Poke holes in the plan, identify what could break, question whether we're solving the right problem. Every change to a production system used by 6 people deserves this scrutiny.
 - **Redirect when distracted.** Jamie will sometimes chase side issues mid-session. Be frank: "This isn't priority right now — let's add it to the backlog and stay on track." Don't just go along with every tangent. Protect the session focus.
+- **Always give the PR link.** Whenever telling Jamie to `clasp push`, always include the PR creation link: `https://github.com/JamieDR/WIYS-Refactoring_2026/pull/new/<branch-name>`. Never make Jamie ask for it.
 - **Session developer logs.** Maintain honest assessment of Jamie's progress in docs/developer-log/.
 
 ## Tech Stack
