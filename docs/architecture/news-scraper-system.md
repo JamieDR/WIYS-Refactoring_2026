@@ -19,51 +19,47 @@ Google Sheet (triage by status column)
 Batch Transfer → Content Pipeline
 ```
 
-## Sheet Structure
+## Spreadsheet Structure
 
-All tabs live in the main WIYS spreadsheet (ID: 1gQmKqIDr07tSaqoDY_R13fQcO3YWB6HgLSEmpTsPYb8).
+**Dedicated "WIYS Scraper" spreadsheet** — separate from the main WIYS production sheet.
+Keeps scraper volume out of the team's daily workspace. Connected to main sheet only at
+the "Transfer Approved" step (one-way push).
 
-### Tab 1: News Scraper
-Sources: local newspapers, national outlets (CNN, NYT, NPR, etc.), government feeds (BLM, NPS, FHWA, etc.)
-Content: state policy, federal policy impact, national parks, economics, local current news
+### Sort Order
+All tabs: **newest first** (reverse chronological). Fresh stories at the top.
 
-| Column | Content |
-|--------|---------|
-| A | Status (dropdown: blank / Approved / Delete) |
-| B | State |
-| C | Source |
-| D | Title |
-| E | URL |
-| F | Summary |
-
-### Tab 2: Travel Publications
-Sources: Condé Nast Traveler, AFAR, Atlas Obscura, Smithsonian Travel, Islands, TheTravel, BBC Travel
-Content: destination features, travel news, place-based stories
+### Column Layout (shared across all tabs)
 
 | Column | Content |
 |--------|---------|
-| A | Status (dropdown: blank / Approved / Delete) |
+| A | Date |
 | B | State |
-| C | Source |
-| D | Title |
-| E | URL |
-| F | Summary |
+| C | Title (hyperlinked to article URL, black font — not blue) |
+| D | Summary (Claude Haiku-generated — who, what, when, where) |
+| E | Status (dropdown: blank / Approved / Delete) |
 
-### Tab 3: New Laws 2026
-Sources: LegiScan API, state legislature feeds, news outlet law/policy coverage
-Content: legislation, bills, acts, executive orders — by state
+### Tabs (10 total)
 
-| Column | Content |
-|--------|---------|
-| A | Status (dropdown: blank / Approved / Delete) |
-| B | State |
-| C | Law/Bill Name |
-| D | Type (Law / Bill / Executive Order / Regulation) |
-| E | URL |
-| F | Summary |
+| # | Tab Name | Sources | What you're scanning for |
+|---|----------|---------|------------------------|
+| 1 | **Breaking News** | AP, Reuters, CNN, BBC, NBC, CBS, ABC, The Telegraph, Washington Examiner | Big national stories with state angles |
+| 2 | **Analysis / Deep Dives** | Vox, The Atlantic, Time, The Independent, The Guardian, HuffPost | Trend pieces, explainers, opinion that sparks article ideas |
+| 3 | **Business & Retail** | Business Insider, Fortune, local biz journals, retail/chain news | Store openings, closures, expansions, layoffs, "X coming to your state" |
+| 4 | **Money & Taxes** | IRS.gov, USA Today Money, gov economic data | Tax changes, cost of living, economic impact on real people — NOT stocks/markets |
+| 5 | **Lifestyle / Culture** | People, USA Today, NY Post, Daily Mail | Human interest, weird news, fun state stories |
+| 6 | **Government / Policy** | BLM, NPS, FHWA, USDA, EPA, state gov feeds | Federal agency actions that affect specific states |
+| 7 | **Local News** | SFGate + others per state | Hyperlocal stories |
+| 8 | **Travel News** | TheTravel, outlet travel sections | Timely — openings, closures, advisories |
+| 9 | **Travel Features** | Condé Nast Traveler, AFAR, Atlas Obscura, Smithsonian, BBC Travel, Islands | Evergreen destination inspiration |
+| 10 | **New Laws 2026** | LegiScan, legislature feeds | Bills, acts, executive orders by state |
+
+### Summary Generation
+- **Primary:** Claude Haiku generates a 1-2 sentence summary (who, what, when, where) from article content
+- **Fallback:** Publisher snippet when full article text can't be fetched (paywalls, etc.)
+- **Estimated cost:** ~$1-2/day for all tabs combined
 
 ### Batch Operations (menu items, shared across all tabs)
-- **Transfer Approved** — moves all "Approved" rows to destination sheet (TBD), then clears them
+- **Transfer Approved** — moves all "Approved" rows to destination sheet in main WIYS spreadsheet, then clears them
 - **Delete Marked** — removes all "Delete" rows in one click
 
 ---
