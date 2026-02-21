@@ -21,7 +21,9 @@ Batch Transfer → Content Pipeline
 
 ## Sheet Structure
 
-### News Scraper Sheet
+### News Scraper Tab (new tab in main WIYS spreadsheet)
+Lives in the same Google Sheet the team already works in (ID: 1gQmKqIDr07tSaqoDY_R13fQcO3YWB6HgLSEmpTsPYb8).
+
 | Column | Content |
 |--------|---------|
 | A | Status (dropdown: blank / Approved / Delete) |
@@ -32,7 +34,7 @@ Batch Transfer → Content Pipeline
 | F | Summary |
 
 ### Batch Operations (menu items)
-- **Transfer Approved** — moves all "Approved" rows to destination sheet, then clears them
+- **Transfer Approved** — moves all "Approved" rows to destination sheet (TBD), then clears them
 - **Delete Marked** — removes all "Delete" rows in one click
 
 ---
@@ -41,10 +43,10 @@ Batch Transfer → Content Pipeline
 
 ### 1. RSS Feeds (direct)
 For sites that publish RSS. Parsed with `XmlService` in Apps Script.
-- Travel publications
-- Federal government agencies
-- State tourism boards
-- Local news outlets (per state)
+- Travel publications (Condé Nast Traveler, Atlas Obscura, AFAR, etc.)
+- Major national news outlets (Reuters, AP, NPR, etc.)
+- Federal government agencies (NPS, BLM, Forest Service, etc.)
+- Local news outlets — 1 major newspaper per state (original reporting, not aggregators)
 
 ### 2. Gmail Newsletters
 For sites without RSS. Parsed with `GmailApp` in Apps Script.
@@ -310,7 +312,7 @@ Both contained hardcoded API keys (now exposed on GitHub — need rotation).
 ---
 
 ## Open Questions
-- [ ] Where do "Approved" articles transfer to? (Article Status Tracker? Staging sheet?)
+- [ ] Where do "Approved" articles transfer to? (Which tab in the main spreadsheet?)
 - [x] RSS feed availability research results (complete — Feb 2026)
 - [ ] LegiScan API — free tier limits? Cost?
 - [ ] Should deprecated scraper files be removed from repo?
