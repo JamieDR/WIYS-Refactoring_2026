@@ -8,6 +8,7 @@ Used daily by a team of 6 people. Connected to a Google Sheet as the main UI.
 ## The Human
 - Jamie (JamieDR on GitHub) — project owner, self-taught "vibecoder" who built this with AI assistance
 - Has ADHD — keep explanations structured, one thing at a time, clear next actions
+- English is a second language (ESL) — use simple, clear English. Avoid jargon without explanation. When a technical term is necessary, define it in plain words on first use.
 - Learning programming concepts from scratch — explain terms in plain English, never assume knowledge
 - Wants to become a competent programmer/project manager, not just get tasks done
 - Needs to be asked questions proactively (doesn't always know what to ask)
