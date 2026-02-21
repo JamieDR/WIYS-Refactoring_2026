@@ -1854,70 +1854,19 @@ function removeScraperSchedule() {
 
 
 // ============================================================================
-// SCRAPER SPREADSHEET MENU
+// SCRAPER SPREADSHEET HELPERS
 // ============================================================================
-// The scraper menu lives on the scraper spreadsheet (not the main WIYS sheet).
-// Run setupScraperMenuTrigger() ONCE to install the onOpen trigger.
 
 /**
- * Build the News Scraper menu on the scraper spreadsheet.
- * Called by an installable onOpen trigger (see setupScraperMenuTrigger).
+ * Open the scraper spreadsheet in a new browser tab.
+ * Called from the News Scraper menu on the main spreadsheet.
  */
-function onOpenScraperSheet() {
-  var ui = SpreadsheetApp.getUi();
-  ui.createMenu('News Scraper')
-    .addItem('🔄 Run Scrapers Now', 'runScrapersManual')
-    .addItem('📜 Run New Laws Scraper Only', 'scrapeNewLawsManual')
-    .addItem('📰 Transfer Approved → Enhanced Drafter', 'transferScraperToED')
-    .addSeparator()
-    .addItem('🔴 Show Breaking Only', 'filterBreakingOnly')
-    .addItem('🟢 Show Relevant Only', 'filterRelevantOnly')
-    .addItem('🟡 Show Evergreen Only', 'filterEvergreenOnly')
-    .addItem('👁️ Show All (clear filter)', 'showAllArticles')
-    .addSeparator()
-    .addItem('🗑️ Delete Marked Rows', 'deleteMarkedRows')
-    .addItem('🔢 Update Unreviewed Counts', 'updateUnreviewedCounts')
-    .addItem('🧹 Clear All Entries (all 3 tabs)', 'clearAllScraperEntries')
-    .addSeparator()
-    .addItem('⚙️ Set Up Scraper Sheet', 'setupScraperSheet')
-    .addItem('🔑 Set Open States API Key', 'setOpenStatesApiKey')
-    .addItem('📅 Enable Auto-Scrape (every 4h)', 'setupScraperSchedule')
-    .addItem('⏹️ Disable Auto-Scrape', 'removeScraperSchedule')
-    .addToUi();
-}
-
-/**
- * ONE-TIME SETUP: Install an onOpen trigger so the scraper spreadsheet
- * gets the News Scraper menu automatically when opened.
- * Run this once from the Apps Script editor. Safe to re-run (removes duplicates).
- */
-function setupScraperMenuTrigger() {
-  // Remove any existing onOpenScraperSheet triggers to avoid duplicates
-  var triggers = ScriptApp.getProjectTriggers();
-  for (var i = 0; i < triggers.length; i++) {
-    if (triggers[i].getHandlerFunction() === 'onOpenScraperSheet') {
-      ScriptApp.deleteTrigger(triggers[i]);
-    }
-  }
-
-  // Create new installable onOpen trigger for the scraper spreadsheet
-  ScriptApp.newTrigger('onOpenScraperSheet')
-    .forSpreadsheet(SCRAPER.SPREADSHEET_ID)
-    .onOpen()
-    .create();
-
-  Logger.log('✅ Scraper menu trigger installed for spreadsheet: ' + SCRAPER.SPREADSHEET_ID);
-
-  try {
-    SpreadsheetApp.getUi().alert(
-      'Scraper Menu Installed',
-      'The News Scraper menu will now appear when you open the scraper spreadsheet.\n\n' +
-      'Close and reopen the scraper spreadsheet to see it.',
-      SpreadsheetApp.getUi().ButtonSet.OK
-    );
-  } catch (e) {
-    // No UI context — running from script editor
-  }
+function openScraperSpreadsheet() {
+  var url = 'https://docs.google.com/spreadsheets/d/' + SCRAPER.SPREADSHEET_ID + '/edit';
+  var html = HtmlService.createHtmlOutput(
+    '<script>window.open("' + url + '", "_blank");google.script.host.close();</script>'
+  ).setWidth(1).setHeight(1);
+  SpreadsheetApp.getUi().showModalDialog(html, 'Opening scraper spreadsheet…');
 }
 
 /**

@@ -9213,12 +9213,29 @@ function onOpen() {
     .addItem('🔗 Open Selected URLs in Tabs', 'openSelectedUrls')
     .addToUi();
 
-  // News Scraper menu moved to the scraper spreadsheet — see onOpenScraperSheet() in scraper.gs
-  // Run setupScraperMenuTrigger() once to enable it.
-  // Legacy Travel News items kept here since they operate on the main spreadsheet.
-  ui.createMenu('      **Travel News')
+  ui.createMenu('      **News Scraper')
+    .addItem('🌐 Open Scraper Spreadsheet', 'openScraperSpreadsheet')
+    .addSeparator()
+    .addItem('🔄 Run Scrapers Now', 'runScrapersManual')
+    .addItem('📜 Run New Laws Scraper Only', 'scrapeNewLawsManual')
+    .addItem('📰 Transfer Approved → Enhanced Drafter', 'transferScraperToED')
+    .addSeparator()
+    .addItem('🔴 Show Breaking Only', 'filterBreakingOnly')
+    .addItem('🟢 Show Relevant Only', 'filterRelevantOnly')
+    .addItem('🟡 Show Evergreen Only', 'filterEvergreenOnly')
+    .addItem('👁️ Show All (clear filter)', 'showAllArticles')
+    .addSeparator()
+    .addItem('🗑️ Delete Marked Rows', 'deleteMarkedRows')
+    .addItem('🔢 Update Unreviewed Counts', 'updateUnreviewedCounts')
+    .addItem('🧹 Clear All Entries (all 3 tabs)', 'clearAllScraperEntries')
+    .addSeparator()
     .addItem('🧹 Sort Travel News (newest first)', 'sortTravelNewsTracker')
     .addItem('🇬🇪 Remove Georgia (country) rows', 'cleanupGeorgiaFromTravelNews')
+    .addSeparator()
+    .addItem('⚙️ Set Up Scraper Sheet', 'setupScraperSheet')
+    .addItem('🔑 Set Open States API Key', 'setOpenStatesApiKey')
+    .addItem('📅 Enable Auto-Scrape (every 4h)', 'setupScraperSchedule')
+    .addItem('⏹️ Disable Auto-Scrape', 'removeScraperSchedule')
     .addToUi();
 
 
