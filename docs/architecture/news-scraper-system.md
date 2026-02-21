@@ -53,6 +53,9 @@ All tabs: **newest first** (reverse chronological). Fresh stories at the top.
 
 Duplicate stories across outlets are merged into one row. The Outlets column
 shows how many sources are reporting it — high numbers = trending.
+**Trending threshold: 3+ major outlets** reporting the same story. All sources
+feeding this tab (AP, Reuters, CNN, BBC, NBC, CBS, ABC, Telegraph, Washington
+Examiner) qualify as major, so any 3+ within this tab = trending.
 
 ### Tabs (11 total)
 
