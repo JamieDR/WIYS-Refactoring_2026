@@ -1233,8 +1233,8 @@ function scrapeNewLaws() {
   }
   Logger.log('📋 ' + Object.keys(existingBills).length + ' existing bills in New Laws tab');
 
-  // Search from 2025 to catch laws signed in 2025 that take effect in 2026
-  var sinceDate = '2025-01-01';
+  // Only fetch bills with actions in 2026
+  var sinceDate = '2026-01-01';
   var newBills = [];
   var requestCount = 0;
 
@@ -1336,6 +1336,10 @@ function processNewLawResults(results, existingBills) {
     var bill = results[j];
     var enactedAction = findEnactedAction(bill);
     if (!enactedAction) continue;  // Skip bills that haven't been enacted
+
+    // Only keep bills enacted in 2026
+    var enactedDate = enactedAction.date || bill.latest_action_date || '';
+    if (enactedDate.indexOf('2026') !== 0) continue;
 
     var state = getStateFromBill(bill);
 
