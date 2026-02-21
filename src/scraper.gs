@@ -588,36 +588,29 @@ function callHaikuForBatch(batch, apiKey) {
 // ============================================================================
 
 /**
- * Set up the scraper spreadsheet from scratch.
- * Creates tabs, headers, formatting, dropdowns. Run ONCE.
+ * Set up the scraper spreadsheet tabs.
+ * Creates or resets only the scraper tabs — leaves all other tabs untouched.
+ * Safe to re-run: finds existing scraper tabs by name, or creates new ones.
  */
 function setupScraperSheet() {
   var ss = SpreadsheetApp.openById(SCRAPER.SPREADSHEET_ID);
   var tabNames = [SCRAPER.TABS.BREAKING_TRENDING, SCRAPER.TABS.GOVERNMENT_POLICY, SCRAPER.TABS.NEW_LAWS];
 
-  // Create tabs (or rename existing ones)
-  var existingSheets = ss.getSheets();
   for (var t = 0; t < tabNames.length; t++) {
-    var sheet;
-    if (t < existingSheets.length) {
-      sheet = existingSheets[t];
-      sheet.setName(tabNames[t]);
+    var sheet = ss.getSheetByName(tabNames[t]);
+    if (sheet) {
       sheet.clear();
     } else {
       sheet = ss.insertSheet(tabNames[t]);
     }
-    formatScraperTab(sheet);
-  }
-
-  // Delete extra sheets beyond what we need
-  var allSheets = ss.getSheets();
-  for (var d = allSheets.length - 1; d >= tabNames.length; d--) {
-    if (allSheets.length > 1) {
-      ss.deleteSheet(allSheets[d]);
+    if (tabNames[t] === SCRAPER.TABS.NEW_LAWS) {
+      formatNewLawsTab(sheet);
+    } else {
+      formatScraperTab(sheet);
     }
   }
 
-  Logger.log('✅ Scraper spreadsheet set up with ' + tabNames.length + ' tabs');
+  Logger.log('✅ Scraper tabs set up: ' + tabNames.join(', ') + ' (other tabs untouched)');
 }
 
 /**
@@ -1367,19 +1360,29 @@ function formatNewLawsTab(sheet) {
  * After running, the key is stored securely and not visible in the code.
  */
 function setOpenStatesApiKey() {
-  var ui = SpreadsheetApp.getUi();
-  var result = ui.prompt(
-    'Open States API Key',
-    'Paste your Open States API key:',
-    ui.ButtonSet.OK_CANCEL
-  );
+  try {
+    var ui = SpreadsheetApp.getUi();
+    var result = ui.prompt(
+      'Open States API Key',
+      'Paste your Open States API key:',
+      ui.ButtonSet.OK_CANCEL
+    );
 
-  if (result.getSelectedButton() === ui.Button.OK) {
-    var key = result.getResponseText().trim();
-    if (key) {
-      PropertiesService.getScriptProperties().setProperty('OPENSTATES_API_KEY', key);
-      ui.alert('Done', 'Open States API key saved to Script Properties.', ui.ButtonSet.OK);
+    if (result.getSelectedButton() === ui.Button.OK) {
+      var key = result.getResponseText().trim();
+      if (key) {
+        PropertiesService.getScriptProperties().setProperty('OPENSTATES_API_KEY', key);
+        ui.alert('Done', 'Open States API key saved to Script Properties.', ui.ButtonSet.OK);
+      }
     }
+  } catch (e) {
+    // No UI context (ran from script editor instead of spreadsheet).
+    // Fall back to Logger instructions.
+    Logger.log('Cannot show prompt — no spreadsheet UI context.');
+    Logger.log('To set the key manually:');
+    Logger.log('  1. Go to Project Settings (gear icon) > Script Properties');
+    Logger.log('  2. Add property: OPENSTATES_API_KEY = your_key_here');
+    Logger.log('Or run this function from the spreadsheet menu instead of the script editor.');
   }
 }
 
