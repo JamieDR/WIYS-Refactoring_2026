@@ -3,14 +3,14 @@
  * NEWS SCRAPER SYSTEM
  * ============================================================================
  * Automated topic-finding pipeline for wheninyourstate.com.
- * Fetches RSS feeds, filters by keyword blacklist, generates Haiku summaries
+ * Fetches RSS feeds, filters by keyword blacklist, generates Claude summaries
  * with time sensitivity scoring (🔴🟢🟡), and writes results to a dedicated scraper
  * spreadsheet for Jamie to triage.
  *
  * Architecture: docs/architecture/news-scraper-system.md
  *
  * Flow:
- *   RSS Feeds → Keyword Blacklist Filter → Deduplication → Claude Haiku Summary
+ *   RSS Feeds → Keyword Blacklist Filter → Deduplication → Claude Sonnet Summary
  *   → Scraper Spreadsheet → Jamie reviews → Transfer Approved → Enhanced Drafter
  * ============================================================================
  */
@@ -77,28 +77,20 @@ var SCRAPER = {
       { name: 'The Hill', url: 'https://thehill.com/policy/feed/' }
     ],
     'Government / Policy': [
-      { name: 'BLM National', url: 'https://www.blm.gov/press-release/national-office/rss' },
-      { name: 'BLM Arizona', url: 'https://www.blm.gov/press-release/arizona/rss' },
-      { name: 'BLM California', url: 'https://www.blm.gov/press-release/california/rss' },
-      { name: 'BLM Colorado', url: 'https://www.blm.gov/press-release/colorado/rss' },
-      { name: 'BLM Idaho', url: 'https://www.blm.gov/press-release/idaho/rss' },
-      { name: 'BLM Montana', url: 'https://www.blm.gov/press-release/montana-dakotas/rss' },
-      { name: 'BLM Nevada', url: 'https://www.blm.gov/press-release/nevada/rss' },
-      { name: 'BLM New Mexico', url: 'https://www.blm.gov/press-release/new-mexico/rss' },
-      { name: 'BLM Oregon-WA', url: 'https://www.blm.gov/press-release/oregon-washington/rss' },
-      { name: 'BLM Utah', url: 'https://www.blm.gov/press-release/utah/rss' },
-      { name: 'BLM Wyoming', url: 'https://www.blm.gov/press-release/wyoming/rss' },
-      { name: 'BLM Alaska', url: 'https://www.blm.gov/press-release/alaska/rss' },
-      { name: 'BLM Eastern', url: 'https://www.blm.gov/press-release/eastern-states/rss' },
-      { name: 'CDC Travel', url: 'https://wwwnc.cdc.gov/travel/rss/notices.xml' }
+      { name: 'Google Gov/Policy', url: 'https://news.google.com/rss/search?q=US+state+government+policy+law&hl=en-US&gl=US&ceid=US:en' },
+      { name: 'CDC Travel', url: 'https://wwwnc.cdc.gov/travel/rss/notices.xml' },
+      { name: 'NPS News', url: 'https://www.nps.gov/feeds/getNewsRSS.htm' }
     ],
     'New Laws 2026': [
       // Powered by Open States API v3 (not RSS) — see scrapeNewLaws() below
     ]
   },
 
-  // Number of articles per Haiku API call (batching for cost efficiency)
-  HAIKU_BATCH_SIZE: 10,
+  // Number of articles per Claude API call (batching for cost efficiency)
+  SUMMARY_BATCH_SIZE: 10,
+
+  // Maximum age (in days) for articles — anything older is discarded
+  MAX_AGE_DAYS: 30,
 
   // Maximum articles to keep per tab (oldest get pushed down, not deleted)
   MAX_ARTICLES_PER_TAB: 500
@@ -175,6 +167,14 @@ var SCRAPER_BLACKLIST = {
     'weather warning', 'tornado watch', 'flood warning', 'winter storm warning',
     'power outage', 'evacuation order', 'boil water advisory',
     'recall notice'
+  ],
+  GOVERNMENT_NOISE: [
+    'temporary closure', 'temporary road', 'temporary restriction',
+    'prescribed fire', 'prescribed burn', 'controlled burn',
+    'fire treatment', 'burn treatment', 'pile burning', 'broadcast burn',
+    'fuels management', 'fuels reduction', 'vegetation management',
+    'public comment period', 'comment period extended',
+    'scoping notice', 'environmental assessment'
   ]
 };
 
@@ -475,16 +475,16 @@ function getColLetter(colNum) {
 
 
 // ============================================================================
-// CLAUDE HAIKU SUMMARIES + SCORING
+// CLAUDE SUMMARIES + SCORING
 // ============================================================================
 
 /**
- * Generate summaries and urgency scores for a batch of articles using Claude Haiku.
- * Processes articles in batches of SCRAPER.HAIKU_BATCH_SIZE.
+ * Generate summaries and urgency scores for a batch of articles using Claude Sonnet.
+ * Processes articles in batches of SCRAPER.SUMMARY_BATCH_SIZE.
  * @param {Array} articles - Array of article objects
  * @returns {Array} Same articles with .summary and .freshness populated
  */
-function generateHaikuSummaries(articles) {
+function generateSummaries(articles) {
   if (!articles || articles.length === 0) return articles;
 
   var apiKey = PropertiesService.getScriptProperties().getProperty('CLAUDE_API_KEY');
@@ -497,12 +497,12 @@ function generateHaikuSummaries(articles) {
     return articles;
   }
 
-  var batchSize = SCRAPER.HAIKU_BATCH_SIZE;
+  var batchSize = SCRAPER.SUMMARY_BATCH_SIZE;
   for (var start = 0; start < articles.length; start += batchSize) {
     var end = Math.min(start + batchSize, articles.length);
     var batch = articles.slice(start, end);
 
-    var results = callHaikuForBatch(batch, apiKey);
+    var results = callClaudeForBatch(batch, apiKey);
     for (var j = 0; j < batch.length; j++) {
       if (results && results[j]) {
         articles[start + j].summary = results[j].summary || articles[start + j].description;
@@ -518,21 +518,25 @@ function generateHaikuSummaries(articles) {
 }
 
 /**
- * Call Claude Haiku API for a batch of articles.
- * @param {Array} batch - Array of article objects (max HAIKU_BATCH_SIZE)
+ * Call Claude Sonnet API for a batch of articles.
+ * @param {Array} batch - Array of article objects (max SUMMARY_BATCH_SIZE)
  * @param {string} apiKey - Anthropic API key
  * @returns {Array} Array of {summary, freshness} objects
  */
-function callHaikuForBatch(batch, apiKey) {
+function callClaudeForBatch(batch, apiKey) {
   var articleList = '';
   for (var i = 0; i < batch.length; i++) {
     articleList += (i + 1) + '. Title: ' + batch[i].title + '\n';
-    articleList += '   Snippet: ' + (batch[i].description || 'N/A').substring(0, 300) + '\n\n';
+    articleList += '   Source: ' + (batch[i].source || 'Unknown') + '\n';
+    articleList += '   Snippet: ' + (batch[i].description || 'N/A').substring(0, 500) + '\n\n';
   }
 
-  var prompt = 'You are a news triage assistant for a US state-focused lifestyle news site.\n\n' +
+  var prompt = 'You are a news triage assistant for wheninyourstate.com, a US state-focused lifestyle news site.\n\n' +
     'For each article below, provide:\n' +
-    '1. A 1-2 sentence factual summary (who, what, when, where). No opinions.\n' +
+    '1. A 1-2 sentence factual summary. ALWAYS include the specific state, city, or location mentioned in the title or snippet. ' +
+    'NEVER write "unspecified state" or "unspecified location" — extract the location from context. ' +
+    'If the source name contains a state (e.g. "BLM Arizona"), use that. ' +
+    'If the location truly cannot be determined, say "Location not identified" and focus on the facts.\n' +
     '2. A time sensitivity score (use the exact emoji):\n' +
     '   - "🔴" = Breaking news — time-sensitive, should publish ASAP\n' +
     '   - "🟢" = Relevant — good content but no rush, can wait days\n' +
@@ -552,7 +556,7 @@ function callHaikuForBatch(batch, apiKey) {
         'anthropic-version': '2023-06-01'
       },
       payload: JSON.stringify({
-        model: 'claude-haiku-4-5-20251001',
+        model: 'claude-sonnet-4-5-20241022',
         max_tokens: 2000,
         messages: [{ role: 'user', content: prompt }]
       }),
@@ -561,7 +565,7 @@ function callHaikuForBatch(batch, apiKey) {
 
     var code = response.getResponseCode();
     if (code !== 200) {
-      Logger.log('⚠️ Haiku API error: HTTP ' + code + ' — ' + response.getContentText().substring(0, 200));
+      Logger.log('⚠️ Claude API error: HTTP ' + code + ' — ' + response.getContentText().substring(0, 200));
       return null;
     }
 
@@ -571,13 +575,13 @@ function callHaikuForBatch(batch, apiKey) {
     // Extract JSON array from response (handle possible markdown wrapping)
     var jsonMatch = text.match(/\[[\s\S]*\]/);
     if (!jsonMatch) {
-      Logger.log('⚠️ Haiku response not valid JSON: ' + text.substring(0, 200));
+      Logger.log('⚠️ Claude response not valid JSON: ' + text.substring(0, 200));
       return null;
     }
 
     return JSON.parse(jsonMatch[0]);
   } catch (e) {
-    Logger.log('❌ Haiku API error: ' + e.message);
+    Logger.log('❌ Claude API error: ' + e.message);
     return null;
   }
 }
@@ -643,7 +647,7 @@ function formatScraperTab(sheet) {
   // Freeze header row
   sheet.setFrozenRows(1);
 
-  // Time Sensitivity dropdown (rows 2-500) — pre-filled by Haiku but editable
+  // Time Sensitivity dropdown (rows 2-500) — pre-filled by Claude but editable
   var freshnessRule = SpreadsheetApp.newDataValidation()
     .requireValueInList(['\uD83D\uDD34', '\uD83D\uDFE2', '\uD83D\uDFE1'], true)
     .setAllowInvalid(false)
@@ -846,12 +850,95 @@ function updateUnreviewedCounts() {
 
 
 // ============================================================================
+// FILTER VIEWS — Show only articles by urgency level
+// ============================================================================
+
+/**
+ * Filter the active scraper tab to show only 🔴 (breaking) articles.
+ * Uses Google Sheets' built-in filter. Call again or use showAllArticles() to reset.
+ */
+function filterBreakingOnly() {
+  filterByFreshness_('🔴');
+}
+
+/**
+ * Filter the active scraper tab to show only 🟢 (relevant) articles.
+ */
+function filterRelevantOnly() {
+  filterByFreshness_('🟢');
+}
+
+/**
+ * Filter the active scraper tab to show only 🟡 (evergreen) articles.
+ */
+function filterEvergreenOnly() {
+  filterByFreshness_('🟡');
+}
+
+/**
+ * Remove all filters — show every article in the active scraper tab.
+ */
+function showAllArticles() {
+  var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+  var filter = sheet.getFilter();
+  if (filter) {
+    filter.remove();
+  }
+}
+
+/**
+ * Internal: apply a filter on the Freshness column for the given emoji value.
+ * @param {string} emoji - The freshness emoji to filter by (🔴, 🟢, or 🟡)
+ * @private
+ */
+function filterByFreshness_(emoji) {
+  var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+
+  // Determine which column layout this sheet uses
+  var headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+  var freshnessCol = -1;
+  for (var i = 0; i < headers.length; i++) {
+    if (headers[i] === 'Time Sensitivity') {
+      freshnessCol = i + 1;
+      break;
+    }
+  }
+  if (freshnessCol === -1) {
+    SpreadsheetApp.getUi().alert('This sheet doesn\'t have a Time Sensitivity column.');
+    return;
+  }
+
+  var lastRow = sheet.getLastRow();
+  if (lastRow < 2) {
+    SpreadsheetApp.getUi().alert('No data to filter.');
+    return;
+  }
+
+  // Remove existing filter if any
+  var existingFilter = sheet.getFilter();
+  if (existingFilter) {
+    existingFilter.remove();
+  }
+
+  // Create filter on the full data range
+  var dataRange = sheet.getRange(1, 1, lastRow, sheet.getLastColumn());
+  var filter = dataRange.createFilter();
+
+  // Set criteria on the freshness column: show only the selected emoji
+  var criteria = SpreadsheetApp.newFilterCriteria()
+    .whenTextEqualTo(emoji)
+    .build();
+  filter.setColumnFilterCriteria(freshnessCol, criteria);
+}
+
+
+// ============================================================================
 // SCRAPER ORCHESTRATION
 // ============================================================================
 
 /**
  * Scrape all sources for a single tab.
- * Fetches RSS → filters blacklist → deduplicates → generates Haiku summaries → writes to sheet.
+ * Fetches RSS → filters blacklist → deduplicates → generates summaries → writes to sheet.
  * @param {string} tabName - Name of the tab to scrape (from SCRAPER.TABS)
  */
 function scrapeTab(tabName) {
@@ -903,6 +990,23 @@ function scrapeTab(tabName) {
   }
   Logger.log('🚫 Blacklisted: ' + blacklisted + ' | Passed: ' + filtered.length);
 
+  // Filter out articles older than MAX_AGE_DAYS
+  var cutoffDate = new Date();
+  cutoffDate.setDate(cutoffDate.getDate() - SCRAPER.MAX_AGE_DAYS);
+  var fresh = [];
+  var tooOld = 0;
+  for (var f = 0; f < filtered.length; f++) {
+    if (filtered[f].date && filtered[f].date < cutoffDate) {
+      tooOld++;
+    } else {
+      fresh.push(filtered[f]);
+    }
+  }
+  if (tooOld > 0) {
+    Logger.log('📅 Skipped ' + tooOld + ' articles older than ' + SCRAPER.MAX_AGE_DAYS + ' days');
+  }
+  filtered = fresh;
+
   // Deduplicate against existing articles
   var newArticles = [];
   for (var k = 0; k < filtered.length; k++) {
@@ -922,8 +1026,8 @@ function scrapeTab(tabName) {
     newArticles[m].state = detectState(newArticles[m].title, newArticles[m].description);
   }
 
-  // Generate Haiku summaries + urgency scores
-  newArticles = generateHaikuSummaries(newArticles);
+  // Generate summaries + urgency scores
+  newArticles = generateSummaries(newArticles);
 
   // Write to sheet
   writeArticlesToSheet(newArticles, sheet);
@@ -1077,7 +1181,7 @@ function getBillSummary(bill) {
     }
     return abstract;
   }
-  return '';  // Empty — will be filled by Haiku if available
+  return '';  // Empty — will be filled by Claude if available
 }
 
 /**
@@ -1183,7 +1287,7 @@ function scrapeNewLaws() {
     return;
   }
 
-  // Generate Haiku summaries for bills missing abstracts
+  // Generate summaries for bills missing abstracts
   var needsSummary = [];
   for (var n = 0; n < newBills.length; n++) {
     if (!newBills[n].summary) {
@@ -1192,10 +1296,10 @@ function scrapeNewLaws() {
   }
 
   if (needsSummary.length > 0) {
-    Logger.log('🤖 Generating Haiku summaries for ' + needsSummary.length + ' bills without abstracts...');
-    var haikuApiKey = PropertiesService.getScriptProperties().getProperty('CLAUDE_API_KEY');
-    if (haikuApiKey) {
-      var batchSize = SCRAPER.HAIKU_BATCH_SIZE;
+    Logger.log('🤖 Generating summaries for ' + needsSummary.length + ' bills without abstracts...');
+    var summaryApiKey = PropertiesService.getScriptProperties().getProperty('CLAUDE_API_KEY');
+    if (summaryApiKey) {
+      var batchSize = SCRAPER.SUMMARY_BATCH_SIZE;
       for (var bStart = 0; bStart < needsSummary.length; bStart += batchSize) {
         var bEnd = Math.min(bStart + batchSize, needsSummary.length);
         var batch = [];
@@ -1206,7 +1310,7 @@ function scrapeNewLaws() {
             description: newBills[idx].state + ' — ' + newBills[idx].billStatus
           });
         }
-        var summaries = callHaikuForBatch(batch, haikuApiKey);
+        var summaries = callClaudeForBatch(batch, summaryApiKey);
         if (summaries) {
           for (var r = 0; r < batch.length; r++) {
             var origIdx = needsSummary[bStart + r];
