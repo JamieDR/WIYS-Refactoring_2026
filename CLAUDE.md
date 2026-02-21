@@ -73,6 +73,7 @@ When building or modifying features, always ask: "How many clicks does this take
 - NEVER change functionality during refactoring — behavior must stay identical
 - NEVER push to main without Jamie's approval
 - NEVER skip explanation — if Jamie doesn't understand, we don't proceed
+- NEVER try to create PRs programmatically (gh CLI, GitHub API, curl). Just push the branch and give Jamie the PR creation link: `https://github.com/JamieDR/WIYS-Refactoring_2026/pull/new/<branch-name>`
 - The original codebase file is kept as a reference and never modified
 - All code changes go through the branch → review → merge workflow
 
