@@ -87,6 +87,7 @@ When building or modifying features, always ask: "How many clicks does this take
 
 ## Session Startup (REQUIRED)
 Every fresh session MUST begin by reviewing the project state before doing any work:
+0. Read the Jamie-Urgent-Features file. These take precedence over everything. 
 1. **Read docs/developer-log/** — all session logs, most recent first, to understand what's been done
 2. **Read docs/TODO.md** — current backlog and priorities
 3. **Read docs/CHANGELOG.md** — recent changes
