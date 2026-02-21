@@ -57,8 +57,66 @@ For services with structured APIs.
 - LegiScan (state legislation tracker — all 50 states)
 - NPS API (National Park Service news releases)
 
-### Source List
-*To be populated after RSS availability research is complete.*
+### Source List (Research Complete — Feb 2026)
+
+#### RSS Feeds — Travel Publications (confirmed working)
+| Source | RSS URL |
+|--------|---------|
+| Condé Nast Traveler | `https://www.cntraveler.com/feed/rss` |
+| Islands.com | `https://www.islands.com/feed/` |
+| TheTravel | `https://www.thetravel.com/feed/` |
+| AFAR | `https://www.afar.com/magazine.atom` |
+| Atlas Obscura | `https://www.atlasobscura.com/feeds/latest` |
+| Smithsonian Travel | `https://www.smithsonianmag.com/rss/travel/` |
+| BBC Travel | `https://www.bbc.com/travel/feed.rss` |
+
+#### RSS Feeds — Federal Government (confirmed working)
+| Source | RSS URL | Notes |
+|--------|---------|-------|
+| NPS (per park) | `https://www.nps.gov/feeds/getNewsRSS.htm?id={parkCode}` | Use park codes (yose, grca, zion, etc.) |
+| NPS (per park alerts) | `https://www.nps.gov/feeds/getAlertRSS.htm?id={parkCode}` | Closures, safety |
+| BLM National | `https://www.blm.gov/press-release/national-office/rss` | |
+| BLM Arizona | `https://www.blm.gov/press-release/arizona/rss` | Per-state feeds available |
+| BLM California | `https://www.blm.gov/press-release/california/rss` | |
+| BLM Colorado | `https://www.blm.gov/press-release/colorado/rss` | |
+| BLM Idaho | `https://www.blm.gov/press-release/idaho/rss` | |
+| BLM Montana-Dakotas | `https://www.blm.gov/press-release/montana-dakotas/rss` | |
+| BLM Nevada | `https://www.blm.gov/press-release/nevada/rss` | |
+| BLM New Mexico | `https://www.blm.gov/press-release/new-mexico/rss` | |
+| BLM Oregon-Washington | `https://www.blm.gov/press-release/oregon-washington/rss` | |
+| BLM Utah | `https://www.blm.gov/press-release/utah/rss` | |
+| BLM Wyoming | `https://www.blm.gov/press-release/wyoming/rss` | |
+| BLM Alaska | `https://www.blm.gov/press-release/alaska/rss` | |
+| BLM Eastern States | `https://www.blm.gov/press-release/eastern-states/rss` | |
+| FHWA Press Releases | `https://www.fhwa.dot.gov/publicaffairs/newsrss/` | Highways, scenic byways |
+| CDC Travel Notices | `https://wwwnc.cdc.gov/travel/rss/notices.xml` | Mostly international |
+| USDA Forest Service | `https://www.fs.usda.gov/rss/{region-code}` | Per-region (r4, r6, r10, etc.) |
+
+#### RSS Feeds — Needs Verification
+| Source | RSS URL | Issue |
+|--------|---------|-------|
+| Outside Online | `https://www.outsideonline.com/feed/` | Behind paywall/login |
+| Lonely Planet | `https://www.lonelyplanet.com/news/feed/atom/` | Returning 403 |
+| Travel + Leisure | `https://feeds-api.dotdashmeredith.com/v1/rss/google/{GUID}` | Exact GUID unknown |
+| DOT Main | `https://www.transportation.gov/rss` | Page exists, exact XML URL needs confirmation |
+| FAA Press | RSS link exists on newsroom page | Exact URL needs extraction |
+
+#### Gmail Newsletter Approach (no RSS available)
+These sites don't offer RSS feeds. Subscribe to their newsletters and scrape from Gmail.
+- National Geographic Travel
+- Newsbreak
+- Thrillist
+- Fodor's Travel
+- TSA (email subscription only)
+- US Fish & Wildlife Service (email subscription only)
+- Brand USA (email subscription only)
+- Most state tourism boards (very few have RSS)
+
+#### APIs
+| Source | API | Notes |
+|--------|-----|-------|
+| NPS API | `https://developer.nps.gov/api/v1/newsreleases` | 250 releases per call |
+| LegiScan | TBD | State legislation tracker — all 50 states, searchable by topic |
 
 ---
 
@@ -112,6 +170,21 @@ Articles matching these keywords in title or summary are automatically discarded
 **Political Horse-Race:**
 - campaign poll, polling numbers, who's leading, primary results
 - campaign strategy, fundraising totals, endorsement
+
+**Deals/Sales/Promotional:**
+- sale, deal, discount, price drop, coupon, promo code, flash sale
+- "where to stay", "where to eat" (commercial promotion framing)
+- sponsored, paid partnership, affiliate
+
+**B2B / Trade Industry (not consumer-facing):**
+- travel industry, travel trade, travel groups, group travel (B2B)
+- hospitality industry, hotel industry, tourism board meeting
+- convention, trade show, expo (industry events)
+
+**Blocked Source Domains:**
+Sites that consistently produce unusable content — auto-skip regardless of title.
+- travelandtourworld.com (trade industry site)
+- *Add more as identified during triage*
 
 #### Fast-Stale (becomes outdated too quickly)
 - road closure, road work, detour, traffic alert
@@ -229,6 +302,6 @@ Both contained hardcoded API keys (now exposed on GitHub — need rotation).
 
 ## Open Questions
 - [ ] Where do "Approved" articles transfer to? (Article Status Tracker? Staging sheet?)
-- [ ] RSS feed availability research results (pending)
+- [x] RSS feed availability research results (complete — Feb 2026)
 - [ ] LegiScan API — free tier limits? Cost?
 - [ ] Should deprecated scraper files be removed from repo?
