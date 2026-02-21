@@ -1076,6 +1076,7 @@ function fetchOpenStatesBills(keyword, apiKey, sinceDate, page) {
   var baseUrl = 'https://v3.openstates.org/bills';
   var params = [
     'q=' + encodeURIComponent(keyword),
+    'session=2026',
     'action_since=' + sinceDate,
     'include=actions',
     'include=abstracts',
