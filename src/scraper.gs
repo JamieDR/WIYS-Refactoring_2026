@@ -1000,13 +1000,13 @@ function fetchOpenStatesBills(keyword, apiKey, sinceDate, page) {
     }
 
     if (code !== 200) {
-      Logger.log('⚠️ Open States API error for ' + state + ': HTTP ' + code);
+      Logger.log('⚠️ Open States API error for "' + keyword + '": HTTP ' + code);
       return null;
     }
 
     return JSON.parse(response.getContentText());
   } catch (e) {
-    Logger.log('❌ Open States fetch error for ' + state + ': ' + e.message);
+    Logger.log('❌ Open States fetch error for "' + keyword + '": ' + e.message);
     return null;
   }
 }
