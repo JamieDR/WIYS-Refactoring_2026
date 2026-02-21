@@ -9221,6 +9221,7 @@ function onOpen() {
     .addItem('🔢 Update Unreviewed Counts', 'updateUnreviewedCounts')
     .addSeparator()
     .addItem('⚙️ Set Up Scraper Sheet', 'setupScraperSheet')
+    .addItem('🔑 Set Open States API Key', 'setOpenStatesApiKey')
     .addItem('📅 Enable Auto-Scrape (every 4h)', 'setupScraperSchedule')
     .addItem('⏹️ Disable Auto-Scrape', 'removeScraperSchedule')
     .addSeparator()
