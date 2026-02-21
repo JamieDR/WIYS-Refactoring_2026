@@ -21,8 +21,11 @@ Batch Transfer → Content Pipeline
 
 ## Sheet Structure
 
-### News Scraper Tab (new tab in main WIYS spreadsheet)
-Lives in the same Google Sheet the team already works in (ID: 1gQmKqIDr07tSaqoDY_R13fQcO3YWB6HgLSEmpTsPYb8).
+All tabs live in the main WIYS spreadsheet (ID: 1gQmKqIDr07tSaqoDY_R13fQcO3YWB6HgLSEmpTsPYb8).
+
+### Tab 1: News Scraper
+Sources: local newspapers, national outlets (CNN, NYT, NPR, etc.), government feeds (BLM, NPS, FHWA, etc.)
+Content: state policy, federal policy impact, national parks, economics, local current news
 
 | Column | Content |
 |--------|---------|
@@ -33,8 +36,22 @@ Lives in the same Google Sheet the team already works in (ID: 1gQmKqIDr07tSaqoDY
 | E | URL |
 | F | Summary |
 
-### New Laws 2026 Tab (separate tab, same spreadsheet)
-Dedicated to legislation, bills, acts, and executive orders — by state.
+### Tab 2: Travel Publications
+Sources: Condé Nast Traveler, AFAR, Atlas Obscura, Smithsonian Travel, Islands, TheTravel, BBC Travel
+Content: destination features, travel news, place-based stories
+
+| Column | Content |
+|--------|---------|
+| A | Status (dropdown: blank / Approved / Delete) |
+| B | State |
+| C | Source |
+| D | Title |
+| E | URL |
+| F | Summary |
+
+### Tab 3: New Laws 2026
+Sources: LegiScan API, state legislature feeds, news outlet law/policy coverage
+Content: legislation, bills, acts, executive orders — by state
 
 | Column | Content |
 |--------|---------|
@@ -45,7 +62,7 @@ Dedicated to legislation, bills, acts, and executive orders — by state.
 | E | URL |
 | F | Summary |
 
-### Batch Operations (menu items, shared across both tabs)
+### Batch Operations (menu items, shared across all tabs)
 - **Transfer Approved** — moves all "Approved" rows to destination sheet (TBD), then clears them
 - **Delete Marked** — removes all "Delete" rows in one click
 
