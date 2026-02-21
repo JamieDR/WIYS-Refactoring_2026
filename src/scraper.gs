@@ -3,8 +3,9 @@
  * NEWS SCRAPER SYSTEM
  * ============================================================================
  * Automated topic-finding pipeline for wheninyourstate.com.
- * Fetches RSS feeds, filters by keyword blacklist, generates Haiku summaries,
- * and writes results to a dedicated scraper spreadsheet for Jamie to triage.
+ * Fetches RSS feeds, filters by keyword blacklist, generates Haiku summaries
+ * with time sensitivity scoring (🔴🟢🟡), and writes results to a dedicated scraper
+ * spreadsheet for Jamie to triage.
  *
  * Architecture: docs/architecture/news-scraper-system.md
  *
@@ -30,9 +31,9 @@ var SCRAPER = {
   },
 
   FRESHNESS: {
-    NOW: 'Now',             // Time-sensitive — publish within 24-48 hours
-    THIS_WEEK: 'This Week', // Has a news peg but won't go stale for 5-7 days
-    EVERGREEN: 'Evergreen'  // No expiration — save for slow news days
+    BREAKING: '🔴',   // Breaking news — publish ASAP
+    RELEVANT: '🟢',   // Relevant — can wait for publishing
+    EVERGREEN: '🟡'   // Evergreen — no rush, save for slow days
   },
 
   COLUMNS: {
@@ -41,12 +42,12 @@ var SCRAPER = {
     STATE: 3,      // C
     TITLE: 4,      // D (hyperlinked to article URL)
     SUMMARY: 5,    // E
-    FRESHNESS: 6,  // F
+    FRESHNESS: 6,  // F (🔴/🟢/🟡)
     STATUS: 7,     // G
     URL: 8         // H (hidden — raw URL for programmatic access)
   },
 
-  HEADERS: ['Date', 'Source', 'State', 'Title', 'Summary', 'Freshness', 'Status', 'URL'],
+  HEADERS: ['Date', 'Source', 'State', 'Title', 'Summary', 'Time Sensitivity', 'Status', 'URL'],
 
   // RSS sources grouped by target tab
   SOURCES: {
@@ -451,13 +452,21 @@ function isLetter(ch) {
   return (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z');
 }
 
+/**
+ * Convert a 1-based column number to a letter (1=A, 2=B, ... 26=Z).
+ * Used for conditional formatting formulas.
+ */
+function getColLetter(colNum) {
+  return String.fromCharCode(64 + colNum);
+}
+
 
 // ============================================================================
-// CLAUDE HAIKU SUMMARIES + FRESHNESS SCORING
+// CLAUDE HAIKU SUMMARIES + SCORING
 // ============================================================================
 
 /**
- * Generate summaries and freshness scores for a batch of articles using Claude Haiku.
+ * Generate summaries and urgency scores for a batch of articles using Claude Haiku.
  * Processes articles in batches of SCRAPER.HAIKU_BATCH_SIZE.
  * @param {Array} articles - Array of article objects
  * @returns {Array} Same articles with .summary and .freshness populated
@@ -470,7 +479,7 @@ function generateHaikuSummaries(articles) {
     Logger.log('⚠️ CLAUDE_API_KEY not set — using RSS descriptions as summaries');
     for (var i = 0; i < articles.length; i++) {
       articles[i].summary = articles[i].description || 'No summary available';
-      articles[i].freshness = SCRAPER.FRESHNESS.THIS_WEEK;
+      articles[i].freshness = SCRAPER.FRESHNESS.RELEVANT;
     }
     return articles;
   }
@@ -484,10 +493,10 @@ function generateHaikuSummaries(articles) {
     for (var j = 0; j < batch.length; j++) {
       if (results && results[j]) {
         articles[start + j].summary = results[j].summary || articles[start + j].description;
-        articles[start + j].freshness = results[j].freshness || SCRAPER.FRESHNESS.THIS_WEEK;
+        articles[start + j].freshness = results[j].freshness || SCRAPER.FRESHNESS.RELEVANT;
       } else {
         articles[start + j].summary = articles[start + j].description || 'No summary available';
-        articles[start + j].freshness = SCRAPER.FRESHNESS.THIS_WEEK;
+        articles[start + j].freshness = SCRAPER.FRESHNESS.RELEVANT;
       }
     }
   }
@@ -508,16 +517,17 @@ function callHaikuForBatch(batch, apiKey) {
     articleList += '   Snippet: ' + (batch[i].description || 'N/A').substring(0, 300) + '\n\n';
   }
 
-  var prompt = 'You are a news triage assistant for a US state-focused news site.\n\n' +
+  var prompt = 'You are a news triage assistant for a US state-focused lifestyle news site.\n\n' +
     'For each article below, provide:\n' +
     '1. A 1-2 sentence factual summary (who, what, when, where). No opinions.\n' +
-    '2. A freshness score:\n' +
-    '   - "Now" = time-sensitive, must publish within 24-48 hours\n' +
-    '   - "This Week" = has a news peg but valid for 5-7 days\n' +
-    '   - "Evergreen" = no expiration date\n\n' +
+    '2. A time sensitivity score (use the exact emoji):\n' +
+    '   - "🔴" = Breaking news — time-sensitive, should publish ASAP\n' +
+    '   - "🟢" = Relevant — good content but no rush, can wait days\n' +
+    '   - "🟡" = Evergreen — no expiration, save for slow news days\n\n' +
+    'Only use 🔴 for genuinely urgent stories (disasters, major policy changes, safety alerts).\n\n' +
     'Articles:\n' + articleList + '\n' +
     'Return ONLY a JSON array with one object per article, in order:\n' +
-    '[{"summary": "...", "freshness": "Now|This Week|Evergreen"}, ...]\n\n' +
+    '[{"summary": "...", "freshness": "🔴|🟢|🟡"}, ...]\n\n' +
     'No markdown, no explanation, just the JSON array.';
 
   try {
@@ -614,15 +624,25 @@ function formatScraperTab(sheet) {
   sheet.setColumnWidth(SCRAPER.COLUMNS.STATE, 120);
   sheet.setColumnWidth(SCRAPER.COLUMNS.TITLE, 420);
   sheet.setColumnWidth(SCRAPER.COLUMNS.SUMMARY, 420);
-  sheet.setColumnWidth(SCRAPER.COLUMNS.FRESHNESS, 100);
+  sheet.setColumnWidth(SCRAPER.COLUMNS.FRESHNESS, 50);
   sheet.setColumnWidth(SCRAPER.COLUMNS.STATUS, 100);
   sheet.setColumnWidth(SCRAPER.COLUMNS.URL, 50);
+
+  // Center-align the Score column
+  sheet.getRange(2, SCRAPER.COLUMNS.FRESHNESS, 499, 1).setHorizontalAlignment('center');
 
   // Hide the URL column (H) — it's for programmatic use only
   sheet.hideColumns(SCRAPER.COLUMNS.URL);
 
   // Freeze header row
   sheet.setFrozenRows(1);
+
+  // Time Sensitivity dropdown (rows 2-500) — pre-filled by Haiku but editable
+  var freshnessRule = SpreadsheetApp.newDataValidation()
+    .requireValueInList(['\uD83D\uDD34', '\uD83D\uDFE2', '\uD83D\uDFE1'], true)
+    .setAllowInvalid(false)
+    .build();
+  sheet.getRange(2, SCRAPER.COLUMNS.FRESHNESS, 499, 1).setDataValidation(freshnessRule);
 
   // Status dropdown (rows 2-500)
   var statusRule = SpreadsheetApp.newDataValidation()
@@ -631,46 +651,24 @@ function formatScraperTab(sheet) {
     .build();
   sheet.getRange(2, SCRAPER.COLUMNS.STATUS, 499, 1).setDataValidation(statusRule);
 
-  // Freshness dropdown (rows 2-500) — pre-filled by Haiku but editable
-  var freshnessRule = SpreadsheetApp.newDataValidation()
-    .requireValueInList(['Now', 'This Week', 'Evergreen'], true)
-    .setAllowInvalid(false)
-    .build();
-  sheet.getRange(2, SCRAPER.COLUMNS.FRESHNESS, 499, 1).setDataValidation(freshnessRule);
-
-  // Conditional formatting: Freshness colors
-  var freshnessCol = SCRAPER.COLUMNS.FRESHNESS;
+  // Conditional formatting
   var rules = sheet.getConditionalFormatRules();
 
-  // Now = red background
+  // 🔴 Breaking = light red background on Source column (column B) so it pops
   rules.push(SpreadsheetApp.newConditionalFormatRule()
-    .whenTextEqualTo('Now')
+    .whenFormulaSatisfied('=$' + getColLetter(SCRAPER.COLUMNS.FRESHNESS) + '2="🔴"')
     .setBackground('#ffb3b3')
-    .setRanges([sheet.getRange(2, 1, 499, SCRAPER.HEADERS.length)])
+    .setRanges([sheet.getRange(2, SCRAPER.COLUMNS.SOURCE, 499, 1)])
     .build());
 
-  // This Week = yellow background
-  rules.push(SpreadsheetApp.newConditionalFormatRule()
-    .whenTextEqualTo('This Week')
-    .setBackground('#fff2cc')
-    .setRanges([sheet.getRange(2, freshnessCol, 499, 1)])
-    .build());
-
-  // Evergreen = green background
-  rules.push(SpreadsheetApp.newConditionalFormatRule()
-    .whenTextEqualTo('Evergreen')
-    .setBackground('#d0faad')
-    .setRanges([sheet.getRange(2, freshnessCol, 499, 1)])
-    .build());
-
-  // Approved = green row
+  // Approved = green
   rules.push(SpreadsheetApp.newConditionalFormatRule()
     .whenTextEqualTo('Approved')
     .setBackground('#d0faad')
     .setRanges([sheet.getRange(2, SCRAPER.COLUMNS.STATUS, 499, 1)])
     .build());
 
-  // Delete = gray row
+  // Delete = gray
   rules.push(SpreadsheetApp.newConditionalFormatRule()
     .whenTextEqualTo('Delete')
     .setBackground('#d9d9d9')
@@ -904,7 +902,7 @@ function scrapeTab(tabName) {
     newArticles[m].state = detectState(newArticles[m].title, newArticles[m].description);
   }
 
-  // Generate Haiku summaries + freshness scores
+  // Generate Haiku summaries + urgency scores
   newArticles = generateHaikuSummaries(newArticles);
 
   // Write to sheet
@@ -1017,6 +1015,7 @@ function transferScraperToED() {
           state: data[i][SCRAPER.COLUMNS.STATE - 1] || '',
           title: data[i][SCRAPER.COLUMNS.TITLE - 1] || '',
           summary: data[i][SCRAPER.COLUMNS.SUMMARY - 1] || '',
+          freshness: data[i][SCRAPER.COLUMNS.FRESHNESS - 1] || '',
           url: data[i][SCRAPER.COLUMNS.URL - 1] || ''
         });
       }
@@ -1112,6 +1111,11 @@ function transferScraperToED() {
       edSheet.getRange(currentRow, 2).setRichTextValue(richText);
     } else {
       edSheet.getRange(currentRow, 2).setValue(displayText);
+    }
+
+    // 🔴 Breaking articles: light red background so Jamie knows to prioritize
+    if (item.freshness === '🔴') {
+      edSheet.getRange(currentRow, 1, 1, 12).setBackground('#ffb3b3');
     }
 
     // Column C: Article Type
