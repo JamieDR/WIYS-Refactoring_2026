@@ -30,6 +30,20 @@ var SCRAPER = {
     NEW_LAWS: 'New Laws 2026'
   },
 
+  // New Laws 2026 tab has a different column layout than RSS tabs
+  NEW_LAWS_COLUMNS: {
+    STATE: 1,         // A
+    IDENTIFIER: 2,    // B (e.g. "SB 1234")
+    TITLE: 3,         // C (hyperlinked to Open States page)
+    SUMMARY: 4,       // D
+    BILL_STATUS: 5,   // E (e.g. "Signed by Governor")
+    STATUS_DATE: 6,   // F
+    STATUS: 7,        // G (workflow: blank / Approved / Delete)
+    OPENSTATES_URL: 8 // H (hidden — raw URL for programmatic access)
+  },
+
+  NEW_LAWS_HEADERS: ['State', 'Identifier', 'Title', 'Summary', 'Bill Status', 'Status Date', 'Status', 'URL'],
+
   FRESHNESS: {
     BREAKING: '🔴',   // Breaking news — publish ASAP
     RELEVANT: '🟢',   // Relevant — can wait for publishing
@@ -79,8 +93,7 @@ var SCRAPER = {
       { name: 'CDC Travel', url: 'https://wwwnc.cdc.gov/travel/rss/notices.xml' }
     ],
     'New Laws 2026': [
-      // LegiScan API integration — TBD (needs API key and cost assessment)
-      // For now this tab exists but has no automated sources
+      // Powered by Open States API v3 (not RSS) — see scrapeNewLaws() below
     ]
   },
 
@@ -911,6 +924,462 @@ function scrapeTab(tabName) {
   Logger.log('✅ Wrote ' + newArticles.length + ' new articles to ' + tabName);
 }
 
+// ============================================================================
+// OPEN STATES API — NEW LAWS 2026
+// ============================================================================
+// Fetches enacted legislation (signed into law, became law) from all 50 states
+// via the Open States API v3. Writes to the "New Laws 2026" tab.
+//
+// API docs: https://v3.openstates.org/docs
+// Rate limits: 500 requests/day, 10/minute (Default tier)
+// API key stored in Script Properties as OPENSTATES_API_KEY
+
+/**
+ * Action classifications that indicate a bill became law.
+ * Open States standardizes these across all 50 states.
+ */
+var ENACTED_ACTIONS = [
+  'became-law',
+  'executive-signature',
+  'executive-veto:veto-override',
+  'passage'
+];
+
+/**
+ * Fetch bills from Open States API v3 for a single state.
+ * Returns bills that had legislative action since the cutoff date.
+ * @param {string} state - Full state name (e.g. "Arizona")
+ * @param {string} apiKey - Open States API key
+ * @param {string} sinceDate - ISO date string (e.g. "2026-01-01")
+ * @param {number} page - Page number (default 1)
+ * @returns {Object|null} API response with .results and .pagination, or null on error
+ */
+function fetchOpenStatesBills(state, apiKey, sinceDate, page) {
+  var baseUrl = 'https://v3.openstates.org/bills';
+  var params = [
+    'jurisdiction=' + encodeURIComponent(state),
+    'action_since=' + sinceDate,
+    'include=actions',
+    'include=abstracts',
+    'sort=latest_action_desc',
+    'per_page=20',
+    'page=' + (page || 1)
+  ];
+  var url = baseUrl + '?' + params.join('&');
+
+  try {
+    var response = UrlFetchApp.fetch(url, {
+      method: 'get',
+      headers: { 'X-API-KEY': apiKey },
+      muteHttpExceptions: true
+    });
+
+    var code = response.getResponseCode();
+    if (code === 429) {
+      Logger.log('⚠️ Open States rate limit hit — pausing 10s');
+      Utilities.sleep(10000);
+      // Retry once
+      response = UrlFetchApp.fetch(url, {
+        method: 'get',
+        headers: { 'X-API-KEY': apiKey },
+        muteHttpExceptions: true
+      });
+      code = response.getResponseCode();
+    }
+
+    if (code !== 200) {
+      Logger.log('⚠️ Open States API error for ' + state + ': HTTP ' + code);
+      return null;
+    }
+
+    return JSON.parse(response.getContentText());
+  } catch (e) {
+    Logger.log('❌ Open States fetch error for ' + state + ': ' + e.message);
+    return null;
+  }
+}
+
+/**
+ * Check if a bill has been enacted (signed into law, became law, or veto overridden).
+ * Scans the bill's actions for enacted-type classifications.
+ * @param {Object} bill - Bill object from Open States API (must include actions)
+ * @returns {Object|null} The enacted action object, or null if not enacted
+ */
+function findEnactedAction(bill) {
+  if (!bill.actions || bill.actions.length === 0) return null;
+
+  for (var i = 0; i < bill.actions.length; i++) {
+    var action = bill.actions[i];
+    if (!action.classification) continue;
+
+    for (var j = 0; j < action.classification.length; j++) {
+      for (var k = 0; k < ENACTED_ACTIONS.length; k++) {
+        if (action.classification[j] === ENACTED_ACTIONS[k]) {
+          return action;
+        }
+      }
+    }
+  }
+  return null;
+}
+
+/**
+ * Build a human-readable bill status string from the enacted action.
+ * @param {Object} action - Action object from Open States
+ * @returns {string} Status like "Signed by Governor" or "Became Law"
+ */
+function formatBillStatus(action) {
+  if (!action) return 'Enacted';
+  // Use the action description from the state (more readable than classification)
+  if (action.description) return action.description;
+  // Fallback to classification
+  if (action.classification && action.classification.length > 0) {
+    var cls = action.classification[0];
+    if (cls === 'executive-signature') return 'Signed by Governor';
+    if (cls === 'became-law') return 'Became Law';
+    if (cls === 'executive-veto:veto-override') return 'Veto Overridden';
+    if (cls === 'passage') return 'Passed';
+  }
+  return 'Enacted';
+}
+
+/**
+ * Get the best available summary for a bill.
+ * Uses state-provided abstract first, falls back to title.
+ * @param {Object} bill - Bill object from Open States API
+ * @returns {string} Summary text
+ */
+function getBillSummary(bill) {
+  if (bill.abstracts && bill.abstracts.length > 0 && bill.abstracts[0].abstract) {
+    // Truncate very long abstracts
+    var abstract = bill.abstracts[0].abstract;
+    if (abstract.length > 500) {
+      abstract = abstract.substring(0, 497) + '...';
+    }
+    return abstract;
+  }
+  return '';  // Empty — will be filled by Haiku if available
+}
+
+/**
+ * Scrape enacted legislation from all 50 states via Open States API.
+ * Filters for bills that became law in 2026, writes to the New Laws 2026 tab.
+ */
+function scrapeNewLaws() {
+  var apiKey = PropertiesService.getScriptProperties().getProperty('OPENSTATES_API_KEY');
+  if (!apiKey) {
+    Logger.log('❌ OPENSTATES_API_KEY not set in Script Properties. Run setOpenStatesApiKey() first.');
+    return;
+  }
+
+  var ss = SpreadsheetApp.openById(SCRAPER.SPREADSHEET_ID);
+  // Find the New Laws tab (might have count suffix)
+  var sheet = null;
+  var allSheets = ss.getSheets();
+  for (var s = 0; s < allSheets.length; s++) {
+    if (allSheets[s].getName().indexOf(SCRAPER.TABS.NEW_LAWS) === 0) {
+      sheet = allSheets[s];
+      break;
+    }
+  }
+  if (!sheet) {
+    Logger.log('❌ New Laws 2026 tab not found in scraper spreadsheet');
+    return;
+  }
+
+  // Get existing bill identifiers to prevent duplicates (State + Identifier combo)
+  var existingBills = {};
+  var lastRow = sheet.getLastRow();
+  if (lastRow >= 2) {
+    var existingData = sheet.getRange(2, 1, lastRow - 1, 2).getValues(); // State + Identifier
+    for (var e = 0; e < existingData.length; e++) {
+      var key = (existingData[e][0] || '') + '|' + (existingData[e][1] || '');
+      existingBills[key] = true;
+    }
+  }
+  Logger.log('📋 ' + Object.keys(existingBills).length + ' existing bills in New Laws tab');
+
+  var sinceDate = '2026-01-01';
+  var newBills = [];
+  var requestCount = 0;
+
+  for (var i = 0; i < US_STATES.length; i++) {
+    var state = US_STATES[i];
+
+    // Rate limit: 10 requests/minute — sleep 6 seconds between requests
+    if (requestCount > 0 && requestCount % 9 === 0) {
+      Logger.log('⏳ Pausing 60s for rate limit (10/min)...');
+      Utilities.sleep(60000);
+    }
+
+    var data = fetchOpenStatesBills(state, apiKey, sinceDate, 1);
+    requestCount++;
+
+    if (!data || !data.results) {
+      Logger.log('  ⚠️ ' + state + ': no results');
+      continue;
+    }
+
+    var stateEnacted = 0;
+    for (var j = 0; j < data.results.length; j++) {
+      var bill = data.results[j];
+      var enactedAction = findEnactedAction(bill);
+      if (!enactedAction) continue;  // Skip bills that haven't been enacted
+
+      // Dedup check
+      var dedupKey = state + '|' + (bill.identifier || '');
+      if (existingBills[dedupKey]) continue;
+
+      newBills.push({
+        state: state,
+        identifier: bill.identifier || '',
+        title: bill.title || '',
+        summary: getBillSummary(bill),
+        billStatus: formatBillStatus(enactedAction),
+        statusDate: enactedAction.date || bill.latest_action_date || '',
+        openstatesUrl: bill.openstates_url || ''
+      });
+
+      existingBills[dedupKey] = true;
+      stateEnacted++;
+    }
+
+    if (stateEnacted > 0) {
+      Logger.log('  📜 ' + state + ': ' + stateEnacted + ' enacted bills');
+    }
+
+    // Respect 1 request/second minimum spacing
+    Utilities.sleep(1000);
+  }
+
+  Logger.log('🔍 Total new enacted bills found: ' + newBills.length + ' (used ' + requestCount + ' API requests)');
+
+  if (newBills.length === 0) {
+    Logger.log('✅ No new enacted bills to add');
+    return;
+  }
+
+  // Generate Haiku summaries for bills missing abstracts
+  var needsSummary = [];
+  for (var n = 0; n < newBills.length; n++) {
+    if (!newBills[n].summary) {
+      needsSummary.push(n);
+    }
+  }
+
+  if (needsSummary.length > 0) {
+    Logger.log('🤖 Generating Haiku summaries for ' + needsSummary.length + ' bills without abstracts...');
+    var haikuApiKey = PropertiesService.getScriptProperties().getProperty('CLAUDE_API_KEY');
+    if (haikuApiKey) {
+      var batchSize = SCRAPER.HAIKU_BATCH_SIZE;
+      for (var bStart = 0; bStart < needsSummary.length; bStart += batchSize) {
+        var bEnd = Math.min(bStart + batchSize, needsSummary.length);
+        var batch = [];
+        for (var b = bStart; b < bEnd; b++) {
+          var idx = needsSummary[b];
+          batch.push({
+            title: newBills[idx].identifier + ': ' + newBills[idx].title,
+            description: newBills[idx].state + ' — ' + newBills[idx].billStatus
+          });
+        }
+        var summaries = callHaikuForBatch(batch, haikuApiKey);
+        if (summaries) {
+          for (var r = 0; r < batch.length; r++) {
+            var origIdx = needsSummary[bStart + r];
+            if (summaries[r] && summaries[r].summary) {
+              newBills[origIdx].summary = summaries[r].summary;
+            }
+          }
+        }
+      }
+    }
+  }
+
+  // Write to sheet
+  writeNewLawsToSheet(newBills, sheet);
+  Logger.log('✅ Wrote ' + newBills.length + ' enacted bills to New Laws 2026');
+}
+
+/**
+ * Write enacted bills to the New Laws 2026 tab.
+ * Inserts at row 2 (below header), pushing old content down.
+ * @param {Array} bills - Array of bill objects from scrapeNewLaws()
+ * @param {Object} sheet - Google Sheet object
+ */
+function writeNewLawsToSheet(bills, sheet) {
+  if (!bills || bills.length === 0) return;
+
+  var cols = SCRAPER.NEW_LAWS_COLUMNS;
+
+  // Insert rows at top (below header)
+  sheet.insertRowsAfter(1, bills.length);
+
+  // Build data array
+  var rows = [];
+  for (var i = 0; i < bills.length; i++) {
+    var b = bills[i];
+    rows.push([
+      b.state,
+      b.identifier,
+      b.title,
+      b.summary || '',
+      b.billStatus,
+      b.statusDate,
+      '',            // Status — blank (Jamie decides)
+      b.openstatesUrl
+    ]);
+  }
+
+  // Write all data at once
+  var range = sheet.getRange(2, 1, bills.length, SCRAPER.NEW_LAWS_HEADERS.length);
+  range.setValues(rows);
+
+  // Apply hyperlinks to Title column (C) — link to Open States page
+  for (var h = 0; h < bills.length; h++) {
+    if (bills[h].openstatesUrl) {
+      var cell = sheet.getRange(h + 2, cols.TITLE);
+      var richText = SpreadsheetApp.newRichTextValue()
+        .setText(bills[h].title)
+        .setLinkUrl(bills[h].openstatesUrl)
+        .build();
+      cell.setRichTextValue(richText);
+      cell.setFontColor('#000000');
+    }
+  }
+
+  SpreadsheetApp.flush();
+}
+
+/**
+ * Format the New Laws 2026 tab with its specific column layout.
+ * Different from formatScraperTab() — New Laws has State, Identifier, Title, etc.
+ * @param {Object} sheet - Google Sheet object
+ */
+function formatNewLawsTab(sheet) {
+  var cols = SCRAPER.NEW_LAWS_COLUMNS;
+  var headers = SCRAPER.NEW_LAWS_HEADERS;
+
+  // Set headers in row 1
+  var headerRange = sheet.getRange(1, 1, 1, headers.length);
+  headerRange.setValues([headers]);
+  headerRange.setFontWeight('bold');
+  headerRange.setBackground('#083345');
+  headerRange.setFontColor('#FFFFFF');
+
+  // Column widths
+  sheet.setColumnWidth(cols.STATE, 120);
+  sheet.setColumnWidth(cols.IDENTIFIER, 100);
+  sheet.setColumnWidth(cols.TITLE, 420);
+  sheet.setColumnWidth(cols.SUMMARY, 420);
+  sheet.setColumnWidth(cols.BILL_STATUS, 200);
+  sheet.setColumnWidth(cols.STATUS_DATE, 100);
+  sheet.setColumnWidth(cols.STATUS, 100);
+  sheet.setColumnWidth(cols.OPENSTATES_URL, 50);
+
+  // Hide the URL column (H)
+  sheet.hideColumns(cols.OPENSTATES_URL);
+
+  // Freeze header row
+  sheet.setFrozenRows(1);
+
+  // Status dropdown (rows 2-500)
+  var statusRule = SpreadsheetApp.newDataValidation()
+    .requireValueInList(['', 'Approved', 'Delete'], true)
+    .setAllowInvalid(false)
+    .build();
+  sheet.getRange(2, cols.STATUS, 499, 1).setDataValidation(statusRule);
+
+  // Conditional formatting
+  var rules = sheet.getConditionalFormatRules();
+
+  // Approved = green
+  rules.push(SpreadsheetApp.newConditionalFormatRule()
+    .whenTextEqualTo('Approved')
+    .setBackground('#d0faad')
+    .setRanges([sheet.getRange(2, cols.STATUS, 499, 1)])
+    .build());
+
+  // Delete = gray
+  rules.push(SpreadsheetApp.newConditionalFormatRule()
+    .whenTextEqualTo('Delete')
+    .setBackground('#d9d9d9')
+    .setRanges([sheet.getRange(2, cols.STATUS, 499, 1)])
+    .build());
+
+  sheet.setConditionalFormatRules(rules);
+}
+
+/**
+ * Store the Open States API key in Script Properties.
+ * Run this ONCE from the Apps Script editor.
+ * After running, the key is stored securely and not visible in the code.
+ */
+function setOpenStatesApiKey() {
+  var ui = SpreadsheetApp.getUi();
+  var result = ui.prompt(
+    'Open States API Key',
+    'Paste your Open States API key:',
+    ui.ButtonSet.OK_CANCEL
+  );
+
+  if (result.getSelectedButton() === ui.Button.OK) {
+    var key = result.getResponseText().trim();
+    if (key) {
+      PropertiesService.getScriptProperties().setProperty('OPENSTATES_API_KEY', key);
+      ui.alert('Done', 'Open States API key saved to Script Properties.', ui.ButtonSet.OK);
+    }
+  }
+}
+
+/**
+ * Set up the New Laws 2026 tab with proper formatting.
+ * Run this ONCE to reformat the existing tab with the new column layout.
+ */
+function setupNewLawsTab() {
+  var ss = SpreadsheetApp.openById(SCRAPER.SPREADSHEET_ID);
+  var sheet = null;
+  var allSheets = ss.getSheets();
+  for (var s = 0; s < allSheets.length; s++) {
+    if (allSheets[s].getName().indexOf(SCRAPER.TABS.NEW_LAWS) === 0) {
+      sheet = allSheets[s];
+      break;
+    }
+  }
+  if (!sheet) {
+    sheet = ss.insertSheet(SCRAPER.TABS.NEW_LAWS);
+  }
+
+  sheet.clear();
+  formatNewLawsTab(sheet);
+  Logger.log('✅ New Laws 2026 tab formatted');
+
+  try {
+    SpreadsheetApp.getUi().alert('Done', 'New Laws 2026 tab has been set up.', SpreadsheetApp.getUi().ButtonSet.OK);
+  } catch (e) {}
+}
+
+/**
+ * Manual trigger: scrape new laws only (without running RSS scrapers).
+ */
+function scrapeNewLawsManual() {
+  scrapeNewLaws();
+  updateUnreviewedCounts();
+  try {
+    var ss = SpreadsheetApp.openById(SCRAPER.SPREADSHEET_ID);
+    var allSheets = ss.getSheets();
+    for (var s = 0; s < allSheets.length; s++) {
+      if (allSheets[s].getName().indexOf(SCRAPER.TABS.NEW_LAWS) === 0) {
+        var lastRow = allSheets[s].getLastRow();
+        SpreadsheetApp.getUi().alert('New Laws Scraper Complete',
+          'New Laws 2026: ' + (lastRow > 1 ? lastRow - 1 : 0) + ' total bills',
+          SpreadsheetApp.getUi().ButtonSet.OK);
+        break;
+      }
+    }
+  } catch (e) {}
+}
+
+
 /**
  * Run all scrapers. Call this from a time-driven trigger or menu.
  */
@@ -920,8 +1389,7 @@ function runAllScrapers() {
 
   scrapeTab(SCRAPER.TABS.BREAKING_TRENDING);
   scrapeTab(SCRAPER.TABS.GOVERNMENT_POLICY);
-  // New Laws 2026 has no sources yet — skip
-  // scrapeTab(SCRAPER.TABS.NEW_LAWS);
+  scrapeNewLaws();
 
   // Update unreviewed counts on all tabs
   updateUnreviewedCounts();
