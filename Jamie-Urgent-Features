@@ -4,4 +4,4 @@ This is a list of urgent features that take precedence over everything, as they 
 
 1. Add a filter to ED, WET, and AST for articles that must be published asap. Claude to recommend structure.
 2. Table the RSS feed tracking for the news scraper. Instead, work on improving the old news tracker with filters, google news and trends, Jamie and Claude find and vet sources, enact blacklist, only put this in the main sheet, not a different sheet for now.
-3. Review the rss and issues with the previous latest version of the new scraper.
+3. Review the rss and issues with the previous latest version of the new scraper. Upon review, some of the stuff in the breaking/trending tab are passable.
