@@ -9213,6 +9213,21 @@ function onOpen() {
     .addItem('🔗 Open Selected URLs in Tabs', 'openSelectedUrls')
     .addToUi();
 
+  ui.createMenu('      **News Scraper')
+    .addItem('🔄 Run Scrapers Now', 'runScrapersManual')
+    .addItem('📰 Transfer Approved → Enhanced Drafter', 'transferScraperToED')
+    .addSeparator()
+    .addItem('🗑️ Delete Marked Rows', 'deleteMarkedRows')
+    .addItem('🔢 Update Unreviewed Counts', 'updateUnreviewedCounts')
+    .addSeparator()
+    .addItem('⚙️ Set Up Scraper Sheet', 'setupScraperSheet')
+    .addItem('📅 Enable Auto-Scrape (every 4h)', 'setupScraperSchedule')
+    .addItem('⏹️ Disable Auto-Scrape', 'removeScraperSchedule')
+    .addSeparator()
+    .addItem('🧹 Sort Travel News (newest first)', 'sortTravelNewsTracker')
+    .addItem('🇬🇪 Remove Georgia (country) rows', 'cleanupGeorgiaFromTravelNews')
+    .addToUi();
+
 
 
 
