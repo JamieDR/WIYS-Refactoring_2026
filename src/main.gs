@@ -5746,11 +5746,50 @@ function lookupArticleInStatusTracker(articleTitle) {
   return null;
 }
 
+// Get the tag cache (CacheService — auto-expires, no ScriptProperties bloat)
+// Returns object like { "arizona hiking": 123, "desert wildlife": 456 }
+function getTagCacheMap_() {
+  var cache = CacheService.getScriptCache();
+  var cached = cache.get('wp_tag_map');
+  if (cached) {
+    try {
+      return JSON.parse(cached);
+    } catch (e) {
+      Logger.log('Tag cache corrupted, rebuilding');
+    }
+  }
+  return null;
+}
+
+// Save the tag cache (6-hour TTL — CacheService maximum)
+function setTagCacheMap_(tagMap) {
+  var cache = CacheService.getScriptCache();
+  var json = JSON.stringify(tagMap);
+  // CacheService has 100KB per key limit — check size
+  if (json.length > 90000) {
+    Logger.log('Tag cache too large (' + json.length + ' chars), skipping cache write');
+    return;
+  }
+  cache.put('wp_tag_map', json, 21600); // 6 hours in seconds
+}
+
 // Convert tag names to WordPress tag IDs (create if they don't exist)
+// Uses CacheService to avoid repeated API calls for known tags
 function convertTagsToWordPressIds(tagNames, username, applicationPassword) {
   var tagIds = [];
   var tagsEndpoint = CONFIG.WORDPRESS.BASE_URL + "/wp-json/wp/v2/tags";
-  
+
+  // Load tag cache — avoids hitting WP API for tags we've already looked up
+  var tagMap = getTagCacheMap_() || {};
+  var cacheWasEmpty = Object.keys(tagMap).length === 0;
+  var cacheUpdated = false;
+
+  if (cacheWasEmpty) {
+    Logger.log('Tag cache empty — will build from API lookups this run');
+  } else {
+    Logger.log('Tag cache loaded with ' + Object.keys(tagMap).length + ' tags');
+  }
+
   for (var i = 0; i < tagNames.length; i++) {
     var tagName = tagNames[i];
 
@@ -5760,7 +5799,15 @@ function convertTagsToWordPressIds(tagNames, username, applicationPassword) {
       continue;
     }
 
-    // First, try to find existing tag
+    // Check cache first — if we already know this tag's ID, skip the API call
+    var cacheKey = tagName.toLowerCase();
+    if (tagMap[cacheKey]) {
+      tagIds.push(tagMap[cacheKey]);
+      Logger.log('Tag from cache: ' + tagName + ' (ID: ' + tagMap[cacheKey] + ')');
+      continue;
+    }
+
+    // Not in cache — search WordPress API
     var searchEndpoint = tagsEndpoint + "?search=" + encodeURIComponent(tagName) + "&per_page=100";
     var searchOptions = {
       method: "get",
@@ -5769,12 +5816,12 @@ function convertTagsToWordPressIds(tagNames, username, applicationPassword) {
       },
       muteHttpExceptions: true
     };
-    
+
     try {
       var searchResponse = UrlFetchApp.fetch(searchEndpoint, searchOptions);
       if (searchResponse.getResponseCode() === CONFIG.HTTP_STATUS.OK) {
         var existingTags = JSON.parse(searchResponse.getContentText());
-        
+
         // Look for exact match (decode HTML entities — WP returns &amp; etc.)
         var exactMatch = null;
         for (var j = 0; j < existingTags.length; j++) {
@@ -5783,14 +5830,16 @@ function convertTagsToWordPressIds(tagNames, username, applicationPassword) {
             break;
           }
         }
-        
+
         if (exactMatch) {
           tagIds.push(exactMatch.id);
+          tagMap[cacheKey] = exactMatch.id;
+          cacheUpdated = true;
           Logger.log('Found existing tag: ' + tagName + ' (ID: ' + exactMatch.id + ')');
           continue;
         }
       }
-      
+
       // Tag doesn't exist, create it
       var createOptions = {
         method: "post",
@@ -5804,24 +5853,32 @@ function convertTagsToWordPressIds(tagNames, username, applicationPassword) {
         }),
         muteHttpExceptions: true
       };
-      
+
       var createResponse = UrlFetchApp.fetch(tagsEndpoint, createOptions);
       if (createResponse.getResponseCode() === CONFIG.HTTP_STATUS.CREATED) {
         var newTag = JSON.parse(createResponse.getContentText());
         tagIds.push(newTag.id);
+        tagMap[cacheKey] = newTag.id;
+        cacheUpdated = true;
         Logger.log('Created new tag: ' + tagName + ' (ID: ' + newTag.id + ')');
       } else {
         Logger.log('Failed to create tag: ' + tagName + ' - ' + createResponse.getContentText());
       }
-      
+
     } catch (error) {
       Logger.log('Error processing tag "' + tagName + '": ' + error.message);
     }
-    
+
     // Small delay to avoid overwhelming the API
     Utilities.sleep(200);
   }
-  
+
+  // Save updated cache if we learned any new tags
+  if (cacheUpdated) {
+    setTagCacheMap_(tagMap);
+    Logger.log('Tag cache updated — now has ' + Object.keys(tagMap).length + ' tags');
+  }
+
   return tagIds;
 }
 
