@@ -167,6 +167,18 @@ Once content pipeline is proven and working:
 **What:** When an article is reassigned from one team member to another, automatically move the row from the original person's workspace to the new person's workspace in the Uploader sheet. Currently this would need to be done manually (cut/paste between workspaces).
 **Status:** Needs design discussion — triggers, edge cases, and interaction with priority system not yet decided.
 
+## WP Drafts landing sheet — separate inbox from WET workspace
+**Priority:** High — client-requested (Feb 25, 2026)
+**Sheet:** New sheet (WP Drafts Inbox or similar) + WET
+**What:** Articles transferred from AST currently land directly in WET, cluttering Jamie's active workspace and making it hard to see which drafts are new. Create a separate sheet where WP drafts land first, then pull into WET when ready to work. Urgent articles could auto-pull into WET's working section.
+**Status:** Needs design discussion — depends on priority system design.
+
+## Auto-schedule fill — time slots, spacing, and numbering
+**Priority:** High — client-requested (Feb 25, 2026)
+**Sheet:** WP Editing Tracker (WET)
+**What:** A button/menu item that auto-fills scheduling info for a batch of articles. Prompts for: start time (e.g., 10am), end time (e.g., 10pm), spacing between articles (e.g., 20 minutes), and date. Then auto-fills the time, date, and article numbering for all articles in the working section. Eliminates repetitive manual typing/pasting of times and numbers.
+**Status:** Needs design discussion — which columns, numbering format, edge cases.
+
 ## Merge second codebase into WIYS workflow sheet
 **Priority:** High — Jamie flagged as urgent (Feb 17, 2026)
 **What:** Another Apps Script codebase on a separate spreadsheet needs to be merged into the main WIYS workflow sheet.
