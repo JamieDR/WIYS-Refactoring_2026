@@ -160,18 +160,30 @@ Once content pipeline is proven and working:
 **Sheets:** Enhanced Drafter (ED), WP Editing Tracker (WET), Article Status Tracker (AST), Uploader
 **What:** A system for marking articles that must be published ASAP and ensuring they get prioritized throughout the entire pipeline. Needs a way to flag articles, visually distinguish them, and potentially sort/filter them to the top.
 **Key detail:** Flag must originate in ED so drafters can see and prioritize urgent articles immediately. Currently Jamie tracks urgency manually (color highlights + next-day messages to drafters), which is error-prone — highlights got cleared and there's no persistent record of which articles are urgent.
-**Status:** Needs design discussion — approach not yet decided. See Jamie-Urgent-Features item #1.
+**Priority levels (decided):** Three tiers:
+- **ASAP** — must publish today/tonight. Auto-transfers to WET, skips drafts inbox.
+- **High** — publish within a few days. Prioritized over evergreen in drafts inbox.
+- **Evergreen** — no time pressure. Normal queue, pulled via "pick for me" or manually.
+**Status:** Needs design discussion on implementation details. See Jamie-Urgent-Features item #1.
 
-## Uploader workspace row reassignment automation
+## Uploader workspace assignment + reassignment automation
 **Priority:** High — client-requested (Feb 25, 2026)
-**Sheet:** Uploader
-**What:** When an article is reassigned from one team member to another, automatically move the row from the original person's workspace to the new person's workspace in the Uploader sheet. Currently this would need to be done manually (cut/paste between workspaces).
+**Sheets:** Uploader + AST
+**What:** Two related features using the same row-moving mechanism:
+1. **Assignment:** Articles start in an "Unassigned Drafts" workspace in Uploader. Jamie selects articles, picks a person via menu button ("Assign Drafts"), rows move to that person's workspace automatically. Replaces the nightly manual routine of dividing articles, creating rows in each person's workspace, and copy-pasting.
+2. **Reassignment:** Move articles from one person's workspace to another's. Select rows, pick new assignee, done. Updates AST assignment too.
+**Real scenario (reassignment):** Jamie assigns Karl 10 articles in Uploader. Then 6 urgent ones come in and replace some of Karl's. The displaced 6 need to go to Marie. Currently requires: two browser windows open, manually inserting rows in Marie's workspace, copy-pasting data from Karl's workspace, then separately updating names and topics in AST. Should be: select rows, pick new assignee, done.
+**Real scenario (assignment):** Every night Jamie manually divides available articles across team members — creating rows, pasting data, assigning names. Should be: articles sit in Unassigned workspace, Jamie selects and assigns with a button.
 **Status:** Needs design discussion — triggers, edge cases, and interaction with priority system not yet decided.
 
 ## WP Drafts landing sheet — separate inbox from WET workspace
 **Priority:** High — client-requested (Feb 25, 2026)
-**Sheet:** New sheet (WP Drafts Inbox or similar) + WET
-**What:** Articles transferred from AST currently land directly in WET, cluttering Jamie's active workspace and making it hard to see which drafts are new. Create a separate sheet where WP drafts land first, then pull into WET when ready to work. Urgent articles could auto-pull into WET's working section.
+**Sheet:** New sheet (WP Drafts Ready or similar) + WET
+**What:** Articles transferred from AST currently land directly in WET, cluttering Jamie's active workspace and making it hard to see which drafts are new. Create a separate sheet where WP drafts land first, then pull into WET when ready to work.
+**Key details:**
+- Separate evergreen articles from news articles (column sets or sections within the sheet)
+- "Pick for me" feature: Jamie specifies how many news + how many evergreen, system pulls a random mix and transfers them to WET. Eliminates manual choosing/copying/pasting/row-adjusting on non-urgent days
+- Articles flagged as urgent skip this sheet entirely — they auto-transfer straight to WET so Jamie never forgets them and never has to manually copy them
 **Status:** Needs design discussion — depends on priority system design.
 
 ## Auto-schedule fill — time slots, spacing, and numbering
