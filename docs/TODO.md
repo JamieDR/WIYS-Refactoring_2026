@@ -159,6 +159,7 @@ Once content pipeline is proven and working:
 **Priority:** High — client-requested (Feb 22, 2026)
 **Sheets:** Enhanced Drafter (ED), WP Editing Tracker (WET), Article Status Tracker (AST), Uploader
 **What:** A system for marking articles that must be published ASAP and ensuring they get prioritized throughout the entire pipeline. Needs a way to flag articles, visually distinguish them, and potentially sort/filter them to the top.
+**Key detail:** Flag must originate in ED so drafters can see and prioritize urgent articles immediately. Currently Jamie tracks urgency manually (color highlights + next-day messages to drafters), which is error-prone — highlights got cleared and there's no persistent record of which articles are urgent.
 **Status:** Needs design discussion — approach not yet decided. See Jamie-Urgent-Features item #1.
 
 ## Uploader workspace row reassignment automation
