@@ -155,6 +155,18 @@ Once content pipeline is proven and working:
 
 # URGENT — Ahead of Refactoring
 
+## Article priority system — mark and fast-track ASAP articles
+**Priority:** High — client-requested (Feb 22, 2026)
+**Sheets:** Enhanced Drafter (ED), WP Editing Tracker (WET), Article Status Tracker (AST), Uploader
+**What:** A system for marking articles that must be published ASAP and ensuring they get prioritized throughout the entire pipeline. Needs a way to flag articles, visually distinguish them, and potentially sort/filter them to the top.
+**Status:** Needs design discussion — approach not yet decided. See Jamie-Urgent-Features item #1.
+
+## Uploader workspace row reassignment automation
+**Priority:** High — client-requested (Feb 25, 2026)
+**Sheet:** Uploader
+**What:** When an article is reassigned from one team member to another, automatically move the row from the original person's workspace to the new person's workspace in the Uploader sheet. Currently this would need to be done manually (cut/paste between workspaces).
+**Status:** Needs design discussion — triggers, edge cases, and interaction with priority system not yet decided.
+
 ## Merge second codebase into WIYS workflow sheet
 **Priority:** High — Jamie flagged as urgent (Feb 17, 2026)
 **What:** Another Apps Script codebase on a separate spreadsheet needs to be merged into the main WIYS workflow sheet.
