@@ -36,6 +36,11 @@ Offer the WIYS system as a service to businesses that need to scale content prod
 - **Phase 4:** Clean architecture — makes the system configurable per client
 - **Phase 5:** Split monolith — makes it maintainable at scale
 
+## Go-To-Market Angle
+- **Lead with consulting.** Use the WIYS operation as a live case study — "here's what we did, here's the before/after, here's how your team could work the same way."
+- The case study sells the expertise. The expertise sells the tool. The tool sells the retainer.
+- Jamie's own 15-to-6 transition is the proof that this isn't theoretical.
+
 ## Key Decisions for Later
 - Product vs. consulting? (Configurable product that scales, or bespoke builds per client?)
 - Pricing model
