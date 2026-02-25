@@ -166,11 +166,14 @@ Once content pipeline is proven and working:
 - **Evergreen** — no time pressure. Normal queue, pulled via "pick for me" or manually.
 **Status:** Needs design discussion on implementation details. See Jamie-Urgent-Features item #1.
 
-## Uploader workspace row reassignment automation
+## Uploader workspace assignment + reassignment automation
 **Priority:** High — client-requested (Feb 25, 2026)
 **Sheets:** Uploader + AST
-**What:** When an article is reassigned from one team member to another, automatically move the row from the original person's workspace to the new person's workspace in the Uploader sheet, and update the assignment in AST.
-**Real scenario:** Jamie assigns Karl 10 articles in Uploader. Then 6 urgent ones come in and replace some of Karl's. The displaced 6 need to go to Marie. Currently requires: two browser windows open, manually inserting rows in Marie's workspace, copy-pasting data from Karl's workspace, then separately updating names and topics in AST. Should be: select rows, pick new assignee, done.
+**What:** Two related features using the same row-moving mechanism:
+1. **Assignment:** Articles start in an "Unassigned Drafts" workspace in Uploader. Jamie selects articles, picks a person via menu button ("Assign Drafts"), rows move to that person's workspace automatically. Replaces the nightly manual routine of dividing articles, creating rows in each person's workspace, and copy-pasting.
+2. **Reassignment:** Move articles from one person's workspace to another's. Select rows, pick new assignee, done. Updates AST assignment too.
+**Real scenario (reassignment):** Jamie assigns Karl 10 articles in Uploader. Then 6 urgent ones come in and replace some of Karl's. The displaced 6 need to go to Marie. Currently requires: two browser windows open, manually inserting rows in Marie's workspace, copy-pasting data from Karl's workspace, then separately updating names and topics in AST. Should be: select rows, pick new assignee, done.
+**Real scenario (assignment):** Every night Jamie manually divides available articles across team members — creating rows, pasting data, assigning names. Should be: articles sit in Unassigned workspace, Jamie selects and assigns with a button.
 **Status:** Needs design discussion — triggers, edge cases, and interaction with priority system not yet decided.
 
 ## WP Drafts landing sheet — separate inbox from WET workspace
