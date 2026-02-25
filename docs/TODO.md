@@ -164,8 +164,9 @@ Once content pipeline is proven and working:
 
 ## Uploader workspace row reassignment automation
 **Priority:** High — client-requested (Feb 25, 2026)
-**Sheet:** Uploader
-**What:** When an article is reassigned from one team member to another, automatically move the row from the original person's workspace to the new person's workspace in the Uploader sheet. Currently this would need to be done manually (cut/paste between workspaces).
+**Sheets:** Uploader + AST
+**What:** When an article is reassigned from one team member to another, automatically move the row from the original person's workspace to the new person's workspace in the Uploader sheet, and update the assignment in AST.
+**Real scenario:** Jamie assigns Karl 10 articles in Uploader. Then 6 urgent ones come in and replace some of Karl's. The displaced 6 need to go to Marie. Currently requires: two browser windows open, manually inserting rows in Marie's workspace, copy-pasting data from Karl's workspace, then separately updating names and topics in AST. Should be: select rows, pick new assignee, done.
 **Status:** Needs design discussion — triggers, edge cases, and interaction with priority system not yet decided.
 
 ## WP Drafts landing sheet — separate inbox from WET workspace
