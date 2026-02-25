@@ -171,8 +171,12 @@ Once content pipeline is proven and working:
 
 ## WP Drafts landing sheet — separate inbox from WET workspace
 **Priority:** High — client-requested (Feb 25, 2026)
-**Sheet:** New sheet (WP Drafts Inbox or similar) + WET
-**What:** Articles transferred from AST currently land directly in WET, cluttering Jamie's active workspace and making it hard to see which drafts are new. Create a separate sheet where WP drafts land first, then pull into WET when ready to work. Urgent articles could auto-pull into WET's working section.
+**Sheet:** New sheet (WP Drafts Ready or similar) + WET
+**What:** Articles transferred from AST currently land directly in WET, cluttering Jamie's active workspace and making it hard to see which drafts are new. Create a separate sheet where WP drafts land first, then pull into WET when ready to work.
+**Key details:**
+- Separate evergreen articles from news articles (column sets or sections within the sheet)
+- "Pick for me" feature: Jamie specifies how many news + how many evergreen, system pulls a random mix and transfers them to WET. Eliminates manual choosing/copying/pasting/row-adjusting on non-urgent days
+- Articles flagged as urgent skip this sheet entirely — they auto-transfer straight to WET so Jamie never forgets them and never has to manually copy them
 **Status:** Needs design discussion — depends on priority system design.
 
 ## Auto-schedule fill — time slots, spacing, and numbering
