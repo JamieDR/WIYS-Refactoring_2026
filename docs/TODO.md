@@ -161,8 +161,8 @@ Once content pipeline is proven and working:
 **What:** A system for marking articles that must be published ASAP and ensuring they get prioritized throughout the entire pipeline. Needs a way to flag articles, visually distinguish them, and potentially sort/filter them to the top.
 **Key detail:** Flag must originate in ED so drafters can see and prioritize urgent articles immediately. Currently Jamie tracks urgency manually (color highlights + next-day messages to drafters), which is error-prone — highlights got cleared and there's no persistent record of which articles are urgent.
 **Priority levels (decided):** Three tiers:
-- **TONIGHT** — must publish today. Auto-transfers to WET, skips drafts inbox.
-- **Soon** — publish within a few days. Prioritized over evergreen in drafts inbox.
+- **ASAP** — must publish today/tonight. Auto-transfers to WET, skips drafts inbox.
+- **High** — publish within a few days. Prioritized over evergreen in drafts inbox.
 - **Evergreen** — no time pressure. Normal queue, pulled via "pick for me" or manually.
 **Status:** Needs design discussion on implementation details. See Jamie-Urgent-Features item #1.
 
