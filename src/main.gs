@@ -9260,6 +9260,7 @@ function onOpen() {
   ui.createMenu('      **Drafting')
     .addItem('✂️ Split Topic/URL', 'splitter')
     .addItem('📋 Transfer to Enhanced Drafter', 'transferToEnhancedDrafter')
+    .addItem('📜 Transfer New Laws → Enhanced Drafter', 'transferNewLawsToED')
     .addSeparator()
     .addItem('📄 Batch Create GDocs', 'batchCreateGDocs')
     .addSeparator()
@@ -10208,6 +10209,142 @@ function transferToEnhancedDrafter() {
   }
 
   ui.alert('Done!', rowsToTransfer.length + ' row(s) transferred to Enhanced Drafter.', ui.ButtonSet.OK);
+}
+
+
+/**
+ * ============================================================================
+ * TRANSFER NEW LAWS 2026 → ENHANCED DRAFTER
+ * ============================================================================
+ * Transfers rows marked "Use" in Column C of "New Laws 2026" (main spreadsheet)
+ * to the Enhanced Drafter sheet.
+ *
+ * New Laws 2026 → Enhanced Drafter mapping:
+ *   A + " - " + B  → ED Column B  (e.g. "Arizona - SB 1234")
+ *   "Current News"  → ED Column C  (Article Type)
+ *   Sequential 1-40 → ED Column A  (resets after each black separator row)
+ *
+ * After transfer: rows are deleted from New Laws 2026.
+ * Numbering: 1-40 per block, separated by black background rows.
+ */
+function transferNewLawsToED() {
+  var ui = SpreadsheetApp.getUi();
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var newLawsSheet = ss.getSheetByName('New Laws 2026');
+  var edSheet = ss.getSheetByName('Enhanced Drafter');
+
+  if (!newLawsSheet) {
+    ui.alert('Error', 'Could not find "New Laws 2026" sheet.', ui.ButtonSet.OK);
+    return;
+  }
+  if (!edSheet) {
+    ui.alert('Error', 'Could not find "Enhanced Drafter" sheet.', ui.ButtonSet.OK);
+    return;
+  }
+
+  // --- Collect rows marked "Use" in New Laws 2026 Column C ---
+  var nlLastRow = newLawsSheet.getLastRow();
+  if (nlLastRow < 2) {
+    ui.alert('Nothing to transfer', 'No data rows found in New Laws 2026.', ui.ButtonSet.OK);
+    return;
+  }
+
+  var nlData = newLawsSheet.getRange(2, 1, nlLastRow - 1, 3).getValues(); // A, B, C from row 2
+  var rowsToTransfer = [];
+  for (var i = 0; i < nlData.length; i++) {
+    if (nlData[i][2] && nlData[i][2].toString().trim() === 'Use') {
+      rowsToTransfer.push({
+        sourceRow: i + 2,
+        colA: nlData[i][0] ? nlData[i][0].toString().trim() : '',
+        colB: nlData[i][1] ? nlData[i][1].toString().trim() : ''
+      });
+    }
+  }
+
+  if (rowsToTransfer.length === 0) {
+    ui.alert('Nothing to transfer', 'No rows with "Use" in Column C found in New Laws 2026.', ui.ButtonSet.OK);
+    return;
+  }
+
+  // --- Find where to start writing in Enhanced Drafter ---
+  var edLastRow = edSheet.getLastRow();
+  var startRow = 5; // Default: row 5 (rows 1-4 are headers/structure)
+  var currentNumber = 0; // Track position in the 1-40 numbering cycle
+
+  if (edLastRow >= 5) {
+    var colB = edSheet.getRange(5, 2, edLastRow - 4, 1).getValues();
+    var colA = edSheet.getRange(5, 1, edLastRow - 4, 1).getValues();
+
+    // Find last non-empty row in column B (scanning from bottom)
+    for (var r = colB.length - 1; r >= 0; r--) {
+      if (colB[r][0] && colB[r][0].toString().trim() !== '') {
+        startRow = r + 5 + 1; // First empty row after last content
+        break;
+      }
+    }
+
+    // Find the last number in column A to know where we are in the 1-40 cycle
+    for (var n = colA.length - 1; n >= 0; n--) {
+      var val = colA[n][0];
+      if (val && !isNaN(val) && val > 0) {
+        currentNumber = parseInt(val);
+        break;
+      }
+    }
+  }
+
+  // --- Ensure enough rows exist ---
+  // Calculate how many separator rows we'll need
+  var separatorCount = 0;
+  var tempNumber = currentNumber;
+  for (var c = 0; c < rowsToTransfer.length; c++) {
+    tempNumber++;
+    if (tempNumber > 40) {
+      separatorCount++; // black separator row
+      tempNumber = 1;
+    }
+  }
+  var totalRowsNeeded = rowsToTransfer.length + separatorCount;
+  var sheetMaxRow = edSheet.getMaxRows();
+  if (startRow + totalRowsNeeded - 1 > sheetMaxRow) {
+    edSheet.insertRowsAfter(sheetMaxRow, startRow + totalRowsNeeded - sheetMaxRow);
+  }
+
+  // --- Transfer each row ---
+  var currentRow = startRow;
+  var entryNumber = currentNumber;
+
+  for (var j = 0; j < rowsToTransfer.length; j++) {
+    var item = rowsToTransfer[j];
+    entryNumber++;
+
+    // If we've passed 40, insert a black separator row and reset
+    if (entryNumber > 40) {
+      edSheet.getRange(currentRow, 1, 1, edSheet.getLastColumn() || 12).setBackground('#000000');
+      currentRow++;
+      entryNumber = 1;
+    }
+
+    // Column A: sequential number (1-40)
+    edSheet.getRange(currentRow, 1).setValue(entryNumber);
+
+    // Column B: "ColA - ColB" combined
+    var combinedValue = item.colA + ' - ' + item.colB;
+    edSheet.getRange(currentRow, 2).setValue(combinedValue);
+
+    // Column C: Article Type
+    edSheet.getRange(currentRow, 3).setValue('Current News');
+
+    currentRow++;
+  }
+
+  // --- Delete transferred rows from New Laws 2026 (bottom-up to avoid row shift) ---
+  for (var d = rowsToTransfer.length - 1; d >= 0; d--) {
+    newLawsSheet.deleteRow(rowsToTransfer[d].sourceRow);
+  }
+
+  SpreadsheetApp.flush();
+  ui.alert('Done!', rowsToTransfer.length + ' row(s) transferred from New Laws 2026 to Enhanced Drafter.', ui.ButtonSet.OK);
 }
 
 
