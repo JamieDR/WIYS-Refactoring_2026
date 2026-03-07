@@ -13889,21 +13889,27 @@ function showTransferDialog() {
   // Count available articles (not already transferred) and priority breakdown
   var data = availSheet.getRange(2, 1, lastRow - 1, 15).getValues();
   var availableCount = 0;
-  var priorityCounts = { ASAP: 0, Priority: 0, Evergreen: 0, Untagged: 0 };
+  var priorityCounts = { Include: 0, ASAP: 0, Priority: 0, Evergreen: 0, Untagged: 0 };
 
   for (var i = 0; i < data.length; i++) {
-    var status = data[i][cols.ARTICLE_STATUS - 1].toString().trim();
-    if (status === 'Transferred to WET') continue;
+    var status = data[i][cols.ARTICLE_STATUS - 1].toString().trim().toLowerCase();
+    if (status === 'transferred to wet') continue;
 
     var wpUrl = data[i][cols.WP_URL - 1].toString().trim();
     if (!wpUrl) continue;
 
     availableCount++;
-    var priority = data[i][cols.PRIORITY - 1].toString().trim();
-    if (priority === 'ASAP') priorityCounts.ASAP++;
-    else if (priority === 'Priority') priorityCounts.Priority++;
-    else if (priority === 'Evergreen') priorityCounts.Evergreen++;
-    else priorityCounts.Untagged++;
+
+    // "include" in Article Status = manual override
+    if (status.indexOf('include') !== -1) {
+      priorityCounts.Include++;
+    } else {
+      var prio = data[i][cols.PRIORITY - 1].toString().trim();
+      if (prio === 'ASAP') priorityCounts.ASAP++;
+      else if (prio === 'Priority') priorityCounts.Priority++;
+      else if (prio === 'Evergreen') priorityCounts.Evergreen++;
+      else priorityCounts.Untagged++;
+    }
   }
 
   if (availableCount === 0) {
@@ -13946,11 +13952,12 @@ function executeTransferToWET(days) {
   var data = availSheet.getRange(2, 1, lastRow - 1, 15).getValues();
 
   // Collect available articles with their sheet row numbers
-  var asap = [], priority = [], evergreen = [], untagged = [];
+  // Priority tiers: include (manual override) > ASAP > Priority > Untagged > Evergreen
+  var include = [], asap = [], priority = [], evergreen = [], untagged = [];
 
   for (var i = 0; i < data.length; i++) {
-    var status = data[i][cols.ARTICLE_STATUS - 1].toString().trim();
-    if (status === 'Transferred to WET') continue;
+    var status = data[i][cols.ARTICLE_STATUS - 1].toString().trim().toLowerCase();
+    if (status === 'transferred to wet') continue;
 
     var wpUrl = data[i][cols.WP_URL - 1].toString().trim();
     if (!wpUrl) continue;
@@ -13969,21 +13976,26 @@ function executeTransferToWET(days) {
       priority: data[i][cols.PRIORITY - 1].toString().trim()
     };
 
-    var prio = article.priority;
-    if (prio === 'ASAP') asap.push(article);
-    else if (prio === 'Priority') priority.push(article);
-    else if (prio === 'Evergreen') evergreen.push(article);
-    else untagged.push(article);
+    // "include" in Article Status = manual override, goes first
+    if (status.indexOf('include') !== -1) {
+      include.push(article);
+    } else {
+      var prio = article.priority;
+      if (prio === 'ASAP') asap.push(article);
+      else if (prio === 'Priority') priority.push(article);
+      else if (prio === 'Evergreen') evergreen.push(article);
+      else untagged.push(article);
+    }
   }
 
-  // Shuffle each tier
+  // Shuffle each tier (include stays in order — those are hand-picked)
   shuffleArray(asap);
   shuffleArray(priority);
   shuffleArray(evergreen);
   shuffleArray(untagged);
 
-  // Build ordered pool: ASAP first, then Priority, then Untagged, then Evergreen
-  var pool = asap.concat(priority).concat(untagged).concat(evergreen);
+  // Build ordered pool: include first, then ASAP, Priority, Untagged, Evergreen
+  var pool = include.concat(asap).concat(priority).concat(untagged).concat(evergreen);
 
   // Calculate total articles needed
   var totalNeeded = 0;

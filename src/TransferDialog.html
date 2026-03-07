@@ -78,12 +78,14 @@
       var availablePriorityCounts = <?!= JSON.stringify(priorityCounts) ?>;
 
       // Show available info
-      document.getElementById('availableInfo').innerHTML =
-        '<strong>' + availableCount + ' articles available</strong> — ' +
-        'ASAP: ' + (availablePriorityCounts.ASAP || 0) +
+      var includeCount = availablePriorityCounts.Include || 0;
+      var infoHtml = '<strong>' + availableCount + ' articles available</strong> — ';
+      if (includeCount > 0) infoHtml += '⭐ Include: ' + includeCount + ' | ';
+      infoHtml += 'ASAP: ' + (availablePriorityCounts.ASAP || 0) +
         ' | Priority: ' + (availablePriorityCounts.Priority || 0) +
         ' | Evergreen: ' + (availablePriorityCounts.Evergreen || 0) +
         ' | Untagged: ' + (availablePriorityCounts.Untagged || 0);
+      document.getElementById('availableInfo').innerHTML = infoHtml;
 
       function goToStep2() {
         var numDays = parseInt(document.getElementById('numDays').value);
