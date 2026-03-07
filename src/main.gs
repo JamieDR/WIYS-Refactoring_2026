@@ -13856,6 +13856,60 @@ function setupAvailableWPDrafts() {
 
 
 // ============================================================================
+// ONE-TIME: READ WET CONTENTS (run, then check Execution Log)
+// ============================================================================
+function readWETContents() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var ui = SpreadsheetApp.getUi();
+  var wetSheet = ss.getSheetByName(CONFIG.SHEETS.WP_EDITING_TRACKER);
+
+  if (!wetSheet) {
+    ui.alert('WP Editing Tracker sheet not found.');
+    return;
+  }
+
+  var lastRow = wetSheet.getLastRow();
+  var lastCol = wetSheet.getLastColumn();
+
+  if (lastRow < 2) {
+    ui.alert('WP Editing Tracker has no data rows.');
+    return;
+  }
+
+  var headers = wetSheet.getRange(1, 1, 1, lastCol).getValues()[0];
+  var data = wetSheet.getRange(2, 1, lastRow - 1, lastCol).getValues();
+
+  // Full output goes to Execution Log
+  var summary = 'WET: ' + data.length + ' rows, ' + lastCol + ' columns\n';
+  summary += 'HEADERS: ' + headers.join(' | ') + '\n\n';
+
+  for (var i = 0; i < data.length; i++) {
+    var line = 'Row ' + (i + 2) + ': ';
+    for (var c = 0; c < data[i].length; c++) {
+      var val = data[i][c].toString().trim();
+      if (val.length > 40) val = val.substring(0, 37) + '...';
+      if (val) line += headers[c] + '="' + val + '" | ';
+    }
+    summary += line + '\n';
+  }
+
+  Logger.log(summary);
+
+  // Short preview in dialog
+  var dialogText = 'WET: ' + data.length + ' rows, ' + lastCol + ' columns.\n';
+  dialogText += 'Headers: ' + headers.join(', ') + '\n\n';
+  dialogText += 'Full output → View > Executions in Apps Script editor.\n\n';
+  for (var i = 0; i < Math.min(data.length, 20); i++) {
+    var title = data[i][2] || data[i][8] || '(no title)';
+    var status = data[i][7] || '';
+    dialogText += 'Row ' + (i + 2) + ': ' + title.toString().substring(0, 50) + ' | Status: ' + status + '\n';
+  }
+
+  ui.alert('WET Contents', dialogText, ui.ButtonSet.OK);
+}
+
+
+// ============================================================================
 // ONE-TIME: MIGRATE WET DRAFTS → AVAILABLE WP DRAFTS
 // ============================================================================
 // Reads all rows from WP Editing Tracker that are WordPress drafts (not yet
