@@ -9249,8 +9249,8 @@ function onOpen() {
     .addItem('✉️ Create Newsletters', 'createNewsletters')
     .addToUi();
 
-  // Create menu for WP Draftwork (shared between WET and Available WP Drafts)
-  ui.createMenu('      **WP Draftwork')
+  // Create menu for Editing (shared between WET and Available WP Drafts)
+  ui.createMenu('      **Editing')
     .addItem('📦 Transfer to WET', 'showTransferDialog')
     .addSeparator()
     .addItem('📝 Update All Titles', 'batchUpdateTitles')
@@ -13845,7 +13845,7 @@ function setupAvailableWPDrafts() {
 // ============================================================================
 // TRANSFER: AVAILABLE WP DRAFTS → WET (Dialog Launcher)
 // ============================================================================
-// Opens the transfer dialog. Called from the WP Draftwork menu.
+// Opens the transfer dialog. Called from the Editing menu.
 // ============================================================================
 
 function showTransferDialog() {
