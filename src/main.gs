@@ -14115,13 +14115,17 @@ function executeTransferToWET(days) {
       }
     }
 
-    // Format date divider rows (bold, colored background)
+    // Format date divider rows
     for (var di = 0; di < dividerRowIndices.length; di++) {
       var dividerSheetRow = wetStartRow + dividerRowIndices[di];
       var dividerRange = wetSheet.getRange(dividerSheetRow, 1, 1, WET_COLS);
-      dividerRange.setFontWeight('bold');
-      dividerRange.setBackground('#d9e2f3');
+      dividerRange.clearFormat();
       dividerRange.merge();
+      dividerRange.setBackground('#440f05');
+      dividerRange.setFontColor('white');
+      dividerRange.setHorizontalAlignment('center');
+      dividerRange.setFontSize(20);
+      dividerRange.setFontWeight('bold');
     }
 
     // Format text wrapping on WET: wrap titles/topics, clip URLs
