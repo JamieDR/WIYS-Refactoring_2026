@@ -13847,7 +13847,7 @@ function setupAvailableWPDrafts() {
 
   // Add data validation for Article Status column (dropdown)
   var statusRule = SpreadsheetApp.newDataValidation()
-    .requireValueInList(['WordPress Draft', 'Transferred to WET', 'Title Updated'], true)
+    .requireValueInList(['WordPress Draft', 'Include', 'DONE', 'Title Updated'], true)
     .setAllowInvalid(false)
     .build();
   sheet.getRange(2, cols.ARTICLE_STATUS, 998).setDataValidation(statusRule);
@@ -13893,7 +13893,7 @@ function showTransferDialog() {
 
   for (var i = 0; i < data.length; i++) {
     var status = data[i][cols.ARTICLE_STATUS - 1].toString().trim().toLowerCase();
-    if (status === 'transferred to wet') continue;
+    if (status === 'done') continue;
 
     var wpUrl = data[i][cols.WP_URL - 1].toString().trim();
     if (!wpUrl) continue;
@@ -13935,7 +13935,7 @@ function showTransferDialog() {
 //   [{ count: 30, date: "2026-03-10" }, { count: 25, date: "2026-03-11" }]
 // Selects articles by priority (ASAP first), randomized within tiers.
 // Writes to WET with Date, Time, and # auto-filled.
-// Marks rows as "Transferred to WET" on Available.
+// Marks rows as "DONE" on Available.
 // ============================================================================
 
 function executeTransferToWET(days) {
@@ -13957,7 +13957,7 @@ function executeTransferToWET(days) {
 
   for (var i = 0; i < data.length; i++) {
     var status = data[i][cols.ARTICLE_STATUS - 1].toString().trim().toLowerCase();
-    if (status === 'transferred to wet') continue;
+    if (status === 'done') continue;
 
     var wpUrl = data[i][cols.WP_URL - 1].toString().trim();
     if (!wpUrl) continue;
@@ -14120,7 +14120,7 @@ function executeTransferToWET(days) {
 
   // Mark transferred articles on Available sheet
   for (var t = 0; t < transferredAvailRows.length; t++) {
-    availSheet.getRange(transferredAvailRows[t], cols.ARTICLE_STATUS).setValue('Transferred to WET');
+    availSheet.getRange(transferredAvailRows[t], cols.ARTICLE_STATUS).setValue('DONE');
   }
 
   SpreadsheetApp.flush();
