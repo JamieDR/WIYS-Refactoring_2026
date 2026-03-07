@@ -10657,21 +10657,23 @@ function extractTopicSummary(baseTopic, rawInput) {
  */
 function deleteDoneRows() {
   var ui = SpreadsheetApp.getUi();
-  var sheets = [
-    'WP Editing Tracker',
-    'Article Status Tracker',
-    'Topic List',
-    'Email Newsletter',
-    'Enhanced Drafter'
+
+  // Sheet name → status column number where DONE lives
+  var sheetConfig = [
+    { name: 'Enhanced Drafter',      statusCol: 12 },  // L
+    { name: 'Available WP Drafts',   statusCol: 9 },   // I
+    { name: 'Article Status Tracker', statusCol: 7 },   // G
+    { name: 'WP Editing Tracker',    statusCol: 8 },    // H
+    { name: 'Email Newsletter',      statusCol: 19 }    // S
   ];
 
-  var response = ui.prompt('Delete Done',
+  var response = ui.prompt('Delete DONE Rows',
     'Which sheet(s)?\n\n' +
-    '1. WP Editing Tracker\n' +
-    '2. Article Status Tracker\n' +
-    '3. Topic List\n' +
-    '4. Email Newsletter\n' +
-    '5. Enhanced Drafter\n' +
+    '1. Enhanced Drafter\n' +
+    '2. Available WP Drafts\n' +
+    '3. Article Status Tracker\n' +
+    '4. WP Editing Tracker\n' +
+    '5. Email Newsletter\n' +
     '6. All\n\n' +
     'Enter numbers (e.g. 135 or 1,3,5):',
     ui.ButtonSet.OK_CANCEL);
@@ -10679,82 +10681,98 @@ function deleteDoneRows() {
   if (response.getSelectedButton() !== ui.Button.OK) return;
 
   var input = response.getResponseText().trim();
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var selectedSheets = [];
+  var selected = [];
 
   if (input === '6' || input.toLowerCase() === 'all') {
-    selectedSheets = sheets.slice();
+    selected = sheetConfig.slice();
   } else {
-    // Support both "135" and "1,3,5" formats
     var digits = input.replace(/[^1-5]/g, '');
     for (var p = 0; p < digits.length; p++) {
       var num = parseInt(digits[p]);
-      if (num >= 1 && num <= sheets.length && selectedSheets.indexOf(sheets[num - 1]) === -1) {
-        selectedSheets.push(sheets[num - 1]);
+      if (num >= 1 && num <= sheetConfig.length) {
+        var cfg = sheetConfig[num - 1];
+        // Avoid duplicates
+        var alreadyAdded = false;
+        for (var q = 0; q < selected.length; q++) {
+          if (selected[q].name === cfg.name) { alreadyAdded = true; break; }
+        }
+        if (!alreadyAdded) selected.push(cfg);
       }
     }
   }
 
-  if (selectedSheets.length === 0) {
+  if (selected.length === 0) {
     ui.alert('Error', 'No valid sheets selected.', ui.ButtonSet.OK);
     return;
   }
 
-  // Default column backgrounds per sheet (column number → color)
-  var sheetColors = {
-    'Topic List': { 4: '#ffffff', 5: '#ffe5ef' },
-    'Enhanced Drafter': { 1: '#000000', 4: '#ffe5ef', 5: '#daee03', 7: '#d9d9d9' }
-  };
+  // Count DONE rows first for confirmation
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var counts = [];
+  var totalCount = 0;
 
-  var results = [];
-
-  for (var s = 0; s < selectedSheets.length; s++) {
-    var sheetName = selectedSheets[s];
-    var sheet = ss.getSheetByName(sheetName);
+  for (var s = 0; s < selected.length; s++) {
+    var sheet = ss.getSheetByName(selected[s].name);
     if (!sheet) continue;
-
     var lastRow = sheet.getLastRow();
-    var lastCol = sheet.getLastColumn();
-    if (lastRow < 2 || lastCol < 1) continue;
+    if (lastRow < 2) continue;
 
-    var data = sheet.getRange(2, 1, lastRow - 1, lastCol).getValues();
-    var defaults = sheetColors[sheetName] || {};
-    var cleared = 0;
+    var statusValues = sheet.getRange(2, selected[s].statusCol, lastRow - 1, 1).getValues();
+    var count = 0;
+    for (var i = 0; i < statusValues.length; i++) {
+      var val = statusValues[i][0].toString().trim().toUpperCase();
+      if (val === 'DONE') count++;
+    }
+    if (count > 0) {
+      counts.push({ name: selected[s].name, statusCol: selected[s].statusCol, count: count });
+      totalCount += count;
+    }
+  }
 
-    for (var i = data.length - 1; i >= 0; i--) {
-      var row = data[i];
-      for (var j = 0; j < row.length; j++) {
-        var val = row[j].toString().trim();
-        if (val === 'Done' || val === 'DONE') {
-          var rowNum = i + 2;
-          var range = sheet.getRange(rowNum, 1, 1, j + 1);
-          range.clearContent();
-          range.setBackground(null);
-          range.setFontLine(null);
+  if (totalCount === 0) {
+    ui.alert('Nothing found', 'No DONE rows in selected sheets.', ui.ButtonSet.OK);
+    return;
+  }
 
-          // Restore default column colors
-          for (var col in defaults) {
-            if (parseInt(col) <= j + 1) {
-              sheet.getRange(rowNum, parseInt(col)).setBackground(defaults[col]);
-            }
-          }
+  // Confirmation
+  var summary = '';
+  for (var c = 0; c < counts.length; c++) {
+    summary += counts[c].name + ': ' + counts[c].count + ' row(s)\n';
+  }
+  var confirm = ui.alert('Confirm Delete',
+    'About to DELETE ' + totalCount + ' row(s):\n\n' + summary + '\nThis cannot be undone. Continue?',
+    ui.ButtonSet.YES_NO);
+  if (confirm !== ui.Button.YES) return;
 
-          cleared++;
-          break;
-        }
+  // Delete rows bottom-up per sheet
+  var results = [];
+  for (var s2 = 0; s2 < counts.length; s2++) {
+    var sheetName = counts[s2].name;
+    var statusCol = counts[s2].statusCol;
+    var sheet2 = ss.getSheetByName(sheetName);
+    if (!sheet2) continue;
+
+    var lastRow2 = sheet2.getLastRow();
+    if (lastRow2 < 2) continue;
+
+    var statusVals = sheet2.getRange(2, statusCol, lastRow2 - 1, 1).getValues();
+    var deleted = 0;
+
+    // Bottom-up so row indices don't shift
+    for (var r = statusVals.length - 1; r >= 0; r--) {
+      var v = statusVals[r][0].toString().trim().toUpperCase();
+      if (v === 'DONE') {
+        sheet2.deleteRow(r + 2); // +2 because data starts at row 2
+        deleted++;
       }
     }
 
-    if (cleared > 0) {
-      results.push(sheetName + ': ' + cleared + ' row(s)');
+    if (deleted > 0) {
+      results.push(sheetName + ': ' + deleted + ' row(s) deleted');
     }
   }
 
-  if (results.length === 0) {
-    ui.alert('Nothing found', 'No rows with Done/DONE status in selected sheets.', ui.ButtonSet.OK);
-  } else {
-    ui.alert('Done!', 'Cleared:\n\n' + results.join('\n'), ui.ButtonSet.OK);
-  }
+  ui.alert('Done!', results.join('\n'), ui.ButtonSet.OK);
 }
 
 
