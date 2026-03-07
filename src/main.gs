@@ -13988,13 +13988,14 @@ function executeTransferToWET(days) {
     }
   }
 
-  // Shuffle each tier (include stays in order — those are hand-picked)
+  // Shuffle all tiers — include articles are guaranteed to be picked, but randomized on WET
+  shuffleArray(include);
   shuffleArray(asap);
   shuffleArray(priority);
   shuffleArray(evergreen);
   shuffleArray(untagged);
 
-  // Build ordered pool: include first, then ASAP, Priority, Untagged, Evergreen
+  // Build ordered pool: include first (guaranteed selection), then ASAP, Priority, Untagged, Evergreen
   var pool = include.concat(asap).concat(priority).concat(untagged).concat(evergreen);
 
   // Calculate total articles needed
@@ -14033,6 +14034,13 @@ function executeTransferToWET(days) {
     var dayCount = days[d].count;
     var dateStr = days[d].date;
     var spacing = windowMinutes / dayCount; // even spacing
+
+    // Shuffle this day's articles so they're mixed (not grouped by priority tier)
+    var dayArticles = pool.slice(poolIndex, poolIndex + dayCount);
+    shuffleArray(dayArticles);
+    for (var da = 0; da < dayArticles.length; da++) {
+      pool[poolIndex + da] = dayArticles[da];
+    }
 
     // Add date divider row
     var dividerRow = new Array(WET_COLS);
