@@ -13958,10 +13958,11 @@ function executeTransferToWET(days) {
       baseTopic: data[i][cols.BASE_TOPIC - 1],
       articleSummary: data[i][cols.ARTICLE_SUMMARY - 1],
       googleDocUrl: data[i][cols.GOOGLE_DOC_URL - 1],
-      qaNotes: data[i][cols.QA_NOTES - 1]
+      qaNotes: data[i][cols.QA_NOTES - 1],
+      priority: data[i][cols.PRIORITY - 1].toString().trim()
     };
 
-    var prio = data[i][cols.PRIORITY - 1].toString().trim();
+    var prio = article.priority;
     if (prio === 'ASAP') asap.push(article);
     else if (prio === 'Priority') priority.push(article);
     else if (prio === 'Evergreen') evergreen.push(article);
@@ -14001,12 +14002,25 @@ function executeTransferToWET(days) {
 
   var poolIndex = 0;
   var wetRows = [];
+  var dividerRowIndices = []; // track which rows are date dividers (for formatting)
   var transferredAvailRows = []; // track which Available rows to mark
+
+  // WET columns (updated): A=Type, B=Priority, C=Raw Title, D=WP URL, E=#, F=Time, G=Date,
+  //   H=Article Status, I=Final Title, J=Base Topic, K=Article Summary, L=Google Doc URL,
+  //   M=Drafter, N=QA Notes
+  var WET_COLS = 14; // A through N
 
   for (var d = 0; d < days.length; d++) {
     var dayCount = days[d].count;
     var dateStr = days[d].date;
     var spacing = windowMinutes / dayCount; // even spacing
+
+    // Add date divider row
+    var dividerRow = new Array(WET_COLS);
+    for (var c = 0; c < WET_COLS; c++) dividerRow[c] = '';
+    dividerRow[0] = '📅 ' + dateStr + ' (' + dayCount + ' articles)';
+    dividerRowIndices.push(wetRows.length); // index in wetRows array
+    wetRows.push(dividerRow);
 
     for (var a = 0; a < dayCount; a++) {
       var article = pool[poolIndex];
@@ -14024,23 +14038,24 @@ function executeTransferToWET(days) {
       // Sequence number (1-based per day)
       var seqNum = a + 1;
 
-      // Build WET row (13 columns A–M)
-      var wetRow = new Array(13);
-      for (var c = 0; c < 13; c++) wetRow[c] = '';
+      // Build WET row (14 columns A–N)
+      var wetRow = new Array(WET_COLS);
+      for (var c = 0; c < WET_COLS; c++) wetRow[c] = '';
 
-      wetRow[0] = article.drafter;        // A: Drafter
-      wetRow[1] = article.articleType;     // B: Article Type
+      wetRow[0] = article.articleType;     // A: Type
+      wetRow[1] = article.priority;         // B: Priority Level
       wetRow[2] = article.rawTitle;        // C: Raw Title
       wetRow[3] = article.wpUrl;           // D: WP URL
       wetRow[4] = seqNum;                  // E: #
       wetRow[5] = timeStr;                 // F: Time
       wetRow[6] = dateStr;                 // G: Date
-      wetRow[7] = 'Set Date/Time';         // H: Article Status (triggers scheduling)
+      wetRow[7] = '';                      // H: Article Status (blank — you trigger manually)
       wetRow[8] = article.finalTitle;      // I: Final Title
       wetRow[9] = article.baseTopic;       // J: Base Topic
       wetRow[10] = article.articleSummary;  // K: Article Summary
       wetRow[11] = article.googleDocUrl;    // L: Google Doc URL
-      wetRow[12] = article.qaNotes;         // M: QA Notes
+      wetRow[12] = article.drafter;         // M: Drafter
+      wetRow[13] = article.qaNotes;         // N: QA Notes
 
       wetRows.push(wetRow);
       transferredAvailRows.push(article.availRow);
@@ -14049,7 +14064,16 @@ function executeTransferToWET(days) {
 
   // Bulk write to WET
   if (wetRows.length > 0) {
-    wetSheet.getRange(wetStartRow, 1, wetRows.length, 13).setValues(wetRows);
+    wetSheet.getRange(wetStartRow, 1, wetRows.length, WET_COLS).setValues(wetRows);
+
+    // Format date divider rows (bold, colored background)
+    for (var di = 0; di < dividerRowIndices.length; di++) {
+      var dividerSheetRow = wetStartRow + dividerRowIndices[di];
+      var dividerRange = wetSheet.getRange(dividerSheetRow, 1, 1, WET_COLS);
+      dividerRange.setFontWeight('bold');
+      dividerRange.setBackground('#d9e2f3');
+      dividerRange.merge();
+    }
   }
 
   // Mark transferred articles on Available sheet
