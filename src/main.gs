@@ -14013,6 +14013,17 @@ function executeTransferToWET(days) {
   var wetStartRow = wetLastRow + 1;
   if (wetStartRow < 4) wetStartRow = 4; // Leave room for headers (row 3 on WET)
 
+  // Check if last row is an end-cap divider from previous transfer
+  // If so, the first date divider overwrites it instead of adding a new row
+  if (wetLastRow >= 4) {
+    var lastCellRange = wetSheet.getRange(wetLastRow, 1);
+    var lastRowBg = lastCellRange.getBackground();
+    var lastRowVal = String(wetSheet.getRange(wetLastRow, 3).getDisplayValue()).trim(); // Check col C for text
+    if (lastRowBg === '#440f05' && lastRowVal === '') {
+      wetStartRow = wetLastRow;
+    }
+  }
+
   // Time window: 10:00 AM to 10:00 PM Phoenix = 720 minutes
   var windowStart = 10 * 60; // 10:00 AM in minutes from midnight
   var windowEnd = 22 * 60;   // 10:00 PM in minutes from midnight
@@ -14048,7 +14059,7 @@ function executeTransferToWET(days) {
     var monthNames = ['January','February','March','April','May','June','July','August','September','October','November','December'];
     var dayNames = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
     var friendlyDate = monthNames[dateObj.getMonth()] + ' ' + dateObj.getDate() + ' - ' + dayNames[dateObj.getDay()];
-    dividerRow[2] = '📅 ' + friendlyDate + ' (' + dayCount + ' articles)';  // C: Raw Title column
+    dividerRow[2] = friendlyDate + ' (' + dayCount + ' articles)';  // C: Raw Title column
     dividerRowIndices.push(wetRows.length); // index in wetRows array
     wetRows.push(dividerRow);
 
@@ -14092,6 +14103,13 @@ function executeTransferToWET(days) {
     }
   }
 
+  // Add end-cap divider after last day (placeholder row for next transfer's date)
+  var endCapRow = new Array(WET_COLS);
+  for (var c = 0; c < WET_COLS; c++) endCapRow[c] = '';
+  endCapRow[0] = ' '; // Space so getLastRow() counts this row
+  dividerRowIndices.push(wetRows.length);
+  wetRows.push(endCapRow);
+
   // Bulk write to WET
   if (wetRows.length > 0) {
     // Only clear column A validation (divider rows would violate Article Type dropdown)
@@ -14116,17 +14134,32 @@ function executeTransferToWET(days) {
       }
     }
 
-    // Format date divider rows
+    // Format date divider rows (no merge — text stays in column C)
     for (var di = 0; di < dividerRowIndices.length; di++) {
       var dividerSheetRow = wetStartRow + dividerRowIndices[di];
       var dividerRange = wetSheet.getRange(dividerSheetRow, 1, 1, WET_COLS);
       dividerRange.clearFormat();
-      dividerRange.merge();
       dividerRange.setBackground('#440f05');
       dividerRange.setFontColor('white');
       dividerRange.setHorizontalAlignment('center');
       dividerRange.setFontSize(20);
       dividerRange.setFontWeight('bold');
+    }
+
+    // Format column E (sequence #) for article rows: background #442709, font #ff9900, size 12, bold, centered
+    for (var ri2 = 0; ri2 < wetRows.length; ri2++) {
+      var isDiv = false;
+      for (var di3 = 0; di3 < dividerRowIndices.length; di3++) {
+        if (ri2 === dividerRowIndices[di3]) { isDiv = true; break; }
+      }
+      if (!isDiv) {
+        wetSheet.getRange(wetStartRow + ri2, 5)
+          .setBackground('#442709')
+          .setFontColor('#ff9900')
+          .setFontSize(12)
+          .setFontWeight('bold')
+          .setHorizontalAlignment('center');
+      }
     }
 
     // Format text wrapping on WET: wrap titles/topics, clip URLs
