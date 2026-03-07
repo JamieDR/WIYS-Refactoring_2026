@@ -14058,6 +14058,13 @@ function migrateWETToAvailable() {
 
   Logger.log('Fetched ' + Object.keys(titleMap).length + ' titles from WordPress API');
 
+  // Sort: non-Travel-Feature (current news, etc.) on top, Travel Feature below
+  rowsToMigrate.sort(function(a, b) {
+    var aIsTravel = (a.articleType.toString().trim() === 'Travel Feature') ? 1 : 0;
+    var bIsTravel = (b.articleType.toString().trim() === 'Travel Feature') ? 1 : 0;
+    return aIsTravel - bIsTravel;
+  });
+
   // Find first empty row in Available
   var cols = CONFIG.AVAILABLE_WP_DRAFTS_COLS;
   var availLastRow = availSheet.getLastRow();
