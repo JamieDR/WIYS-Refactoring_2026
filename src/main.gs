@@ -5604,8 +5604,9 @@ function recordAllReady() {
   var lastRow = sheet.getLastRow();
   if (lastRow < 2) return; // No data to process
   
-  // Read all data at once (much faster) — 13 columns to include Drafter in column M
-  var allData = sheet.getRange(2, 1, lastRow - 1, 13).getValues();
+  // Read all data at once (much faster)
+  var allData = sheet.getRange(2, 1, lastRow - 1, 8).getValues();
+  var drafterData = sheet.getRange(2, 13, lastRow - 1, 1).getValues(); // Column M (Drafter)
   
   // Find the last row with data in ANY of the relevant columns (A, C, D, E, G)
   var productionLastRow = 1;
@@ -5650,7 +5651,7 @@ function recordAllReady() {
   for (var i = 0; i < allData.length; i++) {
     var wpUrl = allData[i][3]; // Column D (index 3)
     var currentStatus = allData[i][7]; // Column H (index 7)
-    var columnAValue = allData[i][12]; // Column M - Drafter (index 12)
+    var columnAValue = drafterData[i][0]; // Column M (Drafter)
     
     // Check if this row should be transferred
     if (wpUrl && wpUrl.toString().trim() !== '' && 
