@@ -13831,6 +13831,13 @@ function setupAvailableWPDrafts() {
   sheet.setColumnWidth(cols.TAGS, 150);             // N
   sheet.setColumnWidth(cols.REFERENCES, 200);       // O
 
+  // Text wrapping: wrap titles/topics, clip URLs
+  sheet.getRange(2, cols.RAW_TITLE, 998).setWrapStrategy(SpreadsheetApp.WrapStrategy.WRAP);      // G: Raw Title
+  sheet.getRange(2, cols.FINAL_TITLE, 998).setWrapStrategy(SpreadsheetApp.WrapStrategy.WRAP);    // J: Final Title
+  sheet.getRange(2, cols.BASE_TOPIC, 998).setWrapStrategy(SpreadsheetApp.WrapStrategy.WRAP);     // K: Base Topic
+  sheet.getRange(2, cols.WP_URL, 998).setWrapStrategy(SpreadsheetApp.WrapStrategy.CLIP);         // H: WP URL
+  sheet.getRange(2, cols.GOOGLE_DOC_URL, 998).setWrapStrategy(SpreadsheetApp.WrapStrategy.CLIP); // M: Google Doc URL
+
   // Add data validation for Priority column (dropdown)
   var priorityRule = SpreadsheetApp.newDataValidation()
     .requireValueInList(['ASAP', 'Priority', 'Evergreen'], true)
@@ -14018,7 +14025,12 @@ function executeTransferToWET(days) {
     // Add date divider row
     var dividerRow = new Array(WET_COLS);
     for (var c = 0; c < WET_COLS; c++) dividerRow[c] = '';
-    dividerRow[0] = '📅 ' + dateStr + ' (' + dayCount + ' articles)';
+    // Format date as "March 2 - Friday" style
+    var dateObj = new Date(dateStr + 'T12:00:00'); // noon to avoid timezone shift
+    var monthNames = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+    var dayNames = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+    var friendlyDate = monthNames[dateObj.getMonth()] + ' ' + dateObj.getDate() + ' - ' + dayNames[dateObj.getDay()];
+    dividerRow[0] = '📅 ' + friendlyDate + ' (' + dayCount + ' articles)';
     dividerRowIndices.push(wetRows.length); // index in wetRows array
     wetRows.push(dividerRow);
 
@@ -14074,6 +14086,16 @@ function executeTransferToWET(days) {
       dividerRange.setBackground('#d9e2f3');
       dividerRange.merge();
     }
+
+    // Format text wrapping on WET: wrap titles/topics, clip URLs
+    var dataRowCount = wetRows.length;
+    // C=3 Raw Title, I=9 Final Title, J=10 Base Topic → WRAP
+    wetSheet.getRange(wetStartRow, 3, dataRowCount, 1).setWrapStrategy(SpreadsheetApp.WrapStrategy.WRAP);  // C: Raw Title
+    wetSheet.getRange(wetStartRow, 9, dataRowCount, 1).setWrapStrategy(SpreadsheetApp.WrapStrategy.WRAP);  // I: Final Title
+    wetSheet.getRange(wetStartRow, 10, dataRowCount, 1).setWrapStrategy(SpreadsheetApp.WrapStrategy.WRAP); // J: Base Topic
+    // D=4 WP URL, L=12 Google Doc URL → CLIP
+    wetSheet.getRange(wetStartRow, 4, dataRowCount, 1).setWrapStrategy(SpreadsheetApp.WrapStrategy.CLIP);  // D: WP URL
+    wetSheet.getRange(wetStartRow, 12, dataRowCount, 1).setWrapStrategy(SpreadsheetApp.WrapStrategy.CLIP); // L: Google Doc URL
   }
 
   // Mark transferred articles on Available sheet
