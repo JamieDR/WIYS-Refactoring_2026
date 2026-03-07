@@ -14079,7 +14079,7 @@ function executeTransferToWET(days) {
       wetRow[4] = seqNum;                  // E: #
       wetRow[5] = timeStr;                 // F: Time
       wetRow[6] = dateStr;                 // G: Date
-      wetRow[7] = '';                      // H: Article Status (blank — you trigger manually)
+      wetRow[7] = 'WordPress Draft';        // H: Article Status
       wetRow[8] = article.finalTitle;      // I: Final Title
       wetRow[9] = article.baseTopic;       // J: Base Topic
       wetRow[10] = article.articleSummary;  // K: Article Summary
@@ -14094,9 +14094,10 @@ function executeTransferToWET(days) {
 
   // Bulk write to WET
   if (wetRows.length > 0) {
-    // Clear data validation on target range first (divider rows would violate column A validation)
+    // Only clear column A validation (divider rows would violate Article Type dropdown)
+    // Leave columns B (Priority Level) and H (Article Status) dropdowns intact
     var writeRange = wetSheet.getRange(wetStartRow, 1, wetRows.length, WET_COLS);
-    writeRange.clearDataValidations();
+    wetSheet.getRange(wetStartRow, 1, wetRows.length, 1).clearDataValidations();
     writeRange.setValues(wetRows);
 
     // Re-apply Article Type validation (col A) to article rows only (skip divider rows)
