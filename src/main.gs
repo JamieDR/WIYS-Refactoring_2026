@@ -10451,6 +10451,7 @@ function batchCreateGDocs() {
  *   J (Tags)           → J
  *   Topic & Summary    → K
  *   I (References)     → M (news articles only)
+ *   D (Priority Level) → N
  *   L (Status)         → set to "DONE"
  */
 function transferDraftsToArticleTracker() {
@@ -10540,6 +10541,7 @@ function transferDraftsToArticleTracker() {
         originalTopic: originalTopic, // B
         tags: data[i][9],             // J
         references: data[i][8],       // I (references for news articles)
+        priorityLevel: data[i][3],    // D (priority level)
         articleSummary: articleSummary
       });
     }
@@ -10588,6 +10590,9 @@ function transferDraftsToArticleTracker() {
       if (item.references) {
         astSheet.getRange(destRow, 13).setValue(item.references)    // → M (References)
           .setWrapStrategy(SpreadsheetApp.WrapStrategy.CLIP).setFontFamily('Arial').setFontSize(8);
+      }
+      if (item.priorityLevel) {
+        astSheet.getRange(destRow, 14).setValue(item.priorityLevel); // → N (Priority Level, value only to preserve dropdown)
       }
 
       // Mark as DONE in Enhanced Drafter
