@@ -7525,46 +7525,51 @@ function showLightningResults(totalDeleted, totalErrors, workspaceResults) {
 function batchTransferToAleksReview() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var statusSheet = ss.getSheetByName(CONFIG.SHEETS.ARTICLE_STATUS_TRACKER);
-  var targetSheet = ss.getSheetByName(CONFIG.SHEETS.WP_EDITING_TRACKER);
-  
+  var targetSheet = ss.getSheetByName(CONFIG.SHEETS.AVAILABLE_WP_DRAFTS);
+  var cols = CONFIG.AVAILABLE_WP_DRAFTS_COLS;
+
   if (!statusSheet || !targetSheet) {
     SpreadsheetApp.getUi().alert('Required sheets not found. Please check sheet names.');
     return;
   }
-  
+
   var lastRow = statusSheet.getLastRow();
   if (lastRow < 2) {
     SpreadsheetApp.getUi().alert('No data found in Article Status Tracker.');
     return;
   }
-  
-  // Read all source data at once (faster than individual cell reads)
-  var sourceData = statusSheet.getRange(2, 1, lastRow - 1, 11).getValues();
+
+  // Read all source data at once — 14 columns (A through N)
+  var sourceData = statusSheet.getRange(2, 1, lastRow - 1, 14).getValues();
   var articlesToTransfer = [];
-  
+
   // Process source data in memory (fast)
   for (var i = 0; i < sourceData.length; i++) {
     var status = sourceData[i][6]; // Column G (0-indexed)
-    
+
     if (status === 'Final WP Review - Jamie') {
       var articleData = {
-        row: i + 2, // Actual row number in sheet
-        columnB: sourceData[i][1],  // Column B (Drafter)
-        title: sourceData[i][2],    // Column C (Title)
-        googleDocUrl: sourceData[i][3], // Column D (Google Doc URL)
-        wpUrl: sourceData[i][4],    // Column E (WP URL)
-        articleType: sourceData[i][7], // Column H (Article Type)
-        baseTopic: sourceData[i][8],   // Column I (Original Topic → Base Topic)
-        articleSummary: sourceData[i][10] // Column K (Topic & Summary → Article Summary)
+        row: i + 2,                        // Actual row number in sheet
+        drafter: sourceData[i][1],          // AST B (Drafter)
+        title: sourceData[i][2],            // AST C (Title)
+        googleDocUrl: sourceData[i][3],     // AST D (Google Doc URL)
+        wpUrl: sourceData[i][4],            // AST E (WP URL)
+        state: sourceData[i][0],            // AST A (State)
+        articleType: sourceData[i][7],      // AST H (Article Type)
+        baseTopic: sourceData[i][8],        // AST I (Original Topic)
+        tags: sourceData[i][9],             // AST J (Tags)
+        articleSummary: sourceData[i][10],  // AST K (Topic & Summary)
+        references: sourceData[i][12],      // AST M (References)
+        priority: sourceData[i][13]         // AST N (Priority Level)
       };
-      
+
       // Validate that we have the required data
       if (articleData.title && articleData.wpUrl) {
         articlesToTransfer.push(articleData);
       }
     }
   }
-  
+
   // Check if any articles found
   if (articlesToTransfer.length === 0) {
     SpreadsheetApp.getUi().alert(
@@ -7578,79 +7583,62 @@ function batchTransferToAleksReview() {
     );
     return;
   }
-  
+
   // Show confirmation dialog
   var response = SpreadsheetApp.getUi().alert(
-    'Transfer Articles to WP Editing Tracker',
+    'Transfer Articles to Available WP Drafts',
     'Found ' + articlesToTransfer.length + ' articles ready to transfer.\n\n' +
     'This will:\n' +
     '• Transfer all articles with "Final WP Review - Jamie" status\n' +
-    '• Copy data to WP Editing Tracker\n' +
-    '• Mark source rows as "DONE"\n' +
-    '• Leave status column blank in destination\n\n' +
+    '• Copy data to Available WP Drafts\n' +
+    '• Mark source rows as "DONE"\n\n' +
     'Continue with batch transfer?',
     SpreadsheetApp.getUi().ButtonSet.YES_NO
   );
-  
+
   if (response !== SpreadsheetApp.getUi().Button.YES) {
     return;
   }
-  
-  // OPTIMIZED: Find target row ONCE instead of for each article
-  var lastRowWithCOrD = 1; // Start from row 1
-  var maxRowsToCheck = CONFIG.RANGES.MAX_ROWS_TO_CHECK; // Reasonable limit
-  
-  // Read columns C and D in one batch operation (MUCH faster)
-  var targetData = targetSheet.getRange(1, 3, maxRowsToCheck, 2).getValues();
-  
-  for (var checkRow = 0; checkRow < targetData.length; checkRow++) {
-    var cValue = targetData[checkRow][0]; // Column C
-    var dValue = targetData[checkRow][1]; // Column D
-    
-    if (cValue || dValue) {
-      lastRowWithCOrD = checkRow + 1; // Convert back to 1-indexed row number
-    }
-  }
-  
-  // Starting target row for new articles
-  var nextTargetRow = lastRowWithCOrD + 1;
-  
+
+  // Find last row with data in Available WP Drafts
+  var nextTargetRow = Math.max(2, targetSheet.getLastRow() + 1);
+
   // Execute the batch transfer
   var successCount = 0;
   var errorCount = 0;
   var errors = [];
-  
+  var today = new Date();
+
   for (var i = 0; i < articlesToTransfer.length; i++) {
     var article = articlesToTransfer[i];
-    
+
     try {
-      // Use the pre-calculated target row (no more scanning!)
-      var targetRow = nextTargetRow + i; // Each article gets the next sequential row
-      
-      // Transfer the data
-      // Article Status Tracker → WP Editing Tracker
-      // B → A (Drafter)
-      // C → C (Raw Title)
-      // D → L (Google Doc URL)
-      // E → D (WP Draft URL)
-      // H → B (Article Type)
-      // I → J (Base Topic)
-      // K → K (Article Summary)
-      targetSheet.getRange(targetRow, 1).setValue(article.columnB);         // B → A
-      targetSheet.getRange(targetRow, 2).setValue(article.articleType);     // H → B
-      targetSheet.getRange(targetRow, 3).setValue(article.title);           // C → C
-      targetSheet.getRange(targetRow, 4).setValue(article.wpUrl);           // E → D
-      targetSheet.getRange(targetRow, 10).setValue(article.baseTopic);      // I → J
-      targetSheet.getRange(targetRow, 11).setValue(article.articleSummary); // K → K
-      targetSheet.getRange(targetRow, 12).setValue(article.googleDocUrl);   // D → L
-      // Status column (H) left blank
-      
+      var targetRow = nextTargetRow + i;
+
+      // Article Status Tracker → Available WP Drafts
+      targetSheet.getRange(targetRow, cols.DRAFTER).setValue(article.drafter);               // AST B → A
+      targetSheet.getRange(targetRow, cols.DATE_TRANSFERRED).setValue(today);                // Auto-fill → C
+      targetSheet.getRange(targetRow, cols.STATE).setValue(article.state);                   // AST A → D
+      targetSheet.getRange(targetRow, cols.ARTICLE_TYPE).setValue(article.articleType);      // AST H → E
+      if (article.priority) {
+        targetSheet.getRange(targetRow, cols.PRIORITY).setValue(article.priority);           // AST N → F (value only, preserve dropdown)
+      }
+      targetSheet.getRange(targetRow, cols.WP_URL).setValue(article.wpUrl);                 // AST E → H
+      targetSheet.getRange(targetRow, cols.ARTICLE_STATUS).setValue('WordPress Draft');      // Default → I
+      targetSheet.getRange(targetRow, cols.BASE_TOPIC).setValue(article.baseTopic);          // AST I → K
+      targetSheet.getRange(targetRow, cols.ARTICLE_SUMMARY).setValue(article.articleSummary); // AST K → L
+      targetSheet.getRange(targetRow, cols.GOOGLE_DOC_URL).setValue(article.googleDocUrl);  // AST D → M
+      targetSheet.getRange(targetRow, cols.TAGS).setValue(article.tags);                    // AST J → N
+      if (article.references) {
+        targetSheet.getRange(targetRow, cols.REFERENCES).setValue(article.references);      // AST M → O
+      }
+
       // Mark as DONE in Article Status Tracker (Column G)
       statusSheet.getRange(article.row, 7).setValue(CONFIG.STATUS.DONE);
-      
+
       successCount++;
       Logger.log('Transferred: ' + article.title + ' to row ' + targetRow);
-      
+
     } catch (error) {
       errorCount++;
       errors.push({
@@ -7660,16 +7648,16 @@ function batchTransferToAleksReview() {
       Logger.log('Error transferring ' + article.title + ': ' + error.message);
     }
   }
-  
+
   // Force save
   SpreadsheetApp.flush();
-  
+
   // Show results
   var resultMessage = 'Batch Transfer Complete!\n\n';
-  resultMessage += '✅ Successfully transferred: ' + successCount + ' articles\n';
-  
+  resultMessage += 'Successfully transferred: ' + successCount + ' articles\n';
+
   if (errorCount > 0) {
-    resultMessage += '❌ Errors: ' + errorCount + ' articles\n\n';
+    resultMessage += 'Errors: ' + errorCount + ' articles\n\n';
     resultMessage += 'Failed articles:\n';
     for (var j = 0; j < Math.min(errors.length, 5); j++) {
       resultMessage += '• ' + errors[j].title + ': ' + errors[j].error + '\n';
@@ -7678,11 +7666,11 @@ function batchTransferToAleksReview() {
       resultMessage += '... and ' + (errors.length - 5) + ' more errors (check logs)\n';
     }
   } else {
-    resultMessage += '\n🎉 All articles transferred successfully!';
+    resultMessage += '\nAll articles transferred successfully!';
   }
-  
+
   SpreadsheetApp.getUi().alert('Transfer Results', resultMessage, SpreadsheetApp.getUi().ButtonSet.OK);
-  
+
   Logger.log('Batch transfer completed - Success: ' + successCount + ', Errors: ' + errorCount);
 }
 
