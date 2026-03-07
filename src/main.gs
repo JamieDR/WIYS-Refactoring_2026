@@ -9260,8 +9260,8 @@ function onOpen() {
     .addItem('✉️ Create Newsletters', 'createNewsletters')
     .addToUi();
 
-  // Create menu for WP Editing Tracker
-  ui.createMenu('      **Editing')
+  // Create menu for WP Draftwork (shared between WET and Available WP Drafts)
+  ui.createMenu('      **WP Draftwork')
     .addSeparator()
     .addItem('📝 Update All Titles', 'batchUpdateTitles')
     .addItem('📥 Pull WordPress Titles', 'batchPullWordPressTitles')
