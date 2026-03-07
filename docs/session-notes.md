@@ -1,5 +1,47 @@
 # Session Notes — Live Scratchpad
 
+## Available WP Drafts Sheet — Design Decisions (March 7, 2026)
+
+### What We're Building
+A new "Available WP Drafts" sheet as a staging area between AST and WET. Instead of articles going AST → WET directly, they'll go AST → Available → WET. Jamie transfers batches manually with priority-based selection.
+
+### Agreed Column Mapping (A–O, 15 columns)
+| Col | Header | Source |
+|-----|--------|--------|
+| A | Drafter | AST B |
+| B | QA Notes | Blank |
+| C | Date Transferred | Auto-filled |
+| D | State | AST A |
+| E | Article Type | AST H |
+| F | Priority | AST N (new column Jamie will add) |
+| G | Raw Title | WP API (batch pull) |
+| H | WP URL | AST E |
+| I | Article Status | "WordPress Draft" (default) |
+| J | Final Title | Blank (editable) |
+| K | Base Topic | AST I |
+| L | Article Summary | AST K |
+| M | Google Doc URL | AST D |
+| N | Tags | AST J |
+| O | References | AST M |
+
+### Menu Change
+- Rename `**Editing` menu → `**WP Draftwork`
+- Both Available WP Drafts and WET share the same menu buttons
+- Title push to WP works from both sheets (Final Title column → WP API)
+
+### Transfer Feature (Available → WET)
+- Priority ordering: ASAP first, then Priority, then Evergreen
+- Randomize within each priority tier when landing on WET
+- Multi-set dialog: how many sets, count per set, date per set
+- Time window and spacing config (e.g., 10am–10pm, 25 min apart)
+- Auto-fill Date, Time, and # columns on WET
+
+### Deferred
+- AST → Available redirect (will adjust `batchTransferToAleksReview` later)
+- Auto-delete transferred rows (figure out later)
+
+---
+
 ## NEXT SESSION: Git lesson FIRST, then code work
 **Non-negotiable order:**
 1. **Git lesson** — teach Jamie `git status`, `git add`, `git commit`, `git push` hands-on in the Codespace terminal. Practice with real changes until Jamie is comfortable. Do NOT skip this to start coding.
