@@ -63,7 +63,27 @@ const CONFIG = {
     EMAIL_NEWSLETTER: 'Email Newsletter',
     TOPIC_LIST: 'Topic List',
     ENHANCED_DRAFTER: 'Enhanced Drafter',
-    SCRIPT_PROPERTIES: 'Script Properties'
+    SCRIPT_PROPERTIES: 'Script Properties',
+    AVAILABLE_WP_DRAFTS: 'Available WP Drafts'
+  },
+
+  // ===== AVAILABLE WP DRAFTS COLUMN INDICES =====
+  AVAILABLE_WP_DRAFTS_COLS: {
+    DRAFTER: 1,         // A - from AST B
+    QA_NOTES: 2,        // B - blank
+    DATE_TRANSFERRED: 3, // C - auto-filled
+    STATE: 4,           // D - from AST A
+    ARTICLE_TYPE: 5,    // E - from AST H
+    PRIORITY: 6,        // F - from AST N
+    RAW_TITLE: 7,       // G - from WP API (batch pull)
+    WP_URL: 8,          // H - from AST E
+    ARTICLE_STATUS: 9,  // I - default "WordPress Draft"
+    FINAL_TITLE: 10,    // J - blank (editable)
+    BASE_TOPIC: 11,     // K - from AST I
+    ARTICLE_SUMMARY: 12, // L - from AST K
+    GOOGLE_DOC_URL: 13, // M - from AST D
+    TAGS: 14,           // N - from AST J
+    REFERENCES: 15      // O - from AST M
   },
 
   // ===== ENHANCED DRAFTER SETTINGS =====
@@ -13739,4 +13759,97 @@ function openSelectedUrls() {
       .setWidth(350)
       .setHeight(180);
   ui.showModelessDialog(html, 'Opening ' + urls.length + ' URLs...');
+}
+
+
+// ============================================================================
+// AVAILABLE WP DRAFTS — SHEET SETUP
+// ============================================================================
+// Creates the "Available WP Drafts" sheet with headers and formatting.
+// Run once from the Apps Script editor: setupAvailableWPDrafts()
+// ============================================================================
+
+function setupAvailableWPDrafts() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheetName = CONFIG.SHEETS.AVAILABLE_WP_DRAFTS;
+
+  // Check if sheet already exists
+  var existing = ss.getSheetByName(sheetName);
+  if (existing) {
+    SpreadsheetApp.getUi().alert('Sheet "' + sheetName + '" already exists. No changes made.');
+    return;
+  }
+
+  var sheet = ss.insertSheet(sheetName);
+  var cols = CONFIG.AVAILABLE_WP_DRAFTS_COLS;
+
+  // Set headers (row 1)
+  var headers = [];
+  headers[cols.DRAFTER - 1] = 'Drafter';
+  headers[cols.QA_NOTES - 1] = 'QA Notes';
+  headers[cols.DATE_TRANSFERRED - 1] = 'Date Transferred';
+  headers[cols.STATE - 1] = 'State';
+  headers[cols.ARTICLE_TYPE - 1] = 'Article Type';
+  headers[cols.PRIORITY - 1] = 'Priority';
+  headers[cols.RAW_TITLE - 1] = 'Raw Title';
+  headers[cols.WP_URL - 1] = 'WP URL';
+  headers[cols.ARTICLE_STATUS - 1] = 'Article Status';
+  headers[cols.FINAL_TITLE - 1] = 'Final Title';
+  headers[cols.BASE_TOPIC - 1] = 'Base Topic';
+  headers[cols.ARTICLE_SUMMARY - 1] = 'Article Summary';
+  headers[cols.GOOGLE_DOC_URL - 1] = 'Google Doc URL';
+  headers[cols.TAGS - 1] = 'Tags';
+  headers[cols.REFERENCES - 1] = 'References';
+
+  sheet.getRange(1, 1, 1, 15).setValues([headers]);
+
+  // Format header row
+  var headerRange = sheet.getRange(1, 1, 1, 15);
+  headerRange.setFontWeight('bold');
+  headerRange.setBackground('#4a86c8');
+  headerRange.setFontColor('#ffffff');
+  headerRange.setHorizontalAlignment('center');
+
+  // Freeze header row
+  sheet.setFrozenRows(1);
+
+  // Set column widths for readability
+  sheet.setColumnWidth(cols.DRAFTER, 100);         // A
+  sheet.setColumnWidth(cols.QA_NOTES, 150);        // B
+  sheet.setColumnWidth(cols.DATE_TRANSFERRED, 120); // C
+  sheet.setColumnWidth(cols.STATE, 100);            // D
+  sheet.setColumnWidth(cols.ARTICLE_TYPE, 110);     // E
+  sheet.setColumnWidth(cols.PRIORITY, 90);          // F
+  sheet.setColumnWidth(cols.RAW_TITLE, 300);        // G
+  sheet.setColumnWidth(cols.WP_URL, 200);           // H
+  sheet.setColumnWidth(cols.ARTICLE_STATUS, 120);   // I
+  sheet.setColumnWidth(cols.FINAL_TITLE, 300);      // J
+  sheet.setColumnWidth(cols.BASE_TOPIC, 150);       // K
+  sheet.setColumnWidth(cols.ARTICLE_SUMMARY, 200);  // L
+  sheet.setColumnWidth(cols.GOOGLE_DOC_URL, 200);   // M
+  sheet.setColumnWidth(cols.TAGS, 150);             // N
+  sheet.setColumnWidth(cols.REFERENCES, 200);       // O
+
+  // Add data validation for Priority column (dropdown)
+  var priorityRule = SpreadsheetApp.newDataValidation()
+    .requireValueInList(['ASAP', 'Priority', 'Evergreen'], true)
+    .setAllowInvalid(false)
+    .build();
+  sheet.getRange(2, cols.PRIORITY, 998).setDataValidation(priorityRule);
+
+  // Add data validation for Article Status column (dropdown)
+  var statusRule = SpreadsheetApp.newDataValidation()
+    .requireValueInList(['WordPress Draft', 'Transferred to WET', 'Title Updated'], true)
+    .setAllowInvalid(false)
+    .build();
+  sheet.getRange(2, cols.ARTICLE_STATUS, 998).setDataValidation(statusRule);
+
+  SpreadsheetApp.getUi().alert(
+    'Sheet Created',
+    '"' + sheetName + '" has been created with 15 columns (A–O).\n\n' +
+    'Headers: Drafter, QA Notes, Date Transferred, State, Article Type, Priority, ' +
+    'Raw Title, WP URL, Article Status, Final Title, Base Topic, Article Summary, ' +
+    'Google Doc URL, Tags, References',
+    SpreadsheetApp.getUi().ButtonSet.OK
+  );
 }
