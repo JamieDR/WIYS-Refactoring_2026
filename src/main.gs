@@ -14009,8 +14009,6 @@ function executeTransferToWET(days) {
   }
 
   // Find where to start writing on WET
-  // WET columns: A=Drafter, B=Article Type, C=Raw Title, D=WP URL, E=#, F=Time, G=Date,
-  //              H=Article Status, I=Final Title, J=Base Topic, K=Article Summary, L=Google Doc URL, M=QA Notes
   var wetLastRow = wetSheet.getLastRow();
   var wetStartRow = wetLastRow + 1;
   if (wetStartRow < 4) wetStartRow = 4; // Leave room for headers (row 3 on WET)
@@ -14096,7 +14094,26 @@ function executeTransferToWET(days) {
 
   // Bulk write to WET
   if (wetRows.length > 0) {
-    wetSheet.getRange(wetStartRow, 1, wetRows.length, WET_COLS).setValues(wetRows);
+    // Clear data validation on target range first (divider rows would violate column A validation)
+    var writeRange = wetSheet.getRange(wetStartRow, 1, wetRows.length, WET_COLS);
+    writeRange.clearDataValidations();
+    writeRange.setValues(wetRows);
+
+    // Re-apply Article Type validation (col A) to article rows only (skip divider rows)
+    var typeRule = SpreadsheetApp.newDataValidation()
+      .requireValueInList(['Travel Feature', 'Current News'], true)
+      .setAllowInvalid(false)
+      .build();
+    for (var ri = 0; ri < wetRows.length; ri++) {
+      // Skip divider rows
+      var isDivider = false;
+      for (var di2 = 0; di2 < dividerRowIndices.length; di2++) {
+        if (ri === dividerRowIndices[di2]) { isDivider = true; break; }
+      }
+      if (!isDivider) {
+        wetSheet.getRange(wetStartRow + ri, 1).setDataValidation(typeRule);
+      }
+    }
 
     // Format date divider rows (bold, colored background)
     for (var di = 0; di < dividerRowIndices.length; di++) {
