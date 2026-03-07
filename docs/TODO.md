@@ -264,4 +264,15 @@ Once content pipeline is proven and working:
 
 ---
 
+---
+
+# Future Enhancements (Parked)
+
+## Assign Drafts — multi-day support
+**Feature:** Extend the Assign Drafts dialog to support assigning for multiple days at once (e.g. Friday night prep for Sat/Sun/Mon). Same people and counts each day. Currently single-day only.
+**When:** After the single-day assignment feature is tested and stable.
+**Noted:** March 7, 2026.
+
+---
+
 *Each item needs discussion/approval before implementation.*
