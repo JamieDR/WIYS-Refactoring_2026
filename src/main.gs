@@ -12125,14 +12125,6 @@ function processCreateNewRowsChunk(state) {
 function continueBatchCreateNewRows() {
   cleanupBatchTrigger('continueBatchCreateNewRows');
 
-  // Check if we've been stopped (lock cleared by Stop All)
-  var currentLock = isUploaderSheetLocked();
-  if (!currentLock) {
-    clearBatchState('CREATE_NEW_ROWS');
-    Logger.log('Create New Rows was stopped by user (lock cleared).');
-    return;
-  }
-
   var state = loadBatchState('CREATE_NEW_ROWS');
   if (!state) {
     Logger.log('No saved state found for Create New Rows. Nothing to continue.');
@@ -12429,13 +12421,6 @@ function processPasteContentChunk(state) {
  */
 function continueBatchPasteContent() {
   cleanupBatchTrigger('continueBatchPasteContent');
-
-  var currentLock = isUploaderSheetLocked();
-  if (!currentLock) {
-    clearBatchState('PASTE_CONTENT');
-    Logger.log('Paste Content was stopped by user (lock cleared).');
-    return;
-  }
 
   var state = loadBatchState('PASTE_CONTENT');
   if (!state) {
@@ -12767,13 +12752,6 @@ function processDeleteUploadedChunk(state) {
  */
 function continueBatchDeleteUploaded() {
   cleanupBatchTrigger('continueBatchDeleteUploaded');
-
-  var currentLock = isUploaderSheetLocked();
-  if (!currentLock) {
-    clearBatchState('DELETE_UPLOADED');
-    Logger.log('Delete Uploads was stopped by user (lock cleared).');
-    return;
-  }
 
   var state = loadBatchState('DELETE_UPLOADED');
   if (!state) {
