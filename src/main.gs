@@ -9275,6 +9275,7 @@ function onOpen() {
     .addItem('📄 Batch Create GDocs', 'batchCreateGDocs')
     .addSeparator()
     .addItem('📊 Send to Article Status Tracker', 'transferDraftsToArticleTracker')
+    .addItem('📋 Assign Drafts', 'showAssignDraftsDialog')
     .addSeparator()
     .addItem('🗑️ Delete Done', 'deleteDoneRows')
     .addSeparator()
@@ -10595,6 +10596,410 @@ function transferDraftsToArticleTracker() {
   var message = transferred + ' row(s) sent to Article Status Tracker.';
   if (errors > 0) message += '\n' + errors + ' error(s) — check Logs.';
   ui.alert('Done!', message, ui.ButtonSet.OK);
+}
+
+
+// ============================================================================
+// ASSIGN DRAFTS — Dialog Launcher
+// ============================================================================
+// Opens the Assign Drafts dialog. Called from the Drafting menu.
+// Reads unassigned articles below "Article Drafts for Assigning" divider
+// and existing date assignments above it.
+// ============================================================================
+
+function showAssignDraftsDialog() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var ui = SpreadsheetApp.getUi();
+  var astSheet = ss.getSheetByName(CONFIG.SHEETS.ARTICLE_STATUS_TRACKER);
+
+  if (!astSheet) {
+    ui.alert('Error', 'Article Status Tracker sheet not found.', ui.ButtonSet.OK);
+    return;
+  }
+
+  var lastRow = astSheet.getLastRow();
+  if (lastRow < 2) {
+    ui.alert('No Data', 'Article Status Tracker is empty.', ui.ButtonSet.OK);
+    return;
+  }
+
+  // Read columns B, C, D for divider detection and article counting
+  var dataRange = astSheet.getRange(1, 2, lastRow, 3).getValues(); // B, C, D
+
+  // Find the "Article Drafts for Assigning" divider row
+  var dividerRow = -1;
+  for (var i = 0; i < dataRange.length; i++) {
+    if (dataRange[i][1].toString().trim() === 'Article Drafts for Assigning') {
+      dividerRow = i + 1; // 1-based
+      break;
+    }
+  }
+
+  if (dividerRow === -1) {
+    ui.alert('Error', 'Could not find "Article Drafts for Assigning" divider in column C.', ui.ButtonSet.OK);
+    return;
+  }
+
+  // Count unassigned articles below divider (non-empty column C)
+  var availableCount = 0;
+  for (var i = dividerRow; i < dataRange.length; i++) {
+    if (dataRange[i][1].toString().trim() !== '') {
+      availableCount++;
+    }
+  }
+
+  // Find existing date dividers above the assigning divider
+  var existingDates = [];
+  var dayPattern = /^(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)\s*-\s*/;
+
+  for (var i = 0; i < dividerRow - 1; i++) {
+    var cVal = dataRange[i][1].toString().trim(); // Column C
+    var dVal = dataRange[i][2].toString().trim().toLowerCase(); // Column D
+
+    if (dVal === 'x' && dayPattern.test(cVal)) {
+      // Count articles per person under this date divider
+      var personCounts = {};
+      for (var j = i + 1; j < dividerRow - 1; j++) {
+        var nextCVal = dataRange[j][1].toString().trim();
+        var nextDVal = dataRange[j][2].toString().trim().toLowerCase();
+        if (nextDVal === 'x' && dayPattern.test(nextCVal)) break;
+        if (nextCVal === 'Article Drafts for Assigning') break;
+
+        var personName = dataRange[j][0].toString().trim(); // Column B
+        if (personName) {
+          personCounts[personName] = (personCounts[personName] || 0) + 1;
+        }
+      }
+      existingDates.push({
+        label: cVal,
+        row: i + 1,
+        personCounts: personCounts
+      });
+    }
+  }
+
+  var template = HtmlService.createTemplateFromFile('AssignDraftsDialog');
+  template.availableCount = availableCount;
+  template.existingDates = existingDates;
+  var html = template.evaluate()
+    .setWidth(550)
+    .setHeight(600);
+  ui.showModalDialog(html, 'Assign Drafts');
+}
+
+
+// ============================================================================
+// ASSIGN DRAFTS — Backend Execution
+// ============================================================================
+// Called by the dialog. Handles both "new" and "topup" modes.
+// config = {
+//   mode: 'new' | 'topup',
+//   date: '2026-03-09' (new mode),
+//   topupDateLabel: 'Monday - March 9' (topup mode),
+//   assignments: [{ name: 'Charl', count: 10 }, ...]
+// }
+// ============================================================================
+
+function executeAssignDrafts(config) {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var astSheet = ss.getSheetByName(CONFIG.SHEETS.ARTICLE_STATUS_TRACKER);
+  var lastRow = astSheet.getLastRow();
+  var AST_COLS = Math.max(14, astSheet.getLastColumn());
+
+  var ASSIGN_NAMES = ['Charl', 'Lara', 'Naintara', 'Karl', 'Marie', 'Lyniel'];
+
+  // Find the "Article Drafts for Assigning" divider row
+  var colCValues = astSheet.getRange(1, 3, lastRow, 1).getValues();
+  var dividerRow = -1;
+  for (var i = 0; i < colCValues.length; i++) {
+    if (colCValues[i][0].toString().trim() === 'Article Drafts for Assigning') {
+      dividerRow = i + 1;
+      break;
+    }
+  }
+  if (dividerRow === -1) throw new Error('Could not find "Article Drafts for Assigning" divider.');
+
+  // Read all articles below divider
+  var belowCount = lastRow - dividerRow;
+  if (belowCount <= 0) throw new Error('No articles below the divider.');
+
+  var allData = astSheet.getRange(dividerRow + 1, 1, belowCount, AST_COLS).getValues();
+
+  // Collect articles with data in column C (index 2)
+  var articles = [];
+  for (var i = 0; i < allData.length; i++) {
+    if (allData[i][2].toString().trim() !== '') {
+      articles.push({ data: allData[i] });
+    }
+  }
+
+  if (articles.length === 0) throw new Error('No articles available to assign.');
+
+  // Shuffle
+  shuffleArray(articles);
+
+  // Distribute to people in order (fill in order, Charl first)
+  var personArticles = [];
+  var poolIdx = 0;
+  var totalAssigned = 0;
+  var breakdown = [];
+
+  for (var p = 0; p < config.assignments.length; p++) {
+    var person = config.assignments[p];
+    var personRows = [];
+    for (var j = 0; j < person.count && poolIdx < articles.length; j++) {
+      var rowData = articles[poolIdx].data.slice();
+      rowData[1] = person.name; // Column B = person name
+      personRows.push(rowData);
+      poolIdx++;
+      totalAssigned++;
+    }
+    personArticles.push({ name: person.name, articles: personRows });
+    breakdown.push({ name: person.name, count: personRows.length });
+  }
+
+  // Remaining (unassigned) articles
+  var remainingArticles = [];
+  for (var i = poolIdx; i < articles.length; i++) {
+    remainingArticles.push(articles[i].data);
+  }
+
+  // Build name validation rule
+  var nameRule = SpreadsheetApp.newDataValidation()
+    .requireValueInList(ASSIGN_NAMES, true)
+    .setAllowInvalid(false)
+    .build();
+
+  if (config.mode === 'new') {
+    // ---- NEW ASSIGNMENT MODE ----
+
+    // Build date divider row
+    var dateObj = new Date(config.date + 'T12:00:00');
+    var dayNames = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+    var monthNames = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+    var dateLabel = dayNames[dateObj.getDay()] + ' - ' + monthNames[dateObj.getMonth()] + ' ' + dateObj.getDate();
+
+    var dividerRowData = new Array(AST_COLS);
+    for (var c = 0; c < AST_COLS; c++) dividerRowData[c] = '';
+    dividerRowData[2] = dateLabel; // Column C
+    dividerRowData[3] = 'x';      // Column D
+
+    // Build all rows: date divider + articles grouped by person
+    var insertRows = [dividerRowData];
+    for (var p = 0; p < personArticles.length; p++) {
+      for (var a = 0; a < personArticles[p].articles.length; a++) {
+        insertRows.push(personArticles[p].articles[a]);
+      }
+    }
+
+    // Insert rows above the "Article Drafts for Assigning" divider
+    astSheet.insertRowsBefore(dividerRow, insertRows.length);
+    astSheet.getRange(dividerRow, 1, insertRows.length, AST_COLS).setValues(insertRows);
+
+    // Format date divider row
+    var dividerRange = astSheet.getRange(dividerRow, 1, 1, AST_COLS);
+    dividerRange.clearFormat();
+    dividerRange.setBackground('#2f0808');
+    dividerRange.setFontColor('white');
+    dividerRange.setFontWeight('bold');
+    dividerRange.setFontSize(14);
+    dividerRange.setHorizontalAlignment('center');
+
+    // Format article rows: clear inherited divider formatting, set dropdown
+    if (insertRows.length > 1) {
+      var articleRange = astSheet.getRange(dividerRow + 1, 1, insertRows.length - 1, AST_COLS);
+      articleRange.clearFormat();
+      articleRange.setFontSize(10);
+
+      // Column A: center
+      astSheet.getRange(dividerRow + 1, 1, insertRows.length - 1, 1).setHorizontalAlignment('center');
+      // Column B: center + dropdown
+      astSheet.getRange(dividerRow + 1, 2, insertRows.length - 1, 1).setHorizontalAlignment('center');
+      // Column C: wrap, left
+      astSheet.getRange(dividerRow + 1, 3, insertRows.length - 1, 1)
+        .setWrapStrategy(SpreadsheetApp.WrapStrategy.WRAP)
+        .setHorizontalAlignment('left');
+      // Columns D+: clip URLs
+      astSheet.getRange(dividerRow + 1, 4, insertRows.length - 1, 1)
+        .setWrapStrategy(SpreadsheetApp.WrapStrategy.CLIP)
+        .setFontSize(8);
+
+      // Set dropdown validation on column B for each article row
+      for (var r = 1; r < insertRows.length; r++) {
+        astSheet.getRange(dividerRow + r, 2).setDataValidation(nameRule);
+      }
+    }
+
+    // Update below-divider area: clear old articles, write remaining
+    var newDividerRow = dividerRow + insertRows.length;
+
+    // Clear old content below the assigning divider
+    if (belowCount > 0) {
+      astSheet.getRange(newDividerRow + 1, 1, belowCount, AST_COLS).clearContent();
+    }
+
+    // Write remaining unassigned articles
+    if (remainingArticles.length > 0) {
+      astSheet.getRange(newDividerRow + 1, 1, remainingArticles.length, AST_COLS).setValues(remainingArticles);
+    }
+
+    // Delete excess empty rows below
+    var excessRows = belowCount - remainingArticles.length;
+    if (excessRows > 0) {
+      var deleteStart = newDividerRow + remainingArticles.length + 1;
+      if (deleteStart <= astSheet.getLastRow()) {
+        var deleteCount = Math.min(excessRows, astSheet.getLastRow() - deleteStart + 1);
+        if (deleteCount > 0) {
+          astSheet.deleteRows(deleteStart, deleteCount);
+        }
+      }
+    }
+
+  } else if (config.mode === 'topup') {
+    // ---- TOP-UP MODE ----
+
+    // Find the matching date divider row above the assigning divider
+    var colDValues = astSheet.getRange(1, 4, dividerRow, 1).getValues();
+    var dayPattern = /^(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)\s*-\s*/;
+
+    var dateDividerRow = -1;
+    for (var i = 0; i < dividerRow - 1; i++) {
+      var cVal = colCValues[i][0].toString().trim();
+      var dVal = colDValues[i][0].toString().trim().toLowerCase();
+      if (dVal === 'x' && cVal === config.topupDateLabel) {
+        dateDividerRow = i + 1;
+      }
+    }
+    if (dateDividerRow === -1) throw new Error('Could not find date divider: ' + config.topupDateLabel);
+
+    // Find the end of this date section (next date divider or assigning divider)
+    var sectionEndRow = dividerRow;
+    for (var r = dateDividerRow + 1; r < dividerRow; r++) {
+      var cVal = colCValues[r - 1][0].toString().trim();
+      var dVal = colDValues[r - 1][0].toString().trim().toLowerCase();
+      if (dVal === 'x' && dayPattern.test(cVal)) {
+        sectionEndRow = r;
+        break;
+      }
+    }
+
+    // Read the section (between date divider and section end)
+    var sectionStartRow = dateDividerRow + 1;
+    var sectionCount = sectionEndRow - sectionStartRow;
+
+    // Build the new section with top-up articles inserted after each person's block
+    var newSectionRows = [];
+    var pendingTopups = {};
+    for (var p = 0; p < personArticles.length; p++) {
+      if (personArticles[p].articles.length > 0) {
+        pendingTopups[personArticles[p].name] = personArticles[p].articles;
+      }
+    }
+
+    if (sectionCount > 0) {
+      var sectionData = astSheet.getRange(sectionStartRow, 1, sectionCount, AST_COLS).getValues();
+
+      for (var i = 0; i < sectionData.length; i++) {
+        newSectionRows.push(sectionData[i]);
+
+        var currentPerson = sectionData[i][1].toString().trim(); // Column B
+        var nextPerson = (i + 1 < sectionData.length) ? sectionData[i + 1][1].toString().trim() : '';
+
+        // If this is the last row for this person, append top-up articles
+        if (currentPerson && currentPerson !== nextPerson && pendingTopups[currentPerson]) {
+          for (var t = 0; t < pendingTopups[currentPerson].length; t++) {
+            newSectionRows.push(pendingTopups[currentPerson][t]);
+          }
+          delete pendingTopups[currentPerson];
+        }
+      }
+    }
+
+    // Append any remaining people who weren't in the original section (in standard order)
+    for (var po = 0; po < ASSIGN_NAMES.length; po++) {
+      if (pendingTopups[ASSIGN_NAMES[po]]) {
+        for (var t = 0; t < pendingTopups[ASSIGN_NAMES[po]].length; t++) {
+          newSectionRows.push(pendingTopups[ASSIGN_NAMES[po]][t]);
+        }
+        delete pendingTopups[ASSIGN_NAMES[po]];
+      }
+    }
+
+    // Resize the section if needed
+    var rowDiff = newSectionRows.length - sectionCount;
+    if (rowDiff > 0) {
+      astSheet.insertRowsBefore(sectionEndRow, rowDiff);
+    } else if (rowDiff < 0) {
+      astSheet.deleteRows(sectionStartRow, -rowDiff);
+    }
+
+    // Write the new section
+    if (newSectionRows.length > 0) {
+      astSheet.getRange(sectionStartRow, 1, newSectionRows.length, AST_COLS).setValues(newSectionRows);
+
+      // Clear format on newly inserted rows and set dropdown
+      if (rowDiff > 0) {
+        // New rows are at the end of the section (before where sectionEndRow was)
+        var newRowsStart = sectionStartRow + sectionCount; // where old section ended
+        var newRowsRange = astSheet.getRange(newRowsStart, 1, rowDiff, AST_COLS);
+        newRowsRange.clearFormat();
+        newRowsRange.setFontSize(10);
+        astSheet.getRange(newRowsStart, 1, rowDiff, 1).setHorizontalAlignment('center');
+        astSheet.getRange(newRowsStart, 2, rowDiff, 1).setHorizontalAlignment('center');
+        astSheet.getRange(newRowsStart, 3, rowDiff, 1)
+          .setWrapStrategy(SpreadsheetApp.WrapStrategy.WRAP)
+          .setHorizontalAlignment('left');
+        astSheet.getRange(newRowsStart, 4, rowDiff, 1)
+          .setWrapStrategy(SpreadsheetApp.WrapStrategy.CLIP)
+          .setFontSize(8);
+      }
+
+      // Set dropdown on all section rows (safe to re-apply)
+      for (var r = 0; r < newSectionRows.length; r++) {
+        astSheet.getRange(sectionStartRow + r, 2).setDataValidation(nameRule);
+      }
+    }
+
+    // Re-find the assigning divider (it may have shifted)
+    var newLastRow = astSheet.getLastRow();
+    var newColCValues = astSheet.getRange(1, 3, newLastRow, 1).getValues();
+    var newAssignDividerRow = -1;
+    for (var i = 0; i < newColCValues.length; i++) {
+      if (newColCValues[i][0].toString().trim() === 'Article Drafts for Assigning') {
+        newAssignDividerRow = i + 1;
+        break;
+      }
+    }
+
+    if (newAssignDividerRow > 0) {
+      var newBelowCount = newLastRow - newAssignDividerRow;
+      if (newBelowCount > 0) {
+        astSheet.getRange(newAssignDividerRow + 1, 1, newBelowCount, AST_COLS).clearContent();
+      }
+      if (remainingArticles.length > 0) {
+        astSheet.getRange(newAssignDividerRow + 1, 1, remainingArticles.length, AST_COLS).setValues(remainingArticles);
+      }
+      var excessRows = newBelowCount - remainingArticles.length;
+      if (excessRows > 0) {
+        var deleteStart = newAssignDividerRow + remainingArticles.length + 1;
+        if (deleteStart <= astSheet.getLastRow()) {
+          var deleteCount = Math.min(excessRows, astSheet.getLastRow() - deleteStart + 1);
+          if (deleteCount > 0) {
+            astSheet.deleteRows(deleteStart, deleteCount);
+          }
+        }
+      }
+    }
+  }
+
+  SpreadsheetApp.flush();
+
+  return {
+    success: true,
+    totalAssigned: totalAssigned,
+    remaining: remainingArticles.length,
+    breakdown: breakdown
+  };
 }
 
 

@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <style>
+      body { font-family: Arial, sans-serif; padding: 16px; font-size: 14px; }
+      h3 { margin: 0 0 12px 0; color: #333; }
+      .available-info { background: #fff3cd; padding: 8px; border-radius: 4px; margin-bottom: 12px; font-size: 13px; }
+      .mode-toggle { margin-bottom: 14px; }
+      .mode-toggle label { margin-right: 16px; cursor: pointer; font-weight: bold; }
+      .step-header { font-weight: bold; margin-bottom: 6px; color: #4a86c8; }
+      input[type="date"] {
+        padding: 6px 8px; font-size: 14px; border: 1px solid #ccc; border-radius: 4px; width: 160px;
+      }
+      select { padding: 6px 8px; font-size: 14px; border: 1px solid #ccc; border-radius: 4px; width: 100%; }
+      .person-row {
+        display: flex; gap: 8px; align-items: center; margin: 3px 0;
+        padding: 6px 8px; background: #f5f7fa; border-radius: 4px;
+      }
+      .person-row input[type="checkbox"] { margin: 0; width: 16px; height: 16px; }
+      .person-row input[type="number"] {
+        width: 50px; padding: 4px 6px; font-size: 14px; border: 1px solid #ccc; border-radius: 4px;
+      }
+      .person-name { width: 80px; font-weight: bold; }
+      .person-existing { font-size: 12px; color: #666; margin-left: 4px; }
+      .topup-info { font-size: 12px; color: #666; margin: 6px 0 10px 0; }
+      .summary { background: #e8f0fe; padding: 12px; border-radius: 6px; margin: 12px 0; font-size: 13px; }
+      .summary-line { margin: 3px 0; }
+      .shortfall { color: #856404; font-weight: bold; }
+      .btn {
+        padding: 8px 20px; font-size: 14px; border: none; border-radius: 4px; cursor: pointer; margin-right: 8px;
+      }
+      .btn-primary { background: #4a86c8; color: white; }
+      .btn-primary:hover { background: #3a6fb0; }
+      .btn-secondary { background: #e0e0e0; color: #333; }
+      .btn-secondary:hover { background: #ccc; }
+      .error { color: #c00; font-size: 13px; margin-top: 8px; }
+      #processing { display: none; text-align: center; padding: 30px; }
+      #result { display: none; padding: 16px; }
+      .result-header { font-size: 18px; font-weight: bold; margin-bottom: 12px; }
+      .result-detail { margin: 3px 0; font-size: 14px; }
+      .result-remaining { margin-top: 10px; font-size: 13px; color: #666; }
+    </style>
+  </head>
+  <body>
+
+    <!-- MAIN FORM -->
+    <div id="main">
+      <h3>Assign Drafts</h3>
+      <div class="available-info" id="availableInfo"></div>
+
+      <!-- Mode Toggle -->
+      <div class="mode-toggle">
+        <label><input type="radio" name="mode" value="new" checked onchange="switchMode()"> New Assignment</label>
+        <label><input type="radio" name="mode" value="topup" onchange="switchMode()"> Top Up Existing Day</label>
+      </div>
+
+      <!-- New Assignment: date picker -->
+      <div id="newDateSection">
+        <div class="step-header">Date</div>
+        <input type="date" id="assignDate" />
+      </div>
+
+      <!-- Top Up: date dropdown -->
+      <div id="topupDateSection" style="display:none;">
+        <div class="step-header">Select Day to Top Up</div>
+        <select id="topupDate" onchange="updateTopupInfo()"></select>
+        <div class="topup-info" id="topupInfo"></div>
+      </div>
+
+      <!-- Person List -->
+      <div class="step-header" style="margin-top:12px;">Assign To</div>
+      <div id="personList"></div>
+
+      <!-- Summary (shown after Review) -->
+      <div id="summaryBox" class="summary" style="display:none;"></div>
+
+      <!-- Buttons -->
+      <div style="margin-top: 12px;">
+        <button class="btn btn-primary" onclick="review()">Review</button>
+        <button class="btn btn-primary" id="confirmBtn" style="display:none;" onclick="doAssign()">Confirm</button>
+        <button class="btn btn-secondary" onclick="google.script.host.close()">Cancel</button>
+      </div>
+      <div class="error" id="errorArea"></div>
+    </div>
+
+    <!-- PROCESSING -->
+    <div id="processing">
+      <div style="font-size: 24px;">&#9203;</div>
+      <p>Assigning drafts...</p>
+      <p style="font-size:12px; color:#666;">This may take a moment.</p>
+    </div>
+
+    <!-- RESULT -->
+    <div id="result">
+      <div class="result-header" id="resultHeader"></div>
+      <div id="resultBody"></div>
+      <br/>
+      <button class="btn btn-primary" onclick="google.script.host.close()">Close</button>
+    </div>
+
+    <script>
+      var availableCount = <?!= availableCount ?>;
+      var existingDates = <?!= JSON.stringify(existingDates) ?>;
+
+      var PEOPLE = [
+        { name: 'Charl', defaultChecked: true },
+        { name: 'Lara', defaultChecked: true },
+        { name: 'Naintara', defaultChecked: true },
+        { name: 'Karl', defaultChecked: false },
+        { name: 'Marie', defaultChecked: false },
+        { name: 'Lyniel', defaultChecked: false }
+      ];
+
+      // Show available count
+      document.getElementById('availableInfo').innerHTML =
+        '<strong>' + availableCount + ' articles</strong> available to assign';
+
+      // Build person rows
+      var personListEl = document.getElementById('personList');
+      for (var i = 0; i < PEOPLE.length; i++) {
+        var p = PEOPLE[i];
+        var row = document.createElement('div');
+        row.className = 'person-row';
+        row.innerHTML =
+          '<input type="checkbox" id="check_' + i + '" ' + (p.defaultChecked ? 'checked' : '') + ' />' +
+          '<span class="person-name">' + p.name + '</span>' +
+          '<input type="number" id="count_' + i + '" min="0" max="99" value="' + (p.defaultChecked ? '10' : '0') + '" />' +
+          '<span class="person-existing" id="existing_' + i + '"></span>';
+        personListEl.appendChild(row);
+      }
+
+      // Build top-up dropdown
+      var topupSelect = document.getElementById('topupDate');
+      if (existingDates.length === 0) {
+        topupSelect.innerHTML = '<option value="">No existing assignments found</option>';
+      } else {
+        topupSelect.innerHTML = '';
+        for (var i = existingDates.length - 1; i >= 0; i--) {
+          var opt = document.createElement('option');
+          opt.value = i;
+          opt.textContent = existingDates[i].label;
+          topupSelect.appendChild(opt);
+        }
+      }
+
+      function switchMode() {
+        var mode = document.querySelector('input[name="mode"]:checked').value;
+        document.getElementById('newDateSection').style.display = mode === 'new' ? 'block' : 'none';
+        document.getElementById('topupDateSection').style.display = mode === 'topup' ? 'block' : 'none';
+        document.getElementById('summaryBox').style.display = 'none';
+        document.getElementById('confirmBtn').style.display = 'none';
+        document.getElementById('errorArea').textContent = '';
+
+        if (mode === 'topup') {
+          for (var i = 0; i < PEOPLE.length; i++) {
+            document.getElementById('check_' + i).checked = false;
+            document.getElementById('count_' + i).value = '0';
+          }
+          updateTopupInfo();
+        } else {
+          for (var i = 0; i < PEOPLE.length; i++) {
+            document.getElementById('check_' + i).checked = PEOPLE[i].defaultChecked;
+            document.getElementById('count_' + i).value = PEOPLE[i].defaultChecked ? '10' : '0';
+            document.getElementById('existing_' + i).textContent = '';
+          }
+        }
+      }
+
+      function updateTopupInfo() {
+        var idx = parseInt(topupSelect.value);
+        if (isNaN(idx) || !existingDates[idx]) {
+          document.getElementById('topupInfo').innerHTML = '';
+          return;
+        }
+
+        var counts = existingDates[idx].personCounts;
+        var parts = [];
+        for (var name in counts) {
+          parts.push(name + ': ' + counts[name]);
+        }
+        document.getElementById('topupInfo').innerHTML = 'Current assignments: ' + (parts.length > 0 ? parts.join(', ') : 'none');
+
+        for (var i = 0; i < PEOPLE.length; i++) {
+          var existing = counts[PEOPLE[i].name] || 0;
+          document.getElementById('existing_' + i).textContent = existing > 0 ? '(has ' + existing + ')' : '';
+        }
+      }
+
+      function review() {
+        var mode = document.querySelector('input[name="mode"]:checked').value;
+        var errors = [];
+
+        // Validate date
+        if (mode === 'new') {
+          if (!document.getElementById('assignDate').value) {
+            errors.push('Pick a date.');
+          }
+        } else {
+          if (existingDates.length === 0) {
+            errors.push('No existing assignments to top up.');
+          }
+        }
+
+        // Collect checked people
+        var assignments = [];
+        var totalNeeded = 0;
+        for (var i = 0; i < PEOPLE.length; i++) {
+          if (document.getElementById('check_' + i).checked) {
+            var count = parseInt(document.getElementById('count_' + i).value) || 0;
+            if (count < 1) {
+              errors.push(PEOPLE[i].name + ': enter at least 1.');
+              continue;
+            }
+            assignments.push({ name: PEOPLE[i].name, count: count });
+            totalNeeded += count;
+          }
+        }
+
+        if (assignments.length === 0 && errors.length === 0) {
+          errors.push('Check at least one person.');
+        }
+
+        if (errors.length > 0) {
+          document.getElementById('errorArea').textContent = errors.join(' ');
+          document.getElementById('summaryBox').style.display = 'none';
+          document.getElementById('confirmBtn').style.display = 'none';
+          return;
+        }
+        document.getElementById('errorArea').textContent = '';
+
+        // Calculate actual assignments (fill in order, shortfall handled)
+        var remaining = availableCount;
+        var shortfall = totalNeeded > availableCount;
+        var html = '';
+
+        if (mode === 'new') {
+          var dateVal = document.getElementById('assignDate').value;
+          var dateObj = new Date(dateVal + 'T12:00:00');
+          var dayNames = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+          var monthNames = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+          html += '<div class="summary-line"><strong>' + dayNames[dateObj.getDay()] + ' - ' +
+                  monthNames[dateObj.getMonth()] + ' ' + dateObj.getDate() + '</strong></div>';
+        } else {
+          var idx = parseInt(topupSelect.value);
+          html += '<div class="summary-line"><strong>Top up: ' + existingDates[idx].label + '</strong></div>';
+        }
+
+        html += '<div style="margin-top:6px;">';
+        var totalActual = 0;
+        for (var i = 0; i < assignments.length; i++) {
+          var actual = Math.min(assignments[i].count, remaining);
+          remaining -= actual;
+          totalActual += actual;
+          var line = assignments[i].name + ': ' + actual;
+          if (actual < assignments[i].count) {
+            line += ' <span style="color:#856404;">(requested ' + assignments[i].count + ')</span>';
+          }
+          html += '<div class="summary-line">' + line + '</div>';
+        }
+        html += '</div>';
+
+        if (shortfall) {
+          html += '<div class="summary-line shortfall" style="margin-top:8px;">' +
+                  '&#9888;&#65039; Only ' + availableCount + ' available, need ' + totalNeeded +
+                  '. Assigning what\'s there.</div>';
+        }
+
+        html += '<div class="summary-line" style="margin-top:8px;"><strong>Total: ' + totalActual +
+                ' articles</strong> | ' + (availableCount - totalActual) + ' will remain unassigned</div>';
+
+        document.getElementById('summaryBox').innerHTML = html;
+        document.getElementById('summaryBox').style.display = 'block';
+        document.getElementById('confirmBtn').style.display = 'inline-block';
+      }
+
+      function doAssign() {
+        var mode = document.querySelector('input[name="mode"]:checked').value;
+        var config = { mode: mode, assignments: [] };
+
+        if (mode === 'new') {
+          config.date = document.getElementById('assignDate').value;
+        } else {
+          var idx = parseInt(topupSelect.value);
+          config.topupDateLabel = existingDates[idx].label;
+        }
+
+        for (var i = 0; i < PEOPLE.length; i++) {
+          if (document.getElementById('check_' + i).checked) {
+            var count = parseInt(document.getElementById('count_' + i).value) || 0;
+            if (count > 0) {
+              config.assignments.push({ name: PEOPLE[i].name, count: count });
+            }
+          }
+        }
+
+        document.getElementById('main').style.display = 'none';
+        document.getElementById('processing').style.display = 'block';
+
+        google.script.run
+          .withSuccessHandler(function(result) {
+            document.getElementById('processing').style.display = 'none';
+            document.getElementById('result').style.display = 'block';
+            document.getElementById('resultHeader').textContent = 'Assignment Complete';
+
+            var html = '';
+            for (var i = 0; i < result.breakdown.length; i++) {
+              var b = result.breakdown[i];
+              html += '<div class="result-detail">' + b.name + ': ' + b.count + ' articles</div>';
+            }
+            html += '<div class="result-detail" style="margin-top:8px;"><strong>Total assigned: ' +
+                    result.totalAssigned + '</strong></div>';
+            html += '<div class="result-remaining">Remaining unassigned: ' + result.remaining + '</div>';
+            document.getElementById('resultBody').innerHTML = html;
+          })
+          .withFailureHandler(function(error) {
+            document.getElementById('processing').style.display = 'none';
+            document.getElementById('main').style.display = 'block';
+            document.getElementById('errorArea').textContent = 'Error: ' + error.message;
+          })
+          .executeAssignDrafts(config);
+      }
+    </script>
+  </body>
+</html>
