@@ -9262,6 +9262,7 @@ function onOpen() {
 
   // Create menu for WP Draftwork (shared between WET and Available WP Drafts)
   ui.createMenu('      **WP Draftwork')
+    .addItem('📦 Transfer to WET', 'showTransferDialog')
     .addSeparator()
     .addItem('📝 Update All Titles', 'batchUpdateTitles')
     .addItem('📥 Pull WordPress Titles', 'batchPullWordPressTitles')
@@ -13852,6 +13853,241 @@ function setupAvailableWPDrafts() {
     'Google Doc URL, Tags, References',
     SpreadsheetApp.getUi().ButtonSet.OK
   );
+}
+
+
+// ============================================================================
+// TRANSFER: AVAILABLE WP DRAFTS → WET (Dialog Launcher)
+// ============================================================================
+// Opens the transfer dialog. Called from the WP Draftwork menu.
+// ============================================================================
+
+function showTransferDialog() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var ui = SpreadsheetApp.getUi();
+
+  var availSheet = ss.getSheetByName(CONFIG.SHEETS.AVAILABLE_WP_DRAFTS);
+  if (!availSheet) {
+    ui.alert('Error', 'Available WP Drafts sheet not found.', ui.ButtonSet.OK);
+    return;
+  }
+
+  var cols = CONFIG.AVAILABLE_WP_DRAFTS_COLS;
+  var lastRow = availSheet.getLastRow();
+  if (lastRow < 2) {
+    ui.alert('No Articles', 'Available WP Drafts sheet has no articles.', ui.ButtonSet.OK);
+    return;
+  }
+
+  // Count available articles (not already transferred) and priority breakdown
+  var data = availSheet.getRange(2, 1, lastRow - 1, 15).getValues();
+  var availableCount = 0;
+  var priorityCounts = { ASAP: 0, Priority: 0, Evergreen: 0, Untagged: 0 };
+
+  for (var i = 0; i < data.length; i++) {
+    var status = data[i][cols.ARTICLE_STATUS - 1].toString().trim();
+    if (status === 'Transferred to WET') continue;
+
+    var wpUrl = data[i][cols.WP_URL - 1].toString().trim();
+    if (!wpUrl) continue;
+
+    availableCount++;
+    var priority = data[i][cols.PRIORITY - 1].toString().trim();
+    if (priority === 'ASAP') priorityCounts.ASAP++;
+    else if (priority === 'Priority') priorityCounts.Priority++;
+    else if (priority === 'Evergreen') priorityCounts.Evergreen++;
+    else priorityCounts.Untagged++;
+  }
+
+  if (availableCount === 0) {
+    ui.alert('No Articles', 'No untransferred articles found in Available WP Drafts.', ui.ButtonSet.OK);
+    return;
+  }
+
+  // Open the dialog
+  var template = HtmlService.createTemplateFromFile('TransferDialog');
+  template.availableCount = availableCount;
+  template.priorityCounts = priorityCounts;
+  var html = template.evaluate()
+    .setWidth(520)
+    .setHeight(500);
+  ui.showModalDialog(html, 'Transfer to WET');
+}
+
+
+// ============================================================================
+// TRANSFER: AVAILABLE WP DRAFTS → WET (Backend Execution)
+// ============================================================================
+// Called by the dialog. Receives an array of day configs:
+//   [{ count: 30, date: "2026-03-10" }, { count: 25, date: "2026-03-11" }]
+// Selects articles by priority (ASAP first), randomized within tiers.
+// Writes to WET with Date, Time, and # auto-filled.
+// Marks rows as "Transferred to WET" on Available.
+// ============================================================================
+
+function executeTransferToWET(days) {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var availSheet = ss.getSheetByName(CONFIG.SHEETS.AVAILABLE_WP_DRAFTS);
+  var wetSheet = ss.getSheetByName(CONFIG.SHEETS.WP_EDITING_TRACKER);
+
+  if (!availSheet || !wetSheet) {
+    throw new Error('Required sheets not found.');
+  }
+
+  var cols = CONFIG.AVAILABLE_WP_DRAFTS_COLS;
+  var lastRow = availSheet.getLastRow();
+  var data = availSheet.getRange(2, 1, lastRow - 1, 15).getValues();
+
+  // Collect available articles with their sheet row numbers
+  var asap = [], priority = [], evergreen = [], untagged = [];
+
+  for (var i = 0; i < data.length; i++) {
+    var status = data[i][cols.ARTICLE_STATUS - 1].toString().trim();
+    if (status === 'Transferred to WET') continue;
+
+    var wpUrl = data[i][cols.WP_URL - 1].toString().trim();
+    if (!wpUrl) continue;
+
+    var article = {
+      availRow: i + 2, // sheet row number
+      drafter: data[i][cols.DRAFTER - 1],
+      articleType: data[i][cols.ARTICLE_TYPE - 1],
+      rawTitle: data[i][cols.RAW_TITLE - 1],
+      wpUrl: data[i][cols.WP_URL - 1],
+      finalTitle: data[i][cols.FINAL_TITLE - 1],
+      baseTopic: data[i][cols.BASE_TOPIC - 1],
+      articleSummary: data[i][cols.ARTICLE_SUMMARY - 1],
+      googleDocUrl: data[i][cols.GOOGLE_DOC_URL - 1],
+      qaNotes: data[i][cols.QA_NOTES - 1]
+    };
+
+    var prio = data[i][cols.PRIORITY - 1].toString().trim();
+    if (prio === 'ASAP') asap.push(article);
+    else if (prio === 'Priority') priority.push(article);
+    else if (prio === 'Evergreen') evergreen.push(article);
+    else untagged.push(article);
+  }
+
+  // Shuffle each tier
+  shuffleArray(asap);
+  shuffleArray(priority);
+  shuffleArray(evergreen);
+  shuffleArray(untagged);
+
+  // Build ordered pool: ASAP first, then Priority, then Untagged, then Evergreen
+  var pool = asap.concat(priority).concat(untagged).concat(evergreen);
+
+  // Calculate total articles needed
+  var totalNeeded = 0;
+  for (var d = 0; d < days.length; d++) {
+    totalNeeded += days[d].count;
+  }
+
+  if (totalNeeded > pool.length) {
+    throw new Error('Need ' + totalNeeded + ' articles but only ' + pool.length + ' available.');
+  }
+
+  // Find where to start writing on WET
+  // WET columns: A=Drafter, B=Article Type, C=Raw Title, D=WP URL, E=#, F=Time, G=Date,
+  //              H=Article Status, I=Final Title, J=Base Topic, K=Article Summary, L=Google Doc URL, M=QA Notes
+  var wetLastRow = wetSheet.getLastRow();
+  var wetStartRow = wetLastRow + 1;
+  if (wetStartRow < 4) wetStartRow = 4; // Leave room for headers (row 3 on WET)
+
+  // Time window: 10:00 AM to 10:00 PM Phoenix = 720 minutes
+  var windowStart = 10 * 60; // 10:00 AM in minutes from midnight
+  var windowEnd = 22 * 60;   // 10:00 PM in minutes from midnight
+  var windowMinutes = windowEnd - windowStart;
+
+  var poolIndex = 0;
+  var wetRows = [];
+  var transferredAvailRows = []; // track which Available rows to mark
+
+  for (var d = 0; d < days.length; d++) {
+    var dayCount = days[d].count;
+    var dateStr = days[d].date;
+    var spacing = windowMinutes / dayCount; // even spacing
+
+    for (var a = 0; a < dayCount; a++) {
+      var article = pool[poolIndex];
+      poolIndex++;
+
+      // Calculate time for this article
+      var minutesFromStart = Math.round(windowStart + (a * spacing));
+      var hours = Math.floor(minutesFromStart / 60);
+      var mins = minutesFromStart % 60;
+      var ampm = hours >= 12 ? 'PM' : 'AM';
+      var displayHour = hours > 12 ? hours - 12 : hours;
+      if (displayHour === 0) displayHour = 12;
+      var timeStr = displayHour + ':' + (mins < 10 ? '0' : '') + mins + ' ' + ampm;
+
+      // Sequence number (1-based per day)
+      var seqNum = a + 1;
+
+      // Build WET row (13 columns A–M)
+      var wetRow = new Array(13);
+      for (var c = 0; c < 13; c++) wetRow[c] = '';
+
+      wetRow[0] = article.drafter;        // A: Drafter
+      wetRow[1] = article.articleType;     // B: Article Type
+      wetRow[2] = article.rawTitle;        // C: Raw Title
+      wetRow[3] = article.wpUrl;           // D: WP URL
+      wetRow[4] = seqNum;                  // E: #
+      wetRow[5] = timeStr;                 // F: Time
+      wetRow[6] = dateStr;                 // G: Date
+      wetRow[7] = 'Set Date/Time';         // H: Article Status (triggers scheduling)
+      wetRow[8] = article.finalTitle;      // I: Final Title
+      wetRow[9] = article.baseTopic;       // J: Base Topic
+      wetRow[10] = article.articleSummary;  // K: Article Summary
+      wetRow[11] = article.googleDocUrl;    // L: Google Doc URL
+      wetRow[12] = article.qaNotes;         // M: QA Notes
+
+      wetRows.push(wetRow);
+      transferredAvailRows.push(article.availRow);
+    }
+  }
+
+  // Bulk write to WET
+  if (wetRows.length > 0) {
+    wetSheet.getRange(wetStartRow, 1, wetRows.length, 13).setValues(wetRows);
+  }
+
+  // Mark transferred articles on Available sheet
+  for (var t = 0; t < transferredAvailRows.length; t++) {
+    availSheet.getRange(transferredAvailRows[t], cols.ARTICLE_STATUS).setValue('Transferred to WET');
+  }
+
+  SpreadsheetApp.flush();
+
+  // Summary log
+  var summary = 'Transfer complete: ' + wetRows.length + ' articles written to WET.\n';
+  for (var d = 0; d < days.length; d++) {
+    summary += 'Day ' + (d + 1) + ': ' + days[d].count + ' articles on ' + days[d].date + '\n';
+  }
+  Logger.log(summary);
+
+  SpreadsheetApp.getActiveSpreadsheet().toast(
+    'Transferred ' + wetRows.length + ' articles to WET.',
+    'Transfer Complete',
+    10
+  );
+
+  return { success: true, count: wetRows.length };
+}
+
+
+// ============================================================================
+// UTILITY: SHUFFLE ARRAY (Fisher-Yates)
+// ============================================================================
+
+function shuffleArray(arr) {
+  for (var i = arr.length - 1; i > 0; i--) {
+    var j = Math.floor(Math.random() * (i + 1));
+    var temp = arr[i];
+    arr[i] = arr[j];
+    arr[j] = temp;
+  }
+  return arr;
 }
 
 
