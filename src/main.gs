@@ -10655,114 +10655,73 @@ function extractTopicSummary(baseTopic, rawInput) {
  * Clears all cell values from column A up to and including the Done cell.
  * Resets formatting to default (white background).
  */
+/**
+ * Shows the Delete DONE Rows dialog with checkboxes and live counts.
+ * Called from Drafting menu → Delete Done.
+ */
 function deleteDoneRows() {
-  var ui = SpreadsheetApp.getUi();
-
   // Sheet name → status column number where DONE lives
   var sheetConfig = [
-    { name: 'Enhanced Drafter',      statusCol: 12 },  // L
-    { name: 'Available WP Drafts',   statusCol: 9 },   // I
+    { name: 'Enhanced Drafter',       statusCol: 12 },  // L
+    { name: 'Available WP Drafts',    statusCol: 9 },   // I
     { name: 'Article Status Tracker', statusCol: 7 },   // G
-    { name: 'WP Editing Tracker',    statusCol: 8 },    // H
-    { name: 'Email Newsletter',      statusCol: 19 }    // S
+    { name: 'WP Editing Tracker',     statusCol: 8 },   // H
+    { name: 'Email Newsletter',       statusCol: 19 }   // S
   ];
 
-  var response = ui.prompt('Delete DONE Rows',
-    'Which sheet(s)?\n\n' +
-    '1. Enhanced Drafter\n' +
-    '2. Available WP Drafts\n' +
-    '3. Article Status Tracker\n' +
-    '4. WP Editing Tracker\n' +
-    '5. Email Newsletter\n' +
-    '6. All\n\n' +
-    'Enter numbers (e.g. 135 or 1,3,5):',
-    ui.ButtonSet.OK_CANCEL);
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheetCounts = [];
 
-  if (response.getSelectedButton() !== ui.Button.OK) return;
-
-  var input = response.getResponseText().trim();
-  var selected = [];
-
-  if (input === '6' || input.toLowerCase() === 'all') {
-    selected = sheetConfig.slice();
-  } else {
-    var digits = input.replace(/[^1-5]/g, '');
-    for (var p = 0; p < digits.length; p++) {
-      var num = parseInt(digits[p]);
-      if (num >= 1 && num <= sheetConfig.length) {
-        var cfg = sheetConfig[num - 1];
-        // Avoid duplicates
-        var alreadyAdded = false;
-        for (var q = 0; q < selected.length; q++) {
-          if (selected[q].name === cfg.name) { alreadyAdded = true; break; }
+  for (var i = 0; i < sheetConfig.length; i++) {
+    var cfg = sheetConfig[i];
+    var sheet = ss.getSheetByName(cfg.name);
+    var count = 0;
+    if (sheet) {
+      var lastRow = sheet.getLastRow();
+      if (lastRow >= 2) {
+        var vals = sheet.getRange(2, cfg.statusCol, lastRow - 1, 1).getValues();
+        for (var r = 0; r < vals.length; r++) {
+          if (vals[r][0].toString().trim().toUpperCase() === 'DONE') count++;
         }
-        if (!alreadyAdded) selected.push(cfg);
       }
     }
+    sheetCounts.push({ name: cfg.name, statusCol: cfg.statusCol, count: count });
   }
 
-  if (selected.length === 0) {
-    ui.alert('Error', 'No valid sheets selected.', ui.ButtonSet.OK);
-    return;
-  }
+  var template = HtmlService.createTemplateFromFile('DeleteDoneDialog');
+  template.sheetCounts = sheetCounts;
+  var html = template.evaluate()
+    .setWidth(420)
+    .setHeight(400);
+  SpreadsheetApp.getUi().showModalDialog(html, 'Delete DONE Rows');
+}
 
-  // Count DONE rows first for confirmation
+/**
+ * Executes the actual row deletion. Called from DeleteDoneDialog.html.
+ * @param {Array} selected - Array of {name, statusCol, count} for sheets to process
+ * @return {string} Summary of deleted rows
+ */
+function executeDeleteDoneRows(selected) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var counts = [];
-  var totalCount = 0;
+  var results = [];
 
   for (var s = 0; s < selected.length; s++) {
-    var sheet = ss.getSheetByName(selected[s].name);
+    var sheetName = selected[s].name;
+    var statusCol = selected[s].statusCol;
+    var sheet = ss.getSheetByName(sheetName);
     if (!sheet) continue;
+
     var lastRow = sheet.getLastRow();
     if (lastRow < 2) continue;
 
-    var statusValues = sheet.getRange(2, selected[s].statusCol, lastRow - 1, 1).getValues();
-    var count = 0;
-    for (var i = 0; i < statusValues.length; i++) {
-      var val = statusValues[i][0].toString().trim().toUpperCase();
-      if (val === 'DONE') count++;
-    }
-    if (count > 0) {
-      counts.push({ name: selected[s].name, statusCol: selected[s].statusCol, count: count });
-      totalCount += count;
-    }
-  }
-
-  if (totalCount === 0) {
-    ui.alert('Nothing found', 'No DONE rows in selected sheets.', ui.ButtonSet.OK);
-    return;
-  }
-
-  // Confirmation
-  var summary = '';
-  for (var c = 0; c < counts.length; c++) {
-    summary += counts[c].name + ': ' + counts[c].count + ' row(s)\n';
-  }
-  var confirm = ui.alert('Confirm Delete',
-    'About to DELETE ' + totalCount + ' row(s):\n\n' + summary + '\nThis cannot be undone. Continue?',
-    ui.ButtonSet.YES_NO);
-  if (confirm !== ui.Button.YES) return;
-
-  // Delete rows bottom-up per sheet
-  var results = [];
-  for (var s2 = 0; s2 < counts.length; s2++) {
-    var sheetName = counts[s2].name;
-    var statusCol = counts[s2].statusCol;
-    var sheet2 = ss.getSheetByName(sheetName);
-    if (!sheet2) continue;
-
-    var lastRow2 = sheet2.getLastRow();
-    if (lastRow2 < 2) continue;
-
-    var statusVals = sheet2.getRange(2, statusCol, lastRow2 - 1, 1).getValues();
+    var statusVals = sheet.getRange(2, statusCol, lastRow - 1, 1).getValues();
     var deleted = 0;
 
     // Bottom-up so row indices don't shift
     for (var r = statusVals.length - 1; r >= 0; r--) {
       var v = statusVals[r][0].toString().trim().toUpperCase();
       if (v === 'DONE') {
-        sheet2.deleteRow(r + 2); // +2 because data starts at row 2
+        sheet.deleteRow(r + 2); // +2 because data starts at row 2
         deleted++;
       }
     }
@@ -10772,7 +10731,15 @@ function deleteDoneRows() {
     }
   }
 
-  ui.alert('Done!', results.join('\n'), ui.ButtonSet.OK);
+  return results.length > 0 ? results.join('\n') : 'No rows deleted.';
+}
+
+/**
+ * Shows the result alert after deletion. Called from dialog after success.
+ * @param {string} result - Summary text from executeDeleteDoneRows
+ */
+function showDeleteDoneResult(result) {
+  SpreadsheetApp.getUi().alert('Done!', result, SpreadsheetApp.getUi().ButtonSet.OK);
 }
 
 

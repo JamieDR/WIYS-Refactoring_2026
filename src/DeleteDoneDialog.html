@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <style>
+      body { font-family: Arial, sans-serif; padding: 16px; font-size: 14px; }
+      h3 { margin: 0 0 12px 0; color: #333; }
+      .sheet-list { margin: 12px 0; }
+      .sheet-item {
+        display: flex; align-items: center; gap: 10px;
+        padding: 10px 12px; margin: 4px 0; background: #f5f7fa; border-radius: 6px;
+        cursor: pointer; user-select: none;
+      }
+      .sheet-item:hover { background: #e8f0fe; }
+      .sheet-item input[type="checkbox"] { width: 18px; height: 18px; cursor: pointer; }
+      .sheet-item label { cursor: pointer; flex: 1; font-size: 14px; }
+      .sheet-item .count { color: #888; font-size: 13px; }
+      .sheet-item .count.has-rows { color: #c00; font-weight: bold; }
+      .select-bar { margin-bottom: 8px; font-size: 13px; }
+      .select-bar a { color: #4a86c8; cursor: pointer; text-decoration: underline; margin-right: 12px; }
+      .btn {
+        padding: 8px 20px; font-size: 14px; border: none; border-radius: 4px; cursor: pointer; margin-right: 8px;
+      }
+      .btn-danger { background: #c00; color: white; }
+      .btn-danger:hover { background: #a00; }
+      .btn-danger:disabled { background: #ccc; cursor: not-allowed; }
+      .btn-secondary { background: #e0e0e0; color: #333; }
+      .btn-secondary:hover { background: #ccc; }
+      .buttons { margin-top: 16px; }
+      .confirm-box {
+        background: #fff3cd; padding: 12px; border-radius: 6px; margin: 12px 0;
+        border-left: 4px solid #c00; display: none;
+      }
+      .confirm-box strong { color: #c00; }
+      #processing { display: none; text-align: center; padding: 20px; }
+      #processing .spinner { font-size: 24px; }
+      .error { color: #c00; font-size: 13px; margin-top: 8px; }
+    </style>
+  </head>
+  <body>
+    <div id="main">
+      <h3>Delete DONE Rows</h3>
+
+      <div class="select-bar">
+        <a onclick="selectAll()">Select All</a>
+        <a onclick="selectNone()">Select None</a>
+      </div>
+
+      <div class="sheet-list" id="sheetList"></div>
+
+      <div class="confirm-box" id="confirmBox">
+        <strong>About to permanently delete <span id="totalCount">0</span> row(s).</strong>
+        <div id="confirmDetails" style="margin-top: 6px; font-size: 13px;"></div>
+      </div>
+
+      <div class="buttons">
+        <button class="btn btn-danger" id="deleteBtn" onclick="startDelete()" disabled>Delete Selected</button>
+        <button class="btn btn-secondary" onclick="google.script.host.close()">Cancel</button>
+      </div>
+      <div class="error" id="errorMsg"></div>
+    </div>
+
+    <div id="processing">
+      <div class="spinner">&#9203;</div>
+      <p>Deleting DONE rows...</p>
+    </div>
+
+    <script>
+      var sheetCounts = <?!= JSON.stringify(sheetCounts) ?>;
+
+      function buildList() {
+        var container = document.getElementById('sheetList');
+        container.innerHTML = '';
+        for (var i = 0; i < sheetCounts.length; i++) {
+          var s = sheetCounts[i];
+          var div = document.createElement('div');
+          div.className = 'sheet-item';
+          div.onclick = (function(idx) {
+            return function(e) {
+              if (e.target.tagName !== 'INPUT') {
+                var cb = document.getElementById('cb_' + idx);
+                cb.checked = !cb.checked;
+              }
+              updateSummary();
+            };
+          })(i);
+          var countClass = s.count > 0 ? 'count has-rows' : 'count';
+          div.innerHTML =
+            '<input type="checkbox" id="cb_' + i + '" onchange="updateSummary()" ' + (s.count > 0 ? 'checked' : '') + ' />' +
+            '<label for="cb_' + i + '">' + s.name + '</label>' +
+            '<span class="' + countClass + '">' + s.count + ' DONE</span>';
+          container.appendChild(div);
+        }
+        updateSummary();
+      }
+
+      function selectAll() {
+        for (var i = 0; i < sheetCounts.length; i++) {
+          document.getElementById('cb_' + i).checked = true;
+        }
+        updateSummary();
+      }
+
+      function selectNone() {
+        for (var i = 0; i < sheetCounts.length; i++) {
+          document.getElementById('cb_' + i).checked = false;
+        }
+        updateSummary();
+      }
+
+      function updateSummary() {
+        var total = 0;
+        var details = [];
+        for (var i = 0; i < sheetCounts.length; i++) {
+          if (document.getElementById('cb_' + i).checked && sheetCounts[i].count > 0) {
+            total += sheetCounts[i].count;
+            details.push(sheetCounts[i].name + ': ' + sheetCounts[i].count + ' row(s)');
+          }
+        }
+
+        var btn = document.getElementById('deleteBtn');
+        var box = document.getElementById('confirmBox');
+
+        if (total > 0) {
+          btn.disabled = false;
+          btn.textContent = 'Delete ' + total + ' Row(s)';
+          document.getElementById('totalCount').textContent = total;
+          document.getElementById('confirmDetails').innerHTML = details.join('<br/>');
+          box.style.display = 'block';
+        } else {
+          btn.disabled = true;
+          btn.textContent = 'Delete Selected';
+          box.style.display = 'none';
+        }
+      }
+
+      function startDelete() {
+        var selected = [];
+        for (var i = 0; i < sheetCounts.length; i++) {
+          if (document.getElementById('cb_' + i).checked && sheetCounts[i].count > 0) {
+            selected.push(sheetCounts[i]);
+          }
+        }
+        if (selected.length === 0) return;
+
+        document.getElementById('main').style.display = 'none';
+        document.getElementById('processing').style.display = 'block';
+
+        google.script.run
+          .withSuccessHandler(function(result) {
+            google.script.host.close();
+            google.script.run.showDeleteDoneResult(result);
+          })
+          .withFailureHandler(function(error) {
+            document.getElementById('processing').style.display = 'none';
+            document.getElementById('main').style.display = 'block';
+            document.getElementById('errorMsg').textContent = 'Error: ' + error.message;
+          })
+          .executeDeleteDoneRows(selected);
+      }
+
+      buildList();
+    </script>
+  </body>
+</html>
