@@ -38,6 +38,7 @@ A new "Available WP Drafts" sheet as a staging area between AST and WET. Instead
 
 ### Deferred
 - AST → Available redirect (will adjust `batchTransferToAleksReview` later)
+  - **Important:** When transferring from AST, sort by priority level on landing — ASAP rows land on top, then Priority, then Evergreen pushed down below. So Jamie can visually see ASAPs immediately.
 - Auto-delete transferred rows (figure out later)
 
 ---

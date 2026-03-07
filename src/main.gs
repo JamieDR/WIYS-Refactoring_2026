@@ -13912,17 +13912,22 @@ function readWETContents() {
 // ============================================================================
 // ONE-TIME: MIGRATE WET DRAFTS → AVAILABLE WP DRAFTS
 // ============================================================================
-// Reads all rows from WP Editing Tracker that are WordPress drafts (not yet
-// scheduled/published) and copies them to Available WP Drafts.
+// Reads all "WordPress Draft" rows from WP Editing Tracker and copies them
+// to Available WP Drafts. Skips empty rows, spacers, and section markers.
 // Run once from Apps Script editor: migrateWETToAvailable()
 // SAFE: Does NOT delete rows from WET. You clean up WET manually after verifying.
+// ============================================================================
+// WET actual structure (13 columns, headers on row 3):
+//   A(1)=Drafter, B(2)=Article Type, C(3)=Raw Title, D(4)=WP URL,
+//   E(5)=#, F(6)=Time, G(7)=Date, H(8)=Article Status,
+//   I(9)=Final Title, J(10)=Base Topic, K(11)=Article Summary,
+//   L(12)=Google Doc URL, M(13)=QA Notes
 // ============================================================================
 
 function migrateWETToAvailable() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var ui = SpreadsheetApp.getUi();
 
-  // Get both sheets
   var wetSheet = ss.getSheetByName(CONFIG.SHEETS.WP_EDITING_TRACKER);
   if (!wetSheet) {
     ui.alert('Error', 'WP Editing Tracker sheet not found.', ui.ButtonSet.OK);
@@ -13936,62 +13941,58 @@ function migrateWETToAvailable() {
   }
 
   var wetLastRow = wetSheet.getLastRow();
-  if (wetLastRow < 2) {
+  if (wetLastRow < 4) {
     ui.alert('No Data', 'WP Editing Tracker has no data rows.', ui.ButtonSet.OK);
     return;
   }
 
-  // Read all WET data (row 2 onwards)
-  // WET columns: A=Drafter, B=Article Type, C=Raw Title, D=WP URL, E=#, F=Time, G=Date,
-  //              H=Article Status, I=Final Title, J=Base Topic, K=Article Summary, L=Google Doc URL
-  var wetData = wetSheet.getRange(2, 1, wetLastRow - 1, 12).getValues();
+  // Read all WET data from row 2 onwards (13 columns A–M)
+  // Row 1 is blank, row 3 has headers, data rows are scattered with empty spacers
+  var wetData = wetSheet.getRange(2, 1, wetLastRow - 1, 13).getValues();
 
-  // Filter: only rows that have a WP URL (column D) and are NOT already scheduled/published
-  // Skip rows with statuses that indicate they're done
-  var skipStatuses = ['Scheduled', 'Published', 'Title Updated', 'DONE', 'Recorded'];
+  // Only migrate rows with "WordPress Draft" in column H(8) AND a WP URL in column D(4)
   var rowsToMigrate = [];
 
   for (var i = 0; i < wetData.length; i++) {
-    var wpUrl = wetData[i][3]; // Column D (WP URL)
+    var wpUrl = wetData[i][3];  // Column D (WP URL)
     var status = wetData[i][7]; // Column H (Article Status)
 
     // Must have a WP URL
     if (!wpUrl || wpUrl.toString().trim() === '') continue;
+    // Must start with http (skip header row and markers)
+    if (wpUrl.toString().indexOf('http') !== 0) continue;
 
-    // Skip rows with "done" statuses (they've already been processed)
+    // Only take "WordPress Draft" rows
     var statusStr = status.toString().trim();
-    var shouldSkip = false;
-    for (var s = 0; s < skipStatuses.length; s++) {
-      if (statusStr.toLowerCase() === skipStatuses[s].toLowerCase()) {
-        shouldSkip = true;
-        break;
-      }
-    }
-    if (shouldSkip) continue;
+    if (statusStr !== 'WordPress Draft') continue;
 
+    var postId = extractPostIdFromUrl(wpUrl.toString());
     rowsToMigrate.push({
-      wetRow: i + 2, // actual sheet row number
-      drafter: wetData[i][0],       // WET A → Available A
-      articleType: wetData[i][1],    // WET B → Available E
-      rawTitle: wetData[i][2],       // WET C → Available G
-      wpUrl: wetData[i][3],          // WET D → Available H
-      finalTitle: wetData[i][8],     // WET I → Available J
-      baseTopic: wetData[i][9],      // WET J → Available K
-      articleSummary: wetData[i][10], // WET K → Available L
-      googleDocUrl: wetData[i][11]   // WET L → Available M
+      wetRow: i + 2,
+      drafter: wetData[i][0],        // WET A → Available A (Drafter)
+      articleType: wetData[i][1],     // WET B → Available E (Article Type)
+      rawTitle: wetData[i][2],        // WET C → fallback if API fails
+      wpUrl: wetData[i][3],           // WET D → Available H (WP URL)
+      postId: postId,                 // Extracted for WP API batch fetch
+      finalTitle: wetData[i][8],      // WET I → Available J (Final Title)
+      baseTopic: wetData[i][9],       // WET J → Available K (Base Topic)
+      articleSummary: wetData[i][10], // WET K → Available L (Article Summary)
+      googleDocUrl: wetData[i][11],   // WET L → Available M (Google Doc URL)
+      qaNotes: wetData[i][12]         // WET M → Available B (QA Notes)
     });
   }
 
   if (rowsToMigrate.length === 0) {
-    ui.alert('No Drafts Found', 'No eligible WordPress drafts found in WET.\n\nAll rows either have no WP URL or have a completed status.', ui.ButtonSet.OK);
+    ui.alert('No Drafts Found', 'No rows with "WordPress Draft" status and a WP URL found in WET.', ui.ButtonSet.OK);
     return;
   }
 
   // Show preview and confirm
-  var preview = 'Found ' + rowsToMigrate.length + ' drafts to migrate from WET → Available WP Drafts.\n\n';
+  var preview = 'Found ' + rowsToMigrate.length + ' WordPress Drafts to migrate from WET → Available.\n\n';
+  preview += 'Will also fetch current titles from WordPress API.\n\n';
   for (var p = 0; p < Math.min(rowsToMigrate.length, 10); p++) {
     var title = rowsToMigrate[p].rawTitle || rowsToMigrate[p].finalTitle || '(no title)';
-    if (title.length > 60) title = title.substring(0, 57) + '...';
+    if (title.toString().length > 55) title = title.toString().substring(0, 52) + '...';
     preview += '• Row ' + rowsToMigrate[p].wetRow + ': ' + title + '\n';
   }
   if (rowsToMigrate.length > 10) {
@@ -14002,11 +14003,73 @@ function migrateWETToAvailable() {
   var response = ui.alert('Migrate WET → Available', preview, ui.ButtonSet.YES_NO);
   if (response !== ui.Button.YES) return;
 
+  // Batch fetch current titles from WordPress API
+  ui.alert('Fetching Titles', 'Now fetching current titles from WordPress.\nThis may take a moment for ' + rowsToMigrate.length + ' articles...', ui.ButtonSet.OK);
+
+  var uniqueIds = [];
+  var seenIds = {};
+  for (var u = 0; u < rowsToMigrate.length; u++) {
+    var pid = rowsToMigrate[u].postId;
+    if (pid && !seenIds[pid]) {
+      uniqueIds.push(pid);
+      seenIds[pid] = true;
+    }
+  }
+
+  var titleMap = {};
+  var username = CONFIG.WORDPRESS.USERNAME;
+  var appPassword = CONFIG.WORDPRESS.APP_PASSWORD;
+
+  for (var batch = 0; batch < uniqueIds.length; batch += 100) {
+    var batchIds = uniqueIds.slice(batch, batch + 100);
+    var apiUrl = CONFIG.ENDPOINTS.WP_POSTS +
+      '?include=' + batchIds.join(',') +
+      '&per_page=100' +
+      '&_fields=id,title' +
+      '&status=draft,publish,future,pending,private';
+
+    var options = {
+      method: 'get',
+      headers: {
+        'Authorization': 'Basic ' + Utilities.base64Encode(username + ':' + appPassword)
+      },
+      muteHttpExceptions: true
+    };
+
+    try {
+      var apiResponse = UrlFetchApp.fetch(apiUrl, options);
+      if (apiResponse.getResponseCode() === 200) {
+        var posts = JSON.parse(apiResponse.getContentText());
+        for (var ap = 0; ap < posts.length; ap++) {
+          titleMap[posts[ap].id.toString()] = cleanHtmlEntities(posts[ap].title.rendered);
+        }
+        Logger.log('Fetched batch ' + (batch / 100 + 1) + ': ' + posts.length + ' posts');
+      } else {
+        Logger.log('WordPress API error (batch ' + (batch / 100 + 1) + '): ' + apiResponse.getResponseCode());
+      }
+    } catch (fetchError) {
+      Logger.log('Error fetching batch: ' + fetchError.message);
+    }
+
+    if (batch + 100 < uniqueIds.length) {
+      Utilities.sleep(1000);
+    }
+  }
+
+  Logger.log('Fetched ' + Object.keys(titleMap).length + ' titles from WordPress API');
+
+  // Sort: non-Travel-Feature (current news, etc.) on top, Travel Feature below
+  rowsToMigrate.sort(function(a, b) {
+    var aIsTravel = (a.articleType.toString().trim() === 'Travel Feature') ? 1 : 0;
+    var bIsTravel = (b.articleType.toString().trim() === 'Travel Feature') ? 1 : 0;
+    return aIsTravel - bIsTravel;
+  });
+
   // Find first empty row in Available
   var cols = CONFIG.AVAILABLE_WP_DRAFTS_COLS;
   var availLastRow = availSheet.getLastRow();
   var startRow = availLastRow + 1;
-  if (startRow < 2) startRow = 2; // Don't overwrite headers
+  if (startRow < 2) startRow = 2;
 
   // Build output array
   var now = new Date();
@@ -14015,16 +14078,19 @@ function migrateWETToAvailable() {
 
   for (var m = 0; m < rowsToMigrate.length; m++) {
     var article = rowsToMigrate[m];
-    var row = new Array(15); // 15 columns A–O
-    for (var c = 0; c < 15; c++) row[c] = ''; // initialize empty
+    var row = new Array(15);
+    for (var c = 0; c < 15; c++) row[c] = '';
+
+    // Use API title if available, fall back to WET raw title
+    var wpTitle = (article.postId && titleMap[article.postId]) ? titleMap[article.postId] : article.rawTitle;
 
     row[cols.DRAFTER - 1] = article.drafter;
-    // QA Notes (B) = blank
+    row[cols.QA_NOTES - 1] = article.qaNotes;          // WET M → Available B
     row[cols.DATE_TRANSFERRED - 1] = dateStr;
     // State (D) = blank (WET doesn't have State)
     row[cols.ARTICLE_TYPE - 1] = article.articleType;
     // Priority (F) = blank (WET doesn't have Priority)
-    row[cols.RAW_TITLE - 1] = article.rawTitle;
+    row[cols.RAW_TITLE - 1] = wpTitle;
     row[cols.WP_URL - 1] = article.wpUrl;
     row[cols.ARTICLE_STATUS - 1] = 'WordPress Draft';
     row[cols.FINAL_TITLE - 1] = article.finalTitle;
@@ -14041,9 +14107,14 @@ function migrateWETToAvailable() {
   availSheet.getRange(startRow, 1, outputRows.length, 15).setValues(outputRows);
   SpreadsheetApp.flush();
 
+  var apiTitleCount = Object.keys(titleMap).length;
+  var fallbackCount = outputRows.length - apiTitleCount;
+  Logger.log('Migrated ' + outputRows.length + ' articles (' + apiTitleCount + ' with API titles, ' + fallbackCount + ' with WET titles)');
+
   ui.alert(
     'Migration Complete',
-    'Migrated ' + outputRows.length + ' articles from WET to Available WP Drafts.\n\n' +
+    'Migrated ' + outputRows.length + ' WordPress Drafts to Available WP Drafts.\n\n' +
+    'Titles: ' + apiTitleCount + ' pulled fresh from WordPress, ' + fallbackCount + ' used WET raw title as fallback.\n\n' +
     'Written to rows ' + startRow + '–' + (startRow + outputRows.length - 1) + '.\n\n' +
     'WET rows were NOT deleted. Verify Available looks correct, then clean up WET manually.',
     ui.ButtonSet.OK
