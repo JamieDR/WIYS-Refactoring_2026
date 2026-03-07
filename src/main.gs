@@ -4812,7 +4812,11 @@ function transferToProductionTracker(e) {
     return; // Don't transfer if target row already has data
   }
   
+  // Get the Drafter from Column M
+  var drafter = sheet.getRange(row, 13).getValue();
+
   // Transfer the data
+  targetSheet.getRange(targetRow, 1).setValue(drafter);   // Drafter → Column A
   targetSheet.getRange(targetRow, 3).setValue(wpUrl);
   targetSheet.getRange(targetRow, 6).setValue(CONFIG.STATUS.SCHEDULED);
   
