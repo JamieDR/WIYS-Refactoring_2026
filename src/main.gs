@@ -14048,7 +14048,7 @@ function executeTransferToWET(days) {
     var monthNames = ['January','February','March','April','May','June','July','August','September','October','November','December'];
     var dayNames = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
     var friendlyDate = monthNames[dateObj.getMonth()] + ' ' + dateObj.getDate() + ' - ' + dayNames[dateObj.getDay()];
-    dividerRow[0] = '📅 ' + friendlyDate + ' (' + dayCount + ' articles)';
+    dividerRow[2] = '📅 ' + friendlyDate + ' (' + dayCount + ' articles)';  // C: Raw Title column
     dividerRowIndices.push(wetRows.length); // index in wetRows array
     wetRows.push(dividerRow);
 
