@@ -4812,11 +4812,7 @@ function transferToProductionTracker(e) {
     return; // Don't transfer if target row already has data
   }
   
-  // Get the Drafter from Column M
-  var drafter = sheet.getRange(row, 13).getValue();
-
   // Transfer the data
-  targetSheet.getRange(targetRow, 1).setValue(drafter);   // Drafter → Column A
   targetSheet.getRange(targetRow, 3).setValue(wpUrl);
   targetSheet.getRange(targetRow, 6).setValue(CONFIG.STATUS.SCHEDULED);
   
@@ -5608,8 +5604,8 @@ function recordAllReady() {
   var lastRow = sheet.getLastRow();
   if (lastRow < 2) return; // No data to process
   
-  // Read all data at once (much faster)
-  var allData = sheet.getRange(2, 1, lastRow - 1, 8).getValues();
+  // Read all data at once (much faster) — 13 columns to include Drafter in column M
+  var allData = sheet.getRange(2, 1, lastRow - 1, 13).getValues();
   
   // Find the last row with data in ANY of the relevant columns (A, C, D, E, G)
   var productionLastRow = 1;
@@ -5654,7 +5650,7 @@ function recordAllReady() {
   for (var i = 0; i < allData.length; i++) {
     var wpUrl = allData[i][3]; // Column D (index 3)
     var currentStatus = allData[i][7]; // Column H (index 7)
-    var columnAValue = allData[i][0]; // Column A (index 0)
+    var columnAValue = allData[i][12]; // Column M - Drafter (index 12)
     
     // Check if this row should be transferred
     if (wpUrl && wpUrl.toString().trim() !== '' && 
