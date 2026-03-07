@@ -14009,8 +14009,6 @@ function executeTransferToWET(days) {
   }
 
   // Find where to start writing on WET
-  // WET columns: A=Drafter, B=Article Type, C=Raw Title, D=WP URL, E=#, F=Time, G=Date,
-  //              H=Article Status, I=Final Title, J=Base Topic, K=Article Summary, L=Google Doc URL, M=QA Notes
   var wetLastRow = wetSheet.getLastRow();
   var wetStartRow = wetLastRow + 1;
   if (wetStartRow < 4) wetStartRow = 4; // Leave room for headers (row 3 on WET)
@@ -14050,7 +14048,7 @@ function executeTransferToWET(days) {
     var monthNames = ['January','February','March','April','May','June','July','August','September','October','November','December'];
     var dayNames = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
     var friendlyDate = monthNames[dateObj.getMonth()] + ' ' + dateObj.getDate() + ' - ' + dayNames[dateObj.getDay()];
-    dividerRow[0] = '📅 ' + friendlyDate + ' (' + dayCount + ' articles)';
+    dividerRow[2] = '📅 ' + friendlyDate + ' (' + dayCount + ' articles)';  // C: Raw Title column
     dividerRowIndices.push(wetRows.length); // index in wetRows array
     wetRows.push(dividerRow);
 
@@ -14096,15 +14094,38 @@ function executeTransferToWET(days) {
 
   // Bulk write to WET
   if (wetRows.length > 0) {
-    wetSheet.getRange(wetStartRow, 1, wetRows.length, WET_COLS).setValues(wetRows);
+    // Clear data validation on target range first (divider rows would violate column A validation)
+    var writeRange = wetSheet.getRange(wetStartRow, 1, wetRows.length, WET_COLS);
+    writeRange.clearDataValidations();
+    writeRange.setValues(wetRows);
 
-    // Format date divider rows (bold, colored background)
+    // Re-apply Article Type validation (col A) to article rows only (skip divider rows)
+    var typeRule = SpreadsheetApp.newDataValidation()
+      .requireValueInList(['Travel Feature', 'Current News'], true)
+      .setAllowInvalid(false)
+      .build();
+    for (var ri = 0; ri < wetRows.length; ri++) {
+      // Skip divider rows
+      var isDivider = false;
+      for (var di2 = 0; di2 < dividerRowIndices.length; di2++) {
+        if (ri === dividerRowIndices[di2]) { isDivider = true; break; }
+      }
+      if (!isDivider) {
+        wetSheet.getRange(wetStartRow + ri, 1).setDataValidation(typeRule);
+      }
+    }
+
+    // Format date divider rows
     for (var di = 0; di < dividerRowIndices.length; di++) {
       var dividerSheetRow = wetStartRow + dividerRowIndices[di];
       var dividerRange = wetSheet.getRange(dividerSheetRow, 1, 1, WET_COLS);
-      dividerRange.setFontWeight('bold');
-      dividerRange.setBackground('#d9e2f3');
+      dividerRange.clearFormat();
       dividerRange.merge();
+      dividerRange.setBackground('#440f05');
+      dividerRange.setFontColor('white');
+      dividerRange.setHorizontalAlignment('center');
+      dividerRange.setFontSize(20);
+      dividerRange.setFontWeight('bold');
     }
 
     // Format text wrapping on WET: wrap titles/topics, clip URLs
