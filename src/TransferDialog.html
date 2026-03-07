@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <style>
+      body { font-family: Arial, sans-serif; padding: 16px; font-size: 14px; }
+      h3 { margin: 0 0 12px 0; color: #333; }
+      .step { margin-bottom: 16px; }
+      .step-header { font-weight: bold; margin-bottom: 6px; color: #4a86c8; }
+      label { display: block; margin: 6px 0 2px; font-weight: bold; }
+      input[type="number"], input[type="date"] {
+        padding: 6px 8px; font-size: 14px; border: 1px solid #ccc; border-radius: 4px; width: 160px;
+      }
+      .day-row {
+        display: flex; gap: 12px; align-items: center; margin: 6px 0;
+        padding: 8px; background: #f5f7fa; border-radius: 4px;
+      }
+      .day-row label { display: inline; margin: 0; }
+      .day-row input[type="number"] { width: 60px; }
+      .day-row input[type="date"] { width: 150px; }
+      .spacing-info { color: #666; font-size: 12px; margin-left: 8px; }
+      .summary { background: #e8f0fe; padding: 12px; border-radius: 6px; margin: 12px 0; }
+      .summary-line { margin: 4px 0; }
+      .btn {
+        padding: 8px 20px; font-size: 14px; border: none; border-radius: 4px; cursor: pointer; margin-right: 8px;
+      }
+      .btn-primary { background: #4a86c8; color: white; }
+      .btn-primary:hover { background: #3a6fb0; }
+      .btn-secondary { background: #e0e0e0; color: #333; }
+      .btn-secondary:hover { background: #ccc; }
+      .error { color: #c00; font-size: 13px; margin-top: 8px; }
+      .available-info { background: #fff3cd; padding: 8px; border-radius: 4px; margin-bottom: 12px; font-size: 13px; }
+      #processing { display: none; text-align: center; padding: 20px; }
+      #processing .spinner { font-size: 24px; }
+    </style>
+  </head>
+  <body>
+    <!-- Step 1: How many days -->
+    <div id="step1" class="step">
+      <h3>Transfer Articles → WET</h3>
+      <div class="available-info" id="availableInfo"></div>
+      <div class="step-header">Step 1: How many days?</div>
+      <input type="number" id="numDays" min="1" max="14" value="1" />
+      <br/><br/>
+      <button class="btn btn-primary" onclick="goToStep2()">Next</button>
+      <button class="btn btn-secondary" onclick="google.script.host.close()">Cancel</button>
+      <div class="error" id="step1Error"></div>
+    </div>
+
+    <!-- Step 2: Per-day config -->
+    <div id="step2" class="step" style="display:none;">
+      <h3>Transfer Articles → WET</h3>
+      <div class="step-header">Step 2: Configure each day</div>
+      <div style="font-size:12px; color:#666; margin-bottom:8px;">
+        Time window: 10:00 AM – 10:00 PM Phoenix time. Spacing auto-calculated.
+      </div>
+      <div id="dayRows"></div>
+      <div id="summaryBox" class="summary" style="display:none;">
+        <div class="step-header">Summary</div>
+        <div id="summaryContent"></div>
+      </div>
+      <br/>
+      <button class="btn btn-secondary" onclick="goBack()">Back</button>
+      <button class="btn btn-primary" onclick="showSummary()">Review</button>
+      <button class="btn btn-primary" id="confirmBtn" style="display:none;" onclick="doTransfer()">Confirm Transfer</button>
+      <button class="btn btn-secondary" onclick="google.script.host.close()">Cancel</button>
+      <div class="error" id="step2Error"></div>
+    </div>
+
+    <!-- Processing -->
+    <div id="processing">
+      <div class="spinner">⏳</div>
+      <p>Transferring articles to WET...</p>
+      <p style="font-size:12px; color:#666;">This may take a moment.</p>
+    </div>
+
+    <script>
+      var availableCount = <?!= availableCount ?>;
+      var availablePriorityCounts = <?!= JSON.stringify(priorityCounts) ?>;
+
+      // Show available info
+      var includeCount = availablePriorityCounts.Include || 0;
+      var infoHtml = '<strong>' + availableCount + ' articles available</strong> — ';
+      if (includeCount > 0) infoHtml += '⭐ Include: ' + includeCount + ' | ';
+      infoHtml += 'ASAP: ' + (availablePriorityCounts.ASAP || 0) +
+        ' | Priority: ' + (availablePriorityCounts.Priority || 0) +
+        ' | Evergreen: ' + (availablePriorityCounts.Evergreen || 0) +
+        ' | Untagged: ' + (availablePriorityCounts.Untagged || 0);
+      document.getElementById('availableInfo').innerHTML = infoHtml;
+
+      function goToStep2() {
+        var numDays = parseInt(document.getElementById('numDays').value);
+        if (!numDays || numDays < 1 || numDays > 14) {
+          document.getElementById('step1Error').textContent = 'Enter a number between 1 and 14.';
+          return;
+        }
+        document.getElementById('step1Error').textContent = '';
+        document.getElementById('step1').style.display = 'none';
+        document.getElementById('step2').style.display = 'block';
+        document.getElementById('summaryBox').style.display = 'none';
+        document.getElementById('confirmBtn').style.display = 'none';
+        buildDayRows(numDays);
+      }
+
+      function goBack() {
+        document.getElementById('step2').style.display = 'none';
+        document.getElementById('step1').style.display = 'block';
+      }
+
+      function buildDayRows(numDays) {
+        var container = document.getElementById('dayRows');
+        container.innerHTML = '';
+
+        // Default to tomorrow for first date
+        var tomorrow = new Date();
+        tomorrow.setDate(tomorrow.getDate() + 1);
+
+        for (var i = 0; i < numDays; i++) {
+          var defaultDate = new Date(tomorrow);
+          defaultDate.setDate(defaultDate.getDate() + i);
+          var dateStr = defaultDate.toISOString().split('T')[0];
+
+          var row = document.createElement('div');
+          row.className = 'day-row';
+          row.innerHTML =
+            '<label>Day ' + (i + 1) + ':</label> ' +
+            '<input type="number" id="count_' + i + '" min="1" max="50" value="30" onchange="updateSpacing(' + i + ')" /> articles ' +
+            '<input type="date" id="date_' + i + '" value="' + dateStr + '" /> ' +
+            '<span class="spacing-info" id="spacing_' + i + '">~24 min apart</span>';
+          container.appendChild(row);
+          updateSpacing(i);
+        }
+      }
+
+      function updateSpacing(dayIndex) {
+        var count = parseInt(document.getElementById('count_' + dayIndex).value) || 1;
+        var windowMinutes = 720; // 10am to 10pm = 12 hours
+        var spacing = Math.floor(windowMinutes / count);
+        document.getElementById('spacing_' + dayIndex).textContent = '~' + spacing + ' min apart';
+      }
+
+      function showSummary() {
+        var numDays = parseInt(document.getElementById('numDays').value);
+        var days = [];
+        var totalCount = 0;
+        var errors = [];
+
+        for (var i = 0; i < numDays; i++) {
+          var count = parseInt(document.getElementById('count_' + i).value);
+          var date = document.getElementById('date_' + i).value;
+
+          if (!count || count < 1) {
+            errors.push('Day ' + (i + 1) + ': enter a valid count.');
+          }
+          if (!date) {
+            errors.push('Day ' + (i + 1) + ': enter a date.');
+          }
+
+          days.push({ count: count, date: date });
+          totalCount += count;
+        }
+
+        if (totalCount > availableCount) {
+          errors.push('Total (' + totalCount + ') exceeds available articles (' + availableCount + ').');
+        }
+
+        if (errors.length > 0) {
+          document.getElementById('step2Error').textContent = errors.join(' ');
+          return;
+        }
+
+        document.getElementById('step2Error').textContent = '';
+
+        // Build summary
+        var html = '';
+        for (var i = 0; i < days.length; i++) {
+          var spacing = Math.floor(720 / days[i].count);
+          html += '<div class="summary-line">Day ' + (i + 1) + ': <strong>' + days[i].count +
+                  ' articles</strong> on ' + days[i].date + ' (10 AM–10 PM, ~' + spacing + ' min apart)</div>';
+        }
+        html += '<div class="summary-line" style="margin-top:8px;"><strong>Total: ' + totalCount +
+                ' articles</strong> from ' + availableCount + ' available</div>';
+        html += '<div class="summary-line" style="font-size:12px; color:#666;">Selection: ASAP first → Priority → Evergreen, randomized within tiers</div>';
+
+        document.getElementById('summaryContent').innerHTML = html;
+        document.getElementById('summaryBox').style.display = 'block';
+        document.getElementById('confirmBtn').style.display = 'inline-block';
+      }
+
+      function doTransfer() {
+        var numDays = parseInt(document.getElementById('numDays').value);
+        var days = [];
+        for (var i = 0; i < numDays; i++) {
+          days.push({
+            count: parseInt(document.getElementById('count_' + i).value),
+            date: document.getElementById('date_' + i).value
+          });
+        }
+
+        // Show processing
+        document.getElementById('step2').style.display = 'none';
+        document.getElementById('processing').style.display = 'block';
+
+        google.script.run
+          .withSuccessHandler(function(result) {
+            google.script.host.close();
+          })
+          .withFailureHandler(function(error) {
+            document.getElementById('processing').style.display = 'none';
+            document.getElementById('step2').style.display = 'block';
+            document.getElementById('step2Error').textContent = 'Error: ' + error.message;
+          })
+          .executeTransferToWET(days);
+      }
+    </script>
+  </body>
+</html>

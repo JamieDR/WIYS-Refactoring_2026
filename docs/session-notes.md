@@ -29,12 +29,17 @@ A new "Available WP Drafts" sheet as a staging area between AST and WET. Instead
 - Both Available WP Drafts and WET share the same menu buttons
 - Title push to WP works from both sheets (Final Title column → WP API)
 
-### Transfer Feature (Available → WET)
-- Priority ordering: ASAP first, then Priority, then Evergreen
-- Randomize within each priority tier when landing on WET
-- Multi-set dialog: how many sets, count per set, date per set
-- Time window and spacing config (e.g., 10am–10pm, 25 min apart)
-- Auto-fill Date, Time, and # columns on WET
+### Transfer Feature (Available → WET) — FINALIZED
+- **Dialog flow:**
+  1. "How many days?" → e.g. 3
+  2. For each day: "How many articles?" + "Date?" (e.g. 30 articles, 2026-03-10)
+  3. Time window defaults to 10am–10pm Phoenix time
+  4. Spacing auto-computed: window ÷ count (e.g. 720 min ÷ 30 = 24 min apart)
+- **Article selection:** ASAP first → Priority → Evergreen, ASAPs concentrated on earliest days
+- **Randomize** within each priority tier
+- **Even spacing** across the time window
+- **Auto-fill** Date, Time, and # columns on WET
+- **Mark** transferred rows as "Transferred to WET" on Available
 
 ### Deferred
 - AST → Available redirect (will adjust `batchTransferToAleksReview` later)
